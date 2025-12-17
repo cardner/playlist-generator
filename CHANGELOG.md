@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [0.2.1] - 2025-12-17
+
+### Fixed
+
+- improve UI for manual scans and ensure that saved collections can be deleted
+
 ## [0.2.0] - 2025-12-17
 
 ### Added
