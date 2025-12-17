@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+
+## [0.2.0] - 2025-12-17
+
+### Added
+
+- add editability to saved collections for users
+
+### Fixed
+
+- failing yarn install in CI
+- adding froze lock file back in
+
 ## [0.1.1] - 2025-12-17
 
 ### Fixed
