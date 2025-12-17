@@ -130,41 +130,52 @@ export async function relinkCollectionHandle(
  * Delete collection and all associated data
  */
 export async function deleteCollection(id: string): Promise<void> {
-  // Delete all tracks for this collection
-  const tracks = await db.tracks.where("libraryRootId").equals(id).toArray();
-  const trackIds = tracks.map(t => t.id);
-  if (trackIds.length > 0) {
-    await db.tracks.bulkDelete(trackIds);
+  // Verify collection exists
+  const collection = await db.libraryRoots.get(id);
+  if (!collection) {
+    throw new Error(`Collection with ID ${id} not found`);
   }
 
-  // Delete all file index entries for this collection
-  const fileIndexEntries = await db.fileIndex.where("libraryRootId").equals(id).toArray();
-  const fileIndexIds = fileIndexEntries.map(f => f.id);
-  if (fileIndexIds.length > 0) {
-    await db.fileIndex.bulkDelete(fileIndexIds);
-  }
+  try {
+    // Delete all tracks for this collection
+    const tracks = await db.tracks.where("libraryRootId").equals(id).toArray();
+    const trackIds = tracks.map(t => t.id);
+    if (trackIds.length > 0) {
+      await db.tracks.bulkDelete(trackIds);
+    }
 
-  // Delete all scan runs for this collection
-  const scanRuns = await db.scanRuns.where("libraryRootId").equals(id).toArray();
-  const scanRunIds = scanRuns.map(s => s.id);
-  if (scanRunIds.length > 0) {
-    await db.scanRuns.bulkDelete(scanRunIds);
-  }
+    // Delete all file index entries for this collection
+    const fileIndexEntries = await db.fileIndex.where("libraryRootId").equals(id).toArray();
+    const fileIndexIds = fileIndexEntries.map(f => f.id);
+    if (fileIndexIds.length > 0) {
+      await db.fileIndex.bulkDelete(fileIndexIds);
+    }
 
-  // Delete saved playlists for this collection
-  const playlists = await db.savedPlaylists.where("libraryRootId").equals(id).toArray();
-  const playlistIds = playlists.map(p => p.id);
-  if (playlistIds.length > 0) {
-    await db.savedPlaylists.bulkDelete(playlistIds);
-  }
+    // Delete all scan runs for this collection
+    const scanRuns = await db.scanRuns.where("libraryRootId").equals(id).toArray();
+    const scanRunIds = scanRuns.map(s => s.id);
+    if (scanRunIds.length > 0) {
+      await db.scanRuns.bulkDelete(scanRunIds);
+    }
 
-  // Delete the collection itself
-  await db.libraryRoots.delete(id);
+    // Delete saved playlists for this collection
+    const playlists = await db.savedPlaylists.where("libraryRootId").equals(id).toArray();
+    const playlistIds = playlists.map(p => p.id);
+    if (playlistIds.length > 0) {
+      await db.savedPlaylists.bulkDelete(playlistIds);
+    }
 
-  // If this was the current collection, clear the current collection ID
-  const currentId = await getCurrentCollectionId();
-  if (currentId === id) {
-    await db.settings.delete("currentCollectionId");
+    // Delete the collection itself
+    await db.libraryRoots.delete(id);
+
+    // If this was the current collection, clear the current collection ID
+    const currentId = await getCurrentCollectionId();
+    if (currentId === id) {
+      await db.settings.delete("currentCollectionId");
+    }
+  } catch (error) {
+    console.error(`Failed to delete collection ${id}:`, error);
+    throw error; // Re-throw to let caller handle
   }
 }
 
@@ -338,6 +349,7 @@ export async function getAllTracks(): Promise<TrackRecord[]> {
 
 /**
  * Create a scan run record
+ * Uses a more robust ID generation to prevent collisions
  */
 export async function createScanRun(
   libraryRootId: string,
@@ -346,7 +358,8 @@ export async function createScanRun(
   changed: number,
   removed: number
 ): Promise<ScanRunRecord> {
-  const id = `scan-${Date.now()}`;
+  // Generate ID with timestamp and random component to prevent collisions
+  const id = `scan-${libraryRootId}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
   const record: ScanRunRecord = {
     id,
     libraryRootId,
@@ -358,7 +371,8 @@ export async function createScanRun(
     parseErrors: 0,
   };
 
-  await db.scanRuns.add(record);
+  // Use put instead of add to handle any potential duplicates gracefully
+  await db.scanRuns.put(record);
   return record;
 }
 

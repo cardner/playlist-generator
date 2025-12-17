@@ -147,18 +147,22 @@ export function CollectionManager({ onCollectionChange, refreshTrigger }: Collec
       return;
     }
 
+    setDeletingId(id);
     try {
       await deleteCollection(id);
-      await loadCollections();
       
       // If we deleted the current collection, clear it
       if (id === currentId) {
         setCurrentId(null);
         onCollectionChange?.(null);
       }
+      
+      // Reload collections after successful delete
+      await loadCollections();
     } catch (error) {
       console.error("Failed to delete collection:", error);
-      alert("Failed to delete collection. Please try again.");
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      alert(`Failed to delete collection: ${errorMessage}. Please try again.`);
     } finally {
       setDeletingId(null);
     }
@@ -337,17 +341,12 @@ export function CollectionManager({ onCollectionChange, refreshTrigger }: Collec
                     <Edit className="size-3.5" />
                   </button>
                   <button
-                    onClick={() => {
-                      if (confirm("Are you sure you want to delete this collection? This will permanently remove all tracks, scans, and playlists associated with it.")) {
-                        setDeletingId(collection.id);
-                        handleDelete(collection.id);
-                      }
-                    }}
-                    disabled={isDeleting}
+                    onClick={() => handleDelete(collection.id)}
+                    disabled={isDeleting || deletingId === collection.id}
                     className="p-1.5 hover:bg-red-500/10 text-app-secondary hover:text-red-500 rounded-sm transition-colors disabled:opacity-50"
                     aria-label="Delete collection"
                   >
-                    {isDeleting ? (
+                    {deletingId === collection.id ? (
                       <AlertCircle className="size-3.5 animate-pulse" />
                     ) : (
                       <Trash2 className="size-3.5" />

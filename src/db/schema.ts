@@ -281,6 +281,17 @@ export class AppDatabase extends Dexie {
       directoryHandles: "id",
       savedPlaylists: "id, createdAt, updatedAt",
     });
+
+    // Version 5: Add libraryRootId index to savedPlaylists for efficient querying
+    this.version(5).stores({
+      libraryRoots: "id, createdAt",
+      fileIndex: "id, trackFileId, libraryRootId, name, extension, updatedAt",
+      tracks: "id, trackFileId, libraryRootId, updatedAt",
+      scanRuns: "id, libraryRootId, startedAt",
+      settings: "key",
+      directoryHandles: "id",
+      savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
+    });
   }
 }
 

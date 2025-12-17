@@ -27,6 +27,7 @@ interface LibraryScannerProps {
   onNewSelection?: () => void; // Callback when a new folder is selected
   onScanComplete?: () => void; // Callback when scan completes (for refreshing browser)
   hasExistingScans?: boolean | null; // Whether there are existing scans (null = checking)
+  triggerScan?: boolean; // When true, trigger scan immediately
 }
 
 export function LibraryScanner({
@@ -35,6 +36,7 @@ export function LibraryScanner({
   onNewSelection,
   onScanComplete,
   hasExistingScans,
+  triggerScan,
 }: LibraryScannerProps) {
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
@@ -433,12 +435,14 @@ export function LibraryScanner({
       hasExistingScans,
     });
 
-    // Only auto-scan if:
-    // 1. It's a new selection (user explicitly selected a folder)
-    // 2. There are no existing scans (or we're still checking)
-    // 3. Permission is granted
-    // 4. All other conditions are met
-    if (
+    // Trigger scan if:
+    // 1. triggerScan prop is true (explicit trigger from parent)
+    // OR
+    // 2. It's a new selection (user explicitly selected a folder)
+    //    AND there are no existing scans
+    //    AND permission is granted
+    //    AND all other conditions are met
+    const shouldTriggerScan = triggerScan || (
       isNewSelection &&
       libraryRoot &&
       permissionStatus === "granted" &&
@@ -447,14 +451,16 @@ export function LibraryScanner({
       !scanResult &&
       rootId === currentRootId &&
       hasExistingScans === false // Only auto-scan if we know there are NO existing scans
-    ) {
-      console.log("Permission granted for new selection, triggering scan");
+    );
+
+    if (shouldTriggerScan) {
+      console.log("Triggering scan", { triggerScan, isNewSelection });
       // Reset flag first to prevent duplicate scans
       setIsNewSelection(false);
       // Trigger scan immediately
       handleScan();
     }
-  }, [isNewSelection, permissionStatus, libraryRoot, isScanning, scanResult, currentRootId, hasExistingScans, handleScan]);
+  }, [isNewSelection, permissionStatus, libraryRoot, isScanning, scanResult, currentRootId, hasExistingScans, triggerScan, handleScan]);
 
   // Note: Auto-scan is handled by the permission effect above
   // handleParseMetadata and handleScan are defined above, before the useEffect

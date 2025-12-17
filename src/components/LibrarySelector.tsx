@@ -13,7 +13,7 @@ import {
 import { supportsFileSystemAccess } from "@/lib/feature-detection";
 import { RelinkLibraryRoot } from "./RelinkLibraryRoot";
 import { hasRelativePaths } from "@/features/library/relink";
-import { getCurrentLibraryRoot, getCurrentCollectionId, getCollection, getAllCollections, setCurrentCollectionId, updateCollection } from "@/db/storage";
+import { getCurrentLibraryRoot, getCurrentCollectionId, getCollection, getAllCollections, setCurrentCollectionId, updateCollection, getScanRuns, getFileIndexEntries, getTracks } from "@/db/storage";
 import type { LibraryRootRecord } from "@/db/schema";
 import { Modal } from "./Modal";
 import { CollectionManager } from "./CollectionManager";
@@ -22,6 +22,7 @@ interface LibrarySelectorProps {
   onLibrarySelected?: (root: LibraryRoot) => void;
   onPermissionStatus?: (status: PermissionStatus) => void;
   onCollectionChange?: (collectionId: string | null) => void;
+  onStartScan?: () => void; // Callback to trigger scanning
   refreshTrigger?: number;
 }
 
@@ -29,6 +30,7 @@ export function LibrarySelector({
   onLibrarySelected,
   onPermissionStatus,
   onCollectionChange,
+  onStartScan,
   refreshTrigger,
 }: LibrarySelectorProps) {
   const [currentRoot, setCurrentRoot] = useState<LibraryRoot | null>(null);
@@ -47,6 +49,8 @@ export function LibrarySelector({
   const [editingCollectionName, setEditingCollectionName] = useState<string>("");
   const [editingCollectionError, setEditingCollectionError] = useState<string | null>(null);
   const [showCollectionManagerModal, setShowCollectionManagerModal] = useState(false);
+  const [hasCompletedScan, setHasCompletedScan] = useState<boolean>(false);
+  const [canRelink, setCanRelink] = useState<boolean>(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Load saved library root on mount
@@ -119,6 +123,8 @@ export function LibrarySelector({
     await setCurrentCollectionId(collectionId);
     setShowCollectionDropdown(false);
     await loadCurrentCollection();
+    // Load the saved library root for the selected collection
+    await loadSavedLibrary();
     onCollectionChange?.(collectionId);
   }
 
@@ -195,9 +201,24 @@ export function LibrarySelector({
         const rootRecord = await getCurrentLibraryRoot();
         if (rootRecord) {
           setCurrentRootId(rootRecord.id);
-          // Check if relative paths exist
-          const hasPaths = await hasRelativePaths(rootRecord.id);
-          setHasRelativePathsCheck(hasPaths);
+          
+          // Check if there's data to relink (tracks or fileIndex)
+          const tracks = await getTracks(rootRecord.id);
+          const fileIndex = await getFileIndexEntries(rootRecord.id);
+          setCanRelink(tracks.length > 0 || fileIndex.length > 0);
+          
+          // Check if scan has completed
+          const scanRuns = await getScanRuns(rootRecord.id);
+          const completedScan = scanRuns.some(run => run.finishedAt && run.total > 0);
+          setHasCompletedScan(completedScan);
+          
+          // Only check relative paths if scan has completed
+          if (completedScan) {
+            const hasPaths = await hasRelativePaths(rootRecord.id);
+            setHasRelativePathsCheck(hasPaths);
+          } else {
+            setHasRelativePathsCheck(null); // Don't show warning yet
+          }
         }
       }
     } catch (err) {
@@ -237,8 +258,24 @@ export function LibrarySelector({
       const rootRecord = await getCurrentLibraryRoot();
       if (rootRecord) {
         setCurrentRootId(rootRecord.id);
-        const hasPaths = await hasRelativePaths(rootRecord.id);
-        setHasRelativePathsCheck(hasPaths);
+        
+        // Check if there's data to relink
+        const tracks = await getTracks(rootRecord.id);
+        const fileIndex = await getFileIndexEntries(rootRecord.id);
+        setCanRelink(tracks.length > 0 || fileIndex.length > 0);
+        
+        // Check if scan has completed
+        const scanRuns = await getScanRuns(rootRecord.id);
+        const completedScan = scanRuns.some(run => run.finishedAt && run.total > 0);
+        setHasCompletedScan(completedScan);
+        
+        if (completedScan) {
+          const hasPaths = await hasRelativePaths(rootRecord.id);
+          setHasRelativePathsCheck(hasPaths);
+        } else {
+          setHasRelativePathsCheck(null);
+        }
+        
         // Reload current collection name since a new collection was just created
         await loadCurrentCollection();
       }
@@ -446,7 +483,7 @@ export function LibrarySelector({
                 </button>
               )}
 
-              {hasRelativePathsCheck === false && currentRootId && (
+              {hasRelativePathsCheck === false && currentRootId && hasCompletedScan && (
                 <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-sm text-left">
                   <div className="flex items-start gap-2 mb-2">
                     <AlertCircle className="size-4 text-yellow-500 shrink-0 mt-0.5" />
@@ -459,30 +496,34 @@ export function LibrarySelector({
                       </p>
                     </div>
                   </div>
-                  {showRelink ? (
-                    <RelinkLibraryRoot
-                      libraryRootId={currentRootId}
-                      onRelinkComplete={async (newRootId) => {
-                        setCurrentRootId(newRootId);
-                        const hasPaths = await hasRelativePaths(newRootId);
-                        setHasRelativePathsCheck(hasPaths);
-                        setShowRelink(false);
-                        // Reload saved library to update state
-                        await loadSavedLibrary();
-                      }}
-                      onError={() => {
-                        // Reset relink UI on error
-                        setShowRelink(false);
-                      }}
-                    />
-                  ) : (
-                    <button
-                      onClick={() => setShowRelink(true)}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-500 rounded-sm transition-colors text-xs"
-                    >
-                      <RefreshCw className="size-3.5" />
-                      Relink Library Root
-                    </button>
+                  {canRelink && (
+                    <>
+                      {showRelink ? (
+                        <RelinkLibraryRoot
+                          libraryRootId={currentRootId}
+                          onRelinkComplete={async (newRootId) => {
+                            setCurrentRootId(newRootId);
+                            const hasPaths = await hasRelativePaths(newRootId);
+                            setHasRelativePathsCheck(hasPaths);
+                            setShowRelink(false);
+                            // Reload saved library to update state
+                            await loadSavedLibrary();
+                          }}
+                          onError={() => {
+                            // Reset relink UI on error
+                            setShowRelink(false);
+                          }}
+                        />
+                      ) : (
+                        <button
+                          onClick={() => setShowRelink(true)}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-500 rounded-sm transition-colors text-xs"
+                        >
+                          <RefreshCw className="size-3.5" />
+                          Relink Library Root
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -491,18 +532,38 @@ export function LibrarySelector({
 
           {!isLoading ? (
             <>
-              <button
-                onClick={handleChooseFolder}
-                disabled={isLoading}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-accent-primary text-white rounded-sm hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
-              >
-                <FolderOpen className="size-4" />
-                <span>Select Music Folder</span>
-              </button>
+              {currentRoot && currentCollectionId ? (
+                <button
+                  onClick={() => {
+                    // Trigger scan by notifying parent that library is selected
+                    // This will cause LibraryScanner to show scan UI and allow scanning
+                    if (currentRoot) {
+                      onLibrarySelected?.(currentRoot);
+                      onStartScan?.();
+                    }
+                  }}
+                  disabled={isLoading || permissionStatus !== "granted"}
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-accent-primary text-white rounded-sm hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
+                >
+                  <Music className="size-4" />
+                  <span>Start Scanning</span>
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={handleChooseFolder}
+                    disabled={isLoading}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-accent-primary text-white rounded-sm hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
+                  >
+                    <FolderOpen className="size-4" />
+                    <span>Select Music Folder</span>
+                  </button>
 
-              <p className="text-app-tertiary mt-3 text-xs">
-                Supported formats: MP3, M4A, FLAC, WAV, OGG, and more
-              </p>
+                  <p className="text-app-tertiary mt-3 text-xs">
+                    Supported formats: MP3, M4A, FLAC, WAV, OGG, and more
+                  </p>
+                </>
+              )}
             </>
           ) : (
             <div className="space-y-4">

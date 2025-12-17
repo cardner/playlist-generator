@@ -20,9 +20,15 @@ export default function LibraryPage() {
   const [isNewSelection, setIsNewSelection] = useState(false);
   const [hasExistingScans, setHasExistingScans] = useState<boolean | null>(null); // null = checking
   const [collectionRefresh, setCollectionRefresh] = useState(0);
+  const [triggerScan, setTriggerScan] = useState(false);
 
-  // Check for existing scans on mount
+  // Check for existing scans on mount (but not when isNewSelection is true)
   useEffect(() => {
+    // Skip check if user just selected a new folder
+    if (isNewSelection) {
+      return;
+    }
+    
     async function checkExistingScans() {
       // Wait for database migration to complete before accessing database
       await ensureMigrationComplete();
@@ -146,7 +152,7 @@ export default function LibraryPage() {
       }
     }
     checkExistingScans();
-  }, []); // Only run on mount
+  }, [isNewSelection]); // Skip if new selection was made
 
   // Debug: Log when libraryRoot changes
   useEffect(() => {
@@ -182,6 +188,16 @@ export default function LibraryPage() {
     setIsNewSelection(true);
     setHasExistingScans(false); // User explicitly selected a new folder
   };
+  
+  // Reset isNewSelection flag after a delay to allow checkExistingScans to run again if needed
+  useEffect(() => {
+    if (isNewSelection) {
+      const timer = setTimeout(() => {
+        setIsNewSelection(false);
+      }, 5000); // Reset after 5 seconds
+      return () => clearTimeout(timer);
+    }
+  }, [isNewSelection]);
 
   // Update hasExistingScans when scan completes (scan is now complete)
   const handleScanComplete = async () => {
@@ -225,11 +241,22 @@ export default function LibraryPage() {
             console.log("LibraryPage: Folder selected", root);
             setLibraryRoot(root);
             setIsNewSelection(true);
-            setHasExistingScans(false); // User explicitly selected a new folder
+            // Explicitly set to false (not null) so LibraryScanner shows scan button immediately
+            setHasExistingScans(false);
           }}
           onPermissionStatus={(status) => {
             console.log("LibraryPage: Permission status", status);
             setPermissionStatus(status);
+          }}
+          onStartScan={() => {
+            // When user clicks "Start Scanning" from a saved collection,
+            // ensure hasExistingScans is false so LibraryScanner shows scan button
+            // and trigger scan immediately
+            setHasExistingScans(false);
+            setIsNewSelection(true);
+            setTriggerScan(true);
+            // Reset triggerScan after a short delay to allow it to be triggered again
+            setTimeout(() => setTriggerScan(false), 100);
           }}
           onCollectionChange={async (collectionId) => {
             if (collectionId) {
@@ -265,6 +292,7 @@ export default function LibraryPage() {
           onNewSelection={handleNewSelection}
           hasExistingScans={hasExistingScans}
           onScanComplete={handleScanComplete}
+          triggerScan={triggerScan}
         />
       </div>
 
