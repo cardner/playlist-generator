@@ -2,28 +2,63 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getAllSavedPlaylists, deleteSavedPlaylist } from "@/db/playlist-storage";
+import { getAllSavedPlaylistsWithCollections, deleteSavedPlaylist } from "@/db/playlist-storage";
 import type { GeneratedPlaylist } from "@/features/playlists";
 import { PlaylistDisplay } from "@/components/PlaylistDisplay";
-import { Music, Trash2, Loader2, AlertCircle } from "lucide-react";
+import { Music, Trash2, Loader2, AlertCircle, Database } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getCollection, getCurrentCollectionId } from "@/db/storage";
+import type { LibraryRootRecord } from "@/db/schema";
+
+interface PlaylistWithCollection {
+  playlist: GeneratedPlaylist;
+  collectionId?: string;
+  collectionName?: string;
+}
 
 export default function SavedPlaylistsPage() {
   const router = useRouter();
-  const [playlists, setPlaylists] = useState<GeneratedPlaylist[]>([]);
+  const [playlists, setPlaylists] = useState<PlaylistWithCollection[]>([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState<GeneratedPlaylist | null>(null);
+  const [selectedPlaylistCollectionId, setSelectedPlaylistCollectionId] = useState<string | undefined>();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentCollectionId, setCurrentCollectionId] = useState<string | null>(null);
 
   useEffect(() => {
     loadPlaylists();
+    
+    // Refresh when collections might change (check periodically)
+    const interval = setInterval(() => {
+      loadPlaylists();
+    }, 3000); // Check every 3 seconds
+    
+    return () => clearInterval(interval);
   }, []);
 
   async function loadPlaylists() {
     try {
       setIsLoading(true);
-      const saved = await getAllSavedPlaylists();
-      setPlaylists(saved);
+      const saved = await getAllSavedPlaylistsWithCollections();
+      const currentId = await getCurrentCollectionId();
+      setCurrentCollectionId(currentId || null);
+
+      // Load collection names for each playlist
+      const playlistsWithNames = await Promise.all(
+        saved.map(async (item) => {
+          let collectionName: string | undefined;
+          if (item.collectionId) {
+            const collection = await getCollection(item.collectionId);
+            collectionName = collection?.name;
+          }
+          return {
+            ...item,
+            collectionName,
+          };
+        })
+      );
+
+      setPlaylists(playlistsWithNames);
     } catch (err) {
       console.error("Failed to load saved playlists:", err);
       setError(err instanceof Error ? err.message : "Failed to load playlists");
@@ -41,12 +76,18 @@ export default function SavedPlaylistsPage() {
       await deleteSavedPlaylist(id);
       if (selectedPlaylist?.id === id) {
         setSelectedPlaylist(null);
+        setSelectedPlaylistCollectionId(undefined);
       }
       await loadPlaylists();
     } catch (err) {
       console.error("Failed to delete playlist:", err);
       alert("Failed to delete playlist");
     }
+  }
+
+  function handleSelectPlaylist(playlist: GeneratedPlaylist, collectionId?: string) {
+    setSelectedPlaylist(playlist);
+    setSelectedPlaylistCollectionId(collectionId);
   }
 
   function formatDate(timestamp: number): string {
@@ -69,13 +110,19 @@ export default function SavedPlaylistsPage() {
       <div className="max-w-6xl mx-auto">
         <div className="mb-6">
           <button
-            onClick={() => setSelectedPlaylist(null)}
+            onClick={() => {
+              setSelectedPlaylist(null);
+              setSelectedPlaylistCollectionId(undefined);
+            }}
             className="flex items-center gap-2 px-4 py-2 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm"
           >
             ← Back to Saved Playlists
           </button>
         </div>
-        <PlaylistDisplay playlist={selectedPlaylist} />
+        <PlaylistDisplay 
+          playlist={selectedPlaylist} 
+          playlistCollectionId={selectedPlaylistCollectionId}
+        />
       </div>
     );
   }
@@ -129,46 +176,62 @@ export default function SavedPlaylistsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {playlists.map((playlist) => (
-            <div
-              key={playlist.id}
-              className="bg-app-surface rounded-sm border border-app-border p-6 hover:border-accent-primary/50 transition-colors cursor-pointer group"
-              onClick={() => setSelectedPlaylist(playlist)}
-            >
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-app-primary font-semibold truncate mb-1 group-hover:text-accent-primary transition-colors">
-                    {playlist.title}
-                  </h3>
-                  <p className="text-app-secondary text-sm line-clamp-2">
-                    {playlist.description}
-                  </p>
+          {playlists.map((item) => {
+            const playlist = item.playlist;
+            const isFromCurrentCollection = item.collectionId === currentCollectionId;
+            
+            return (
+              <div
+                key={playlist.id}
+                className="bg-app-surface rounded-sm border border-app-border p-6 hover:border-accent-primary/50 transition-colors cursor-pointer group"
+                onClick={() => handleSelectPlaylist(playlist, item.collectionId)}
+              >
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-app-primary font-semibold truncate mb-1 group-hover:text-accent-primary transition-colors">
+                      {playlist.title}
+                    </h3>
+                    <p className="text-app-secondary text-sm line-clamp-2">
+                      {playlist.description}
+                    </p>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(playlist.id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:bg-red-500/10 rounded-sm transition-all shrink-0"
+                    title="Delete playlist"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(playlist.id);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:bg-red-500/10 rounded-sm transition-all shrink-0"
-                  title="Delete playlist"
-                >
-                  <Trash2 className="size-4" />
-                </button>
-              </div>
-              <div className="flex items-center gap-4 text-app-tertiary text-xs mt-4 pt-4 border-t border-app-border">
-                <div className="flex items-center gap-1">
-                  <Music className="size-3" />
-                  <span>{playlist.trackFileIds.length} tracks</span>
+                {item.collectionName && (
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <Database className="size-3 text-app-tertiary" />
+                    <span className={`text-xs ${
+                      isFromCurrentCollection ? "text-accent-primary" : "text-app-tertiary"
+                    }`}>
+                      {item.collectionName}
+                      {isFromCurrentCollection && " (Current)"}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center gap-4 text-app-tertiary text-xs mt-4 pt-4 border-t border-app-border">
+                  <div className="flex items-center gap-1">
+                    <Music className="size-3" />
+                    <span>{playlist.trackFileIds.length} tracks</span>
+                  </div>
+                  <div>
+                    {formatDuration(playlist.totalDuration)}
+                  </div>
                 </div>
-                <div>
-                  {formatDuration(playlist.totalDuration)}
+                <div className="text-app-tertiary text-xs mt-2">
+                  Saved {formatDate(playlist.createdAt)}
                 </div>
               </div>
-              <div className="text-app-tertiary text-xs mt-2">
-                Saved {formatDate(playlist.createdAt)}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

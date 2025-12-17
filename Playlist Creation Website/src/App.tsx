@@ -96,7 +96,7 @@ export default function App() {
                 <Music className="size-8 text-white" />
               </div>
               <div>
-                <h1 className="text-app-primary tracking-tight">playlist ai</h1>
+                <h1 className="text-app-primary tracking-tight">playlist generator</h1>
                 <p className="text-app-secondary">intelligent music curation</p>
               </div>
             </div>

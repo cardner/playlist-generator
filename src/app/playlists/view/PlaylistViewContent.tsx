@@ -5,50 +5,67 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { PlaylistDisplay } from "@/components/PlaylistDisplay";
 import type { GeneratedPlaylist } from "@/features/playlists";
 import { Loader2, AlertCircle } from "lucide-react";
+import { getPlaylistCollectionId } from "@/db/playlist-storage";
 
 export function PlaylistViewContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const playlistId = searchParams.get("id");
   const [playlist, setPlaylist] = useState<GeneratedPlaylist | null>(null);
+  const [playlistCollectionId, setPlaylistCollectionId] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!playlistId) {
-      router.push("/playlists/new");
-      return;
-    }
-
-    // Load playlist from sessionStorage
-    const stored = sessionStorage.getItem("generated-playlist");
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as GeneratedPlaylist;
-        // Verify it matches the ID in URL
-        if (parsed.id === playlistId) {
-          // Convert plain objects back to Maps (JSON.stringify converts Maps to {})
-          if (parsed.summary) {
-            parsed.summary.genreMix = new Map(
-              Object.entries(parsed.summary.genreMix || {})
-            );
-            parsed.summary.tempoMix = new Map(
-              Object.entries(parsed.summary.tempoMix || {})
-            );
-            parsed.summary.artistMix = new Map(
-              Object.entries(parsed.summary.artistMix || {})
-            );
-          }
-          setPlaylist(parsed);
-        } else {
-          setError("Playlist ID mismatch");
-        }
-      } catch (err) {
-        console.error("Failed to parse playlist:", err);
-        setError("Failed to load playlist");
+    async function loadPlaylist() {
+      if (!playlistId) {
+        router.push("/playlists/new");
+        return;
       }
-    } else {
-      setError("Playlist not found");
+
+      // Load playlist from sessionStorage
+      const stored = sessionStorage.getItem("generated-playlist");
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as GeneratedPlaylist;
+          // Verify it matches the ID in URL
+          if (parsed.id === playlistId) {
+            // Convert plain objects back to Maps (JSON.stringify converts Maps to {})
+            if (parsed.summary) {
+              parsed.summary.genreMix = new Map(
+                Object.entries(parsed.summary.genreMix || {})
+              );
+              parsed.summary.tempoMix = new Map(
+                Object.entries(parsed.summary.tempoMix || {})
+              );
+              parsed.summary.artistMix = new Map(
+                Object.entries(parsed.summary.artistMix || {})
+              );
+            }
+            setPlaylist(parsed);
+            
+            // Try to get collection ID from saved playlist record
+            if (playlistId) {
+              try {
+                const collectionId = await getPlaylistCollectionId(playlistId);
+                setPlaylistCollectionId(collectionId);
+              } catch (err) {
+                console.error("Failed to load playlist collection ID:", err);
+                // Not a critical error, continue without collection ID
+              }
+            }
+          } else {
+            setError("Playlist ID mismatch");
+          }
+        } catch (err) {
+          console.error("Failed to parse playlist:", err);
+          setError("Failed to load playlist");
+        }
+      } else {
+        setError("Playlist not found");
+      }
     }
+    
+    loadPlaylist();
   }, [playlistId, router]);
 
   if (error) {
@@ -80,6 +97,6 @@ export function PlaylistViewContent() {
     );
   }
 
-  return <PlaylistDisplay playlist={playlist} />;
+  return <PlaylistDisplay playlist={playlist} playlistCollectionId={playlistCollectionId} />;
 }
 

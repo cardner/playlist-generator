@@ -147,3 +147,28 @@ export async function isPlaylistSaved(id: string): Promise<boolean> {
   return count > 0;
 }
 
+/**
+ * Get the collection ID for a saved playlist
+ */
+export async function getPlaylistCollectionId(id: string): Promise<string | undefined> {
+  const record = await db.savedPlaylists.get(id);
+  return record?.libraryRootId;
+}
+
+/**
+ * Get all saved playlists with their collection IDs
+ */
+export async function getAllSavedPlaylistsWithCollections(): Promise<Array<{
+  playlist: GeneratedPlaylist;
+  collectionId?: string;
+}>> {
+  const records = await db.savedPlaylists
+    .orderBy("updatedAt")
+    .reverse()
+    .toArray();
+  return records.map(record => ({
+    playlist: recordToPlaylist(record),
+    collectionId: record.libraryRootId,
+  }));
+}
+

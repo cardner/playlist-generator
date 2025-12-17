@@ -19,7 +19,7 @@ export function Navigation() {
       <div className="container mx-auto px-4 max-w-6xl">
         <div className="flex items-center justify-between h-16">
           <Link href="/" className="text-app-primary font-medium tracking-tight">
-            playlist ai
+            playlist generator
           </Link>
           <div className="flex items-center gap-4">
             <div className="flex gap-2">

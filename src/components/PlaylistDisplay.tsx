@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { GeneratedPlaylist } from "@/features/playlists";
-import { getAllTracks } from "@/db/storage";
+import { getAllTracks, getTracks, getCurrentLibraryRoot } from "@/db/storage";
 import { db } from "@/db/schema";
 import { PlaylistWhySummary } from "./PlaylistWhySummary";
 import { TrackReasonChips } from "./TrackReasonChips";
@@ -135,7 +135,7 @@ import {
 } from "@/features/playlists";
 import type { PlaylistRequest } from "@/types/playlist";
 import { getCurrentLibrarySummary } from "@/features/library/summarization";
-import { getCurrentLibraryRoot, getAllGenres, getAllArtists, getAllAlbums, getAllTrackTitles } from "@/db/storage";
+import { getAllGenres, getAllArtists, getAllAlbums, getAllTrackTitles } from "@/db/storage";
 import {
   savePlaylist,
   updatePlaylistMetadata,
@@ -144,9 +144,10 @@ import {
 
 interface PlaylistDisplayProps {
   playlist: GeneratedPlaylist;
+  playlistCollectionId?: string; // Collection ID the playlist was created from
 }
 
-export function PlaylistDisplay({ playlist: initialPlaylist }: PlaylistDisplayProps) {
+export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionId }: PlaylistDisplayProps) {
   const router = useRouter();
   const [playlist, setPlaylist] = useState<GeneratedPlaylist>(initialPlaylist);
   const [tracks, setTracks] = useState<Map<string, any>>(new Map());
@@ -174,7 +175,15 @@ export function PlaylistDisplay({ playlist: initialPlaylist }: PlaylistDisplayPr
   }, [playlist.id]);
 
   const loadTracks = useCallback(async () => {
-    const allTracks = await getAllTracks();
+    // Load tracks from current collection
+    const root = await getCurrentLibraryRoot();
+    let allTracks;
+    if (root?.id) {
+      const { getTracks } = await import("@/db/storage");
+      allTracks = await getTracks(root.id);
+    } else {
+      allTracks = await getAllTracks();
+    }
     const trackMap = new Map();
     for (const track of allTracks) {
       trackMap.set(track.trackFileId, track);
@@ -900,7 +909,11 @@ export function PlaylistDisplay({ playlist: initialPlaylist }: PlaylistDisplayPr
 
       {/* Export Section */}
       <div className="bg-app-surface rounded-sm border border-app-border p-6">
-        <PlaylistExport playlist={playlist} libraryRootId={libraryRootId} />
+        <PlaylistExport 
+          playlist={playlist} 
+          libraryRootId={libraryRootId}
+          playlistCollectionId={playlistCollectionId}
+        />
       </div>
     </div>
   );

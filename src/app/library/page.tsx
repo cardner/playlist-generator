@@ -6,7 +6,6 @@ import { LibraryScanner } from "@/components/LibraryScanner";
 import { LibraryBrowser } from "@/components/LibraryBrowser";
 import { LibrarySummary } from "@/components/LibrarySummary";
 import { StorageWarning } from "@/components/StorageWarning";
-import { CollectionManager } from "@/components/CollectionManager";
 import { getCurrentLibraryRoot, getCurrentCollectionId } from "@/db/storage";
 import { ensureMigrationComplete } from "@/db/migration-helper";
 import type { LibraryRoot } from "@/lib/library-selection";
@@ -218,8 +217,10 @@ export default function LibraryPage() {
         <h1 className="text-app-primary tracking-tight">Music Library</h1>
       </header>
 
-      <div className="mb-6">
+      <div className="mb-4">
         <LibrarySelector
+          key={collectionRefresh}
+          refreshTrigger={collectionRefresh}
           onLibrarySelected={(root) => {
             console.log("LibraryPage: Folder selected", root);
             setLibraryRoot(root);
@@ -230,37 +231,6 @@ export default function LibraryPage() {
             console.log("LibraryPage: Permission status", status);
             setPermissionStatus(status);
           }}
-        />
-      </div>
-
-      <div className="mb-6">
-        <LibraryScanner
-          libraryRoot={libraryRoot}
-          permissionStatus={permissionStatus}
-          onNewSelection={handleNewSelection}
-          hasExistingScans={hasExistingScans}
-          onScanComplete={handleScanComplete}
-        />
-      </div>
-
-      <div className="mb-6">
-        <StorageWarning />
-      </div>
-
-      <div className="mb-6">
-        <LibrarySummary 
-          libraryRootId={currentLibraryRootId || undefined}
-          refreshTrigger={browserRefresh}
-        />
-      </div>
-
-      <div className="mb-6">
-        <LibraryBrowser key={browserRefresh} />
-      </div>
-
-      <div className="mb-6">
-        <CollectionManager
-          key={collectionRefresh}
           onCollectionChange={async (collectionId) => {
             if (collectionId) {
               // Reload library root for the selected collection
@@ -274,6 +244,7 @@ export default function LibraryPage() {
                   setPermissionStatus(permission);
                 }
                 setCurrentLibraryRootId(root.id);
+                // Refresh all components to show new collection data
                 setCollectionRefresh((prev) => prev + 1);
                 setBrowserRefresh((prev) => prev + 1);
               }
@@ -281,9 +252,35 @@ export default function LibraryPage() {
               setLibraryRoot(null);
               setCurrentLibraryRootId(null);
               setCollectionRefresh((prev) => prev + 1);
+              setBrowserRefresh((prev) => prev + 1);
             }
           }}
         />
+      </div>
+
+      <div className="mb-4">
+        <LibraryScanner
+          libraryRoot={libraryRoot}
+          permissionStatus={permissionStatus}
+          onNewSelection={handleNewSelection}
+          hasExistingScans={hasExistingScans}
+          onScanComplete={handleScanComplete}
+        />
+      </div>
+
+      <div className="mb-4">
+        <StorageWarning />
+      </div>
+
+      <div className="mb-4">
+        <LibrarySummary 
+          libraryRootId={currentLibraryRootId || undefined}
+          refreshTrigger={browserRefresh}
+        />
+      </div>
+
+      <div className="mb-4">
+        <LibraryBrowser key={browserRefresh} />
       </div>
     </>
   );

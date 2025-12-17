@@ -12,11 +12,12 @@ import {
   type TrackLookup,
   type PlaylistLocationConfig,
 } from "@/features/playlists/export";
-import { getAllTracks } from "@/db/storage";
+import { getAllTracks, getCurrentCollectionId, getCollection } from "@/db/storage";
 import { getFileIndexEntries } from "@/db/storage";
 import { db } from "@/db/schema";
 import { hasRelativePaths } from "@/features/library/relink";
 import { RelinkLibraryRoot } from "./RelinkLibraryRoot";
+import type { LibraryRootRecord } from "@/db/schema";
 import {
   Download,
   FileText,
@@ -34,9 +35,10 @@ import { cn } from "@/lib/utils";
 interface PlaylistExportProps {
   playlist: GeneratedPlaylist;
   libraryRootId?: string;
+  playlistCollectionId?: string; // Collection ID the playlist was created from
 }
 
-export function PlaylistExport({ playlist, libraryRootId }: PlaylistExportProps) {
+export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }: PlaylistExportProps) {
   const [isExporting, setIsExporting] = useState<string | null>(null);
   const [hasPathWarning, setHasPathWarning] = useState(false);
   const [showRelinkPrompt, setShowRelinkPrompt] = useState(false);
@@ -46,6 +48,9 @@ export function PlaylistExport({ playlist, libraryRootId }: PlaylistExportProps)
   const [playlistLocation, setPlaylistLocation] = useState<"root" | "subfolder">("root");
   const [pathStrategy, setPathStrategy] = useState<"relative-to-playlist" | "relative-to-library-root" | "absolute">("absolute");
   const [absolutePathPrefix, setAbsolutePathPrefix] = useState<string>("");
+  const [currentCollectionId, setCurrentCollectionId] = useState<string | null>(null);
+  const [playlistCollection, setPlaylistCollection] = useState<LibraryRootRecord | null>(null);
+  const [currentCollection, setCurrentCollection] = useState<LibraryRootRecord | null>(null);
 
   // Load export preferences from localStorage
   useEffect(() => {
@@ -71,6 +76,25 @@ export function PlaylistExport({ playlist, libraryRootId }: PlaylistExportProps)
     localStorage.setItem("playlist-export-absolute-prefix", absolutePathPrefix);
   }, [playlistLocation, pathStrategy, absolutePathPrefix]);
 
+  // Check current collection and load collection info
+  useEffect(() => {
+    async function loadCollectionInfo() {
+      const currentId = await getCurrentCollectionId();
+      setCurrentCollectionId(currentId || null);
+
+      if (currentId) {
+        const collection = await getCollection(currentId);
+        setCurrentCollection(collection || null);
+      }
+
+      if (playlistCollectionId) {
+        const collection = await getCollection(playlistCollectionId);
+        setPlaylistCollection(collection || null);
+      }
+    }
+    loadCollectionInfo();
+  }, [playlistCollectionId, libraryRootId]);
+
   // Check if library has relative paths
   useEffect(() => {
     async function checkPaths() {
@@ -84,6 +108,10 @@ export function PlaylistExport({ playlist, libraryRootId }: PlaylistExportProps)
     }
     checkPaths();
   }, [libraryRootId]);
+
+  // Check if playlist collection matches current collection
+  const collectionMismatch = playlistCollectionId && 
+    playlistCollectionId !== currentCollectionId;
 
   async function handleExport(format: "m3u" | "pls" | "xspf" | "csv" | "json") {
     setIsExporting(format);
@@ -208,6 +236,26 @@ export function PlaylistExport({ playlist, libraryRootId }: PlaylistExportProps)
 
   return (
     <div className="space-y-4">
+      {/* Collection Mismatch Warning */}
+      {collectionMismatch && (
+        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-sm p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="size-5 text-yellow-500 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h4 className="text-yellow-500 font-medium mb-1">Collection Mismatch</h4>
+              <p className="text-yellow-500 text-sm mb-2">
+                This playlist was created from the collection &quot;{playlistCollection?.name || "Unknown"}&quot;, 
+                but you are currently viewing the collection &quot;{currentCollection?.name || "Unknown"}&quot;.
+              </p>
+              <p className="text-yellow-500 text-sm">
+                Exporting this playlist may not work correctly because the file paths may not match your current collection. 
+                Consider switching to the collection this playlist was created from before exporting.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-app-primary font-medium uppercase tracking-wider text-sm">
