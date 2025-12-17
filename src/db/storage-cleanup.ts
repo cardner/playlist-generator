@@ -1,0 +1,220 @@
+/**
+ * Storage cleanup utilities for managing large libraries
+ */
+
+import { db } from "./schema";
+import type { ScanRunRecord } from "./schema";
+
+/**
+ * Cleanup old scan runs, keeping only the most recent N runs per library
+ */
+export async function cleanupOldScanRuns(
+  keepRecent: number = 10
+): Promise<{ deleted: number }> {
+  try {
+    // Get all library root IDs
+    const libraryRoots = await db.libraryRoots.toArray();
+    let deleted = 0;
+
+    for (const root of libraryRoots) {
+      // Get all scan runs for this library, sorted by date (newest first)
+      const runs = await db.scanRuns
+        .where("libraryRootId")
+        .equals(root.id)
+        .sortBy("startedAt");
+
+      // Keep only the most recent N runs
+      if (runs.length > keepRecent) {
+        const toDelete = runs.slice(0, runs.length - keepRecent);
+        const idsToDelete = toDelete.map((r) => r.id);
+        await db.scanRuns.bulkDelete(idsToDelete);
+        deleted += idsToDelete.length;
+      }
+    }
+
+    return { deleted };
+  } catch (error) {
+    console.error("Failed to cleanup old scan runs:", error);
+    throw error;
+  }
+}
+
+/**
+ * Cleanup orphaned file index entries (no matching tracks)
+ * Uses composite IDs for deletion
+ */
+export async function cleanupOrphanedFileIndex(libraryRootId?: string): Promise<{ deleted: number }> {
+  try {
+    let allFileIndex = await db.fileIndex.toArray();
+    let allTracks = await db.tracks.toArray();
+    
+    // Filter by libraryRootId if provided
+    if (libraryRootId) {
+      allFileIndex = allFileIndex.filter((e) => e.libraryRootId === libraryRootId);
+      allTracks = allTracks.filter((t) => t.libraryRootId === libraryRootId);
+    }
+    
+    // Create a set of composite IDs for tracks
+    const trackCompositeIds = new Set(allTracks.map((t) => `${t.trackFileId}-${t.libraryRootId}`));
+    
+    // Find orphaned file index entries (no matching track with same composite ID)
+    const orphaned = allFileIndex.filter(
+      (entry) => {
+        const compositeId = `${entry.trackFileId}-${entry.libraryRootId}`;
+        return !trackCompositeIds.has(compositeId);
+      }
+    );
+    
+    if (orphaned.length > 0) {
+      const idsToDelete = orphaned.map((e) => e.id); // Use composite ID
+      await db.fileIndex.bulkDelete(idsToDelete);
+      return { deleted: idsToDelete.length };
+    }
+    
+    return { deleted: 0 };
+  } catch (error) {
+    console.error("Failed to cleanup orphaned file index:", error);
+    throw error;
+  }
+}
+
+/**
+ * Cleanup tracks for a specific library root (useful when switching libraries)
+ * Uses composite IDs for deletion
+ */
+export async function cleanupLibraryRootData(
+  libraryRootId: string
+): Promise<{ deleted: { tracks: number; fileIndex: number; scanRuns: number } }> {
+  try {
+    // Delete tracks (using composite IDs)
+    const tracks = await db.tracks.where("libraryRootId").equals(libraryRootId).toArray();
+    const trackIds = tracks.map((t) => t.id); // Use composite ID
+    await db.tracks.bulkDelete(trackIds);
+    
+    // Delete file index entries (using composite IDs)
+    const fileIndex = await db.fileIndex.where("libraryRootId").equals(libraryRootId).toArray();
+    const fileIndexIds = fileIndex.map((f) => f.id); // Use composite ID
+    await db.fileIndex.bulkDelete(fileIndexIds);
+    
+    // Delete scan runs
+    const scanRuns = await db.scanRuns.where("libraryRootId").equals(libraryRootId).toArray();
+    const scanRunIds = scanRuns.map((s) => s.id);
+    await db.scanRuns.bulkDelete(scanRunIds);
+    
+    return {
+      deleted: {
+        tracks: trackIds.length,
+        fileIndex: fileIndexIds.length,
+        scanRuns: scanRunIds.length,
+      },
+    };
+  } catch (error) {
+    console.error("Failed to cleanup library root data:", error);
+    throw error;
+  }
+}
+
+/**
+ * Storage statistics
+ */
+export interface StorageStats {
+  libraryRoots: number;
+  tracks: number;
+  fileIndex: number;
+  scanRuns: number;
+  directoryHandles: number;
+}
+
+/**
+ * Get storage statistics
+ * Returns default values if database is not ready or tables don't exist
+ */
+export async function getStorageStats(): Promise<StorageStats> {
+  try {
+    // Ensure database is open (Dexie handles this automatically, but we'll catch errors)
+    const [libraryRoots, tracks, fileIndex, scanRuns, directoryHandles] = await Promise.all([
+      db.libraryRoots.count().catch((err) => {
+        console.warn("Failed to count libraryRoots:", err);
+        return 0;
+      }),
+      db.tracks.count().catch((err) => {
+        console.warn("Failed to count tracks:", err);
+        return 0;
+      }),
+      db.fileIndex.count().catch((err) => {
+        console.warn("Failed to count fileIndex:", err);
+        return 0;
+      }),
+      db.scanRuns.count().catch((err) => {
+        console.warn("Failed to count scanRuns:", err);
+        return 0;
+      }),
+      db.directoryHandles.count().catch((err) => {
+        console.warn("Failed to count directoryHandles:", err);
+        return 0;
+      }),
+    ]);
+
+    return {
+      libraryRoots,
+      tracks,
+      fileIndex,
+      scanRuns,
+      directoryHandles,
+    };
+  } catch (error) {
+    console.error("Failed to get storage stats:", error);
+    // Return default values instead of throwing
+    return {
+      libraryRoots: 0,
+      tracks: 0,
+      fileIndex: 0,
+      scanRuns: 0,
+      directoryHandles: 0,
+    };
+  }
+}
+
+/**
+ * Perform comprehensive cleanup
+ */
+export async function performCleanup(options: {
+  keepRecentScanRuns?: number;
+  cleanupOrphaned?: boolean;
+}): Promise<{
+  scanRunsDeleted: number;
+  orphanedDeleted: number;
+}> {
+  const results = {
+    scanRunsDeleted: 0,
+    orphanedDeleted: 0,
+  };
+
+  try {
+    // Cleanup old scan runs
+    if (options.keepRecentScanRuns !== undefined) {
+      const scanResult = await cleanupOldScanRuns(options.keepRecentScanRuns);
+      results.scanRunsDeleted = scanResult.deleted;
+    }
+
+    // Cleanup orphaned entries
+    if (options.cleanupOrphaned) {
+      // Get current library root ID if available
+      try {
+        const { getCurrentLibraryRoot } = await import("./storage");
+        const currentRoot = await getCurrentLibraryRoot();
+        const orphanResult = await cleanupOrphanedFileIndex(currentRoot?.id);
+        results.orphanedDeleted = orphanResult.deleted;
+      } catch (error) {
+        console.error("Failed to cleanup orphaned entries:", error);
+        // Continue - this is not critical
+      }
+    }
+
+    return results;
+  } catch (error) {
+    console.error("Failed to perform cleanup:", error);
+    throw error;
+  }
+}
+

@@ -1,0 +1,161 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for version calculation
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        run: yarn build
+
+      - name: Calculate version
+        id: version
+        run: |
+          VERSION=$(node scripts/version.js)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Calculated version: $VERSION"
+
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          node scripts/release-notes.js "${{ steps.version.outputs.version }}" > release-notes.md
+          echo "Release notes generated"
+
+      - name: Upload release notes artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          retention-days: 30
+
+      - name: Update CHANGELOG.md
+        run: |
+          node scripts/update-changelog.js "${{ steps.version.outputs.version }}" release-notes.md
+
+      - name: Commit version and changelog updates
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add package.json CHANGELOG.md
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: bump version to ${{ steps.version.outputs.version }} [skip ci]"
+            git push
+          else
+            echo "No changes to commit"
+          fi
+
+      - name: Create git tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          # Check if tag already exists
+          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "Tag v${{ steps.version.outputs.version }} already exists, skipping"
+          else
+            git tag -a "v${{ steps.version.outputs.version }}" -m "Release v${{ steps.version.outputs.version }}"
+            git push origin "v${{ steps.version.outputs.version }}"
+          fi
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './out'
+
+      - name: Create zip artifact
+        run: |
+          cd out
+          zip -r "../ai-playlist-generator-v${{ steps.version.outputs.version }}.zip" . -x "*.git*" "*.DS_Store"
+          cd ..
+        continue-on-error: true
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-zip-v${{ steps.version.outputs.version }}
+          path: ai-playlist-generator-v${{ steps.version.outputs.version }}.zip
+          retention-days: 30
+        continue-on-error: true
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version from build job
+        id: version
+        run: |
+          echo "version=${{ needs.build.outputs.version }}" >> $GITHUB_OUTPUT
+
+      - name: Download zip artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-zip-v${{ steps.version.outputs.version }}
+          path: .
+        continue-on-error: true
+
+      - name: Download release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: .
+        continue-on-error: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          body_path: release-notes.md
+          files: |
+            ai-playlist-generator-v${{ steps.version.outputs.version }}.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true

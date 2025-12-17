@@ -1,0 +1,186 @@
+/**
+ * Batched metadata parsing and saving for large libraries
+ * 
+ * Processes files in batches and saves incrementally to prevent timeouts
+ * and improve UI responsiveness for very large libraries (10k+ files).
+ */
+
+import type { LibraryFile } from "@/lib/library-selection";
+import { parseMetadataForFiles, type MetadataProgressCallback } from "./metadata-parser";
+import type { MetadataResult } from "./metadata";
+import { saveTrackMetadata } from "@/db/storage";
+import { isQuotaExceededError, getStorageQuotaInfo } from "@/db/storage-errors";
+
+export interface BatchedParseOptions {
+  batchSize?: number; // Files per batch (default: 500)
+  concurrency?: number; // Concurrent parsing tasks per batch (default: 3)
+  saveAfterEachBatch?: boolean; // Save to IndexedDB after each batch (default: true)
+}
+
+export interface BatchedParseProgress {
+  batch: number;
+  totalBatches: number;
+  parsed: number;
+  total: number;
+  errors: number;
+  saved: number;
+  currentFile?: string;
+  estimatedTimeRemaining?: number; // seconds
+}
+
+export type BatchedParseProgressCallback = (progress: BatchedParseProgress) => void;
+
+/**
+ * Parse metadata for files in batches and save incrementally
+ * 
+ * This prevents browser timeouts for very large libraries by:
+ * 1. Processing files in smaller batches (default: 500)
+ * 2. Saving to IndexedDB after each batch
+ * 3. Yielding control between batches to keep UI responsive
+ * 
+ * @param files Array of library files to parse
+ * @param libraryRootId Library root ID for saving tracks
+ * @param onProgress Progress callback
+ * @param options Batch processing options
+ * @returns Promise resolving to array of all metadata results
+ */
+export async function parseMetadataBatched(
+  files: LibraryFile[],
+  libraryRootId: string,
+  onProgress?: BatchedParseProgressCallback,
+  options: BatchedParseOptions = {}
+): Promise<MetadataResult[]> {
+  const {
+    batchSize = 500,
+    concurrency = 3,
+    saveAfterEachBatch = true,
+  } = options;
+
+  if (files.length === 0) {
+    return [];
+  }
+
+  const totalBatches = Math.ceil(files.length / batchSize);
+  const allResults: MetadataResult[] = [];
+  let totalParsed = 0;
+  let totalErrors = 0;
+  let totalSaved = 0;
+  const startTime = Date.now();
+
+  console.log(`Starting batched metadata parsing: ${files.length} files in ${totalBatches} batches of ${batchSize}`);
+
+  for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+    const batchStart = batchIndex * batchSize;
+    const batchEnd = Math.min(batchStart + batchSize, files.length);
+    const batchFiles = files.slice(batchStart, batchEnd);
+    const batchNumber = batchIndex + 1;
+
+    console.log(`Processing batch ${batchNumber}/${totalBatches}: files ${batchStart + 1}-${batchEnd} of ${files.length}`);
+
+    // Parse this batch
+    const batchResults: MetadataResult[] = [];
+    const batchOnProgress: MetadataProgressCallback = (progress) => {
+      const globalParsed = totalParsed + progress.parsed;
+      const globalErrors = totalErrors + progress.errors;
+
+      // Calculate estimated time remaining
+      const elapsed = (Date.now() - startTime) / 1000; // seconds
+      const rate = globalParsed / elapsed; // files per second
+      const remaining = files.length - globalParsed;
+      const estimatedTimeRemaining = rate > 0 ? Math.round(remaining / rate) : undefined;
+
+      onProgress?.({
+        batch: batchNumber,
+        totalBatches,
+        parsed: globalParsed,
+        total: files.length,
+        errors: globalErrors,
+        saved: totalSaved,
+        currentFile: progress.currentFile,
+        estimatedTimeRemaining,
+      });
+    };
+
+    try {
+      const results = await parseMetadataForFiles(batchFiles, batchOnProgress, concurrency);
+      batchResults.push(...results);
+      
+      const batchSuccessCount = results.filter((r) => !r.error && r.tags).length;
+      const batchErrorCount = results.filter((r) => r.error).length;
+      
+      totalParsed += batchFiles.length;
+      totalErrors += batchErrorCount;
+
+      console.log(`Batch ${batchNumber} complete: ${batchSuccessCount} successful, ${batchErrorCount} errors`);
+
+      // Save this batch to IndexedDB if enabled
+      if (saveAfterEachBatch && batchSuccessCount > 0) {
+        try {
+          await saveTrackMetadata(
+            results,
+            libraryRootId,
+            (saveProgress) => {
+              // Progress is already handled by batchOnProgress
+            }
+          );
+          
+          totalSaved += batchSuccessCount;
+          console.log(`Batch ${batchNumber} saved: ${batchSuccessCount} tracks to IndexedDB`);
+        } catch (err) {
+          console.error(`Error saving batch ${batchNumber}:`, err);
+          
+          // Handle quota errors
+          if (isQuotaExceededError(err)) {
+            const quotaInfo = await getStorageQuotaInfo();
+            const quotaMessage = quotaInfo
+              ? `Storage quota exceeded while saving batch ${batchNumber}. You're using ${quotaInfo.usagePercent.toFixed(1)}% of available storage.`
+              : `Storage quota exceeded while saving batch ${batchNumber}.`;
+            
+            // Re-throw with context
+            throw new Error(`${quotaMessage} Please clean up old data and try again.`);
+          }
+          
+          // Re-throw other errors
+          throw err;
+        }
+      }
+
+      allResults.push(...batchResults);
+
+      // Yield control between batches to keep UI responsive
+      // Longer delay for larger batches to ensure UI updates
+      if (batchIndex < totalBatches - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    } catch (err) {
+      console.error(`Error processing batch ${batchNumber}:`, err);
+      
+      // If saving failed, we still have the parsed results
+      // Continue with next batch but log the error
+      allResults.push(...batchResults);
+      
+      // Re-throw quota errors to stop processing
+      if (isQuotaExceededError(err)) {
+        throw err;
+      }
+      
+      // For other errors, continue but log them
+      // This allows partial success for large libraries
+    }
+  }
+
+  // Final progress update
+  onProgress?.({
+    batch: totalBatches,
+    totalBatches,
+    parsed: totalParsed,
+    total: files.length,
+    errors: totalErrors,
+    saved: totalSaved,
+  });
+
+  console.log(`Batched parsing complete: ${allResults.length} results, ${totalSaved} saved, ${totalErrors} errors`);
+
+  return allResults;
+}
+

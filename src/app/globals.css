@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-size: 16px;
+  --background: #ffffff;
+  --foreground: oklch(0.145 0 0);
+  --radius: 0.625rem;
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+}
+
+/* Figma Theme Variables */
+[data-theme="dark"] {
+  --app-bg: #000000;
+  --app-primary: #ffffff;
+  --app-secondary: #a1a1aa;
+  --app-tertiary: #71717a;
+  --app-surface: #18181b;
+  --app-surface-hover: #27272a;
+  --app-border: #3f3f46;
+  --app-hover: #27272a;
+  --accent-primary: #e91e63;
+  --accent-secondary: #c2185b;
+  --accent-hover: #f06292;
+}
+
+[data-theme="light"] {
+  --app-bg: #f5f5f5;
+  --app-primary: #18181b;
+  --app-secondary: #52525b;
+  --app-tertiary: #71717a;
+  --app-surface: #ffffff;
+  --app-surface-hover: #e4e4e7;
+  --app-border: #d4d4d8;
+  --app-hover: #e4e4e7;
+  --accent-primary: #e91e63;
+  --accent-secondary: #c2185b;
+  --accent-hover: #f06292;
+}
+
+/* Default to dark theme - will be overridden by data-theme attribute */
+:root:not([data-theme]) {
+  --app-bg: #000000;
+  --app-primary: #ffffff;
+  --app-secondary: #a1a1aa;
+  --app-tertiary: #71717a;
+  --app-surface: #18181b;
+  --app-surface-hover: #27272a;
+  --app-border: #3f3f46;
+  --app-hover: #27272a;
+  --accent-primary: #e91e63;
+  --accent-secondary: #c2185b;
+  --accent-hover: #f06292;
+}
+
+html {
+  font-size: var(--font-size);
+}
+
+body {
+  color: var(--app-primary);
+  background: var(--app-bg);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
