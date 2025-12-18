@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [0.4.0] - 2025-12-18
+
+### Added
+
+- add integration for common LLMs, improve tempo and flow arc editing, normalize genres
+
+### Fixed
+
+- fix type errors in build script
+
 ## [0.3.0] - 2025-12-18
 
 ### Added
