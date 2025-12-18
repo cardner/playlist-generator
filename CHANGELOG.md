@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [0.3.0] - 2025-12-18
+
+### Added
+
+- add button to start new collection creation after a saved collection is present
+
 ## [0.2.1] - 2025-12-17
 
 ### Fixed
