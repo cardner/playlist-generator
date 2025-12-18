@@ -8,8 +8,11 @@ import { db } from "@/db/schema";
 import { PlaylistWhySummary } from "./PlaylistWhySummary";
 import { TrackReasonChips } from "./TrackReasonChips";
 import { PlaylistExport } from "./PlaylistExport";
+import { FlowArcEditor } from "./FlowArcEditor";
 import { generateVariant, type VariantType } from "@/features/playlists/variants";
 import { generatePlaylistTitle } from "@/features/playlists/naming";
+import { orderTracks } from "@/features/playlists/ordering";
+import { buildMatchingIndex } from "@/features/library/summarization";
 import {
   Play,
   Music,
@@ -31,6 +34,7 @@ import {
   Disc,
   FileMusic,
   Tag,
+  GripVertical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AlertCircle } from "lucide-react";
@@ -168,6 +172,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   const [pendingArtists, setPendingArtists] = useState<string[]>([]);
   const [pendingAlbums, setPendingAlbums] = useState<string[]>([]);
   const [pendingTracks, setPendingTracks] = useState<string[]>([]);
+  const [showFlowArcEditor, setShowFlowArcEditor] = useState(false);
 
   const checkIfSaved = useCallback(async () => {
     const saved = await isPlaylistSaved(playlist.id);
@@ -425,6 +430,65 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     }
   }
 
+  async function handleFlowArcUpdate(updatedStrategy: typeof playlist.strategy) {
+    setIsRegenerating(true);
+    try {
+      // Re-order tracks based on updated strategy
+      const request = JSON.parse(
+        sessionStorage.getItem("playlist-request") || "{}"
+      ) as PlaylistRequest;
+      
+      // Build matching index
+      const matchingIndex = await buildMatchingIndex(libraryRootId);
+      
+      // Re-order tracks using the updated strategy
+      const ordered = orderTracks(
+        playlist.trackSelections,
+        updatedStrategy,
+        request,
+        matchingIndex
+      );
+
+      // Update playlist with new ordering
+      const updatedPlaylist: typeof playlist = {
+        ...playlist,
+        strategy: updatedStrategy,
+        orderedTracks: ordered.tracks,
+        trackFileIds: ordered.tracks.map((t) => t.trackFileId),
+      };
+
+      setPlaylist(updatedPlaylist);
+
+      // Update sessionStorage
+      const serializable = {
+        ...updatedPlaylist,
+        summary: {
+          ...updatedPlaylist.summary,
+          genreMix: Object.fromEntries(updatedPlaylist.summary.genreMix),
+          tempoMix: Object.fromEntries(updatedPlaylist.summary.tempoMix),
+          artistMix: Object.fromEntries(updatedPlaylist.summary.artistMix),
+        },
+      };
+      sessionStorage.setItem("generated-playlist", JSON.stringify(serializable));
+    } catch (error) {
+      console.error("Failed to update flow arc:", error);
+    } finally {
+      setIsRegenerating(false);
+    }
+  }
+
+  function handleFlowArcReorder(reorderedSections: typeof playlist.strategy.orderingPlan.sections) {
+    // Update strategy with reordered sections
+    const updatedStrategy = {
+      ...playlist.strategy,
+      orderingPlan: {
+        ...playlist.strategy.orderingPlan,
+        sections: reorderedSections,
+      },
+    };
+    handleFlowArcUpdate(updatedStrategy);
+  }
+
   async function handleRemoveTrack(trackFileId: string) {
     setIsRegenerating(true);
     try {
@@ -597,6 +661,66 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
             <p className="text-app-secondary text-sm md:text-base mt-2">
               {playlist.description || subtitle}
             </p>
+            
+            {/* Validation and Explanation */}
+            {(playlist.validation || playlist.explanation) && (
+              <div className="mt-4 space-y-3">
+                {/* Validation Score */}
+                {playlist.validation && (
+                  <div className="p-3 bg-app-hover rounded-sm border border-app-border">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-app-primary text-sm font-medium">Validation Score</span>
+                      <span className={cn(
+                        "text-sm font-semibold",
+                        playlist.validation.score >= 0.8 ? "text-green-500" :
+                        playlist.validation.score >= 0.6 ? "text-yellow-500" :
+                        "text-red-500"
+                      )}>
+                        {(playlist.validation.score * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    {playlist.validation.issues.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {playlist.validation.issues.map((issue, idx) => (
+                          <div key={idx} className="flex items-start gap-2 text-sm text-yellow-500">
+                            <AlertCircle className="size-4 mt-0.5 flex-shrink-0" />
+                            <span>{issue}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {playlist.validation.strengths.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {playlist.validation.strengths.map((strength, idx) => (
+                          <div key={idx} className="flex items-start gap-2 text-sm text-green-500">
+                            <Check className="size-4 mt-0.5 flex-shrink-0" />
+                            <span>{strength}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {/* Explanation */}
+                {playlist.explanation && (
+                  <div className="p-4 bg-app-hover rounded-sm border border-app-border">
+                    <h3 className="text-app-primary text-sm font-medium uppercase tracking-wider mb-2 flex items-center gap-2">
+                      <Sparkles className="size-4 text-accent-primary" />
+                      Why This Playlist Works
+                    </h3>
+                    <p className="text-app-secondary text-sm leading-relaxed whitespace-pre-line">
+                      {playlist.explanation.explanation}
+                    </p>
+                    {playlist.explanation.flowDescription && (
+                      <p className="text-app-tertiary text-xs mt-3 italic">
+                        {playlist.explanation.flowDescription}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {!isSaved && (
@@ -629,6 +753,14 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
 
         {/* Variant Buttons */}
         <div className="flex flex-wrap gap-2 mt-4">
+          <button
+            onClick={() => setShowFlowArcEditor(!showFlowArcEditor)}
+            disabled={isRegenerating}
+            className="flex items-center gap-2 px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm disabled:opacity-50"
+          >
+            <GripVertical className="size-4" />
+            {showFlowArcEditor ? "Hide" : "Edit"} Flow Arc
+          </button>
           <button
             onClick={() => handleVariant("calmer")}
             disabled={isRegenerating}
@@ -668,6 +800,17 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
             </button>
           )}
         </div>
+
+        {/* Flow Arc Editor */}
+        {showFlowArcEditor && (
+          <div className="mt-4 pt-4 border-t border-app-border">
+            <FlowArcEditor
+              strategy={playlist.strategy}
+              onUpdate={handleFlowArcUpdate}
+              onReorder={handleFlowArcReorder}
+            />
+          </div>
+        )}
 
         {/* Inline Editor */}
         {showInlineEditor && (

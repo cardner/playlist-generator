@@ -175,28 +175,143 @@ Return ONLY the JSON object, no other text.`;
 /**
  * Call LLM API (placeholder - implement with your LLM provider)
  */
-async function callLLM(prompt: string): Promise<string> {
-  // TODO: Implement actual LLM API call
-  // This is a placeholder that would call OpenAI, Anthropic, or another provider
-  // For now, we'll throw an error to trigger fallback
-  
-  // Example structure:
-  // const response = await fetch('https://api.openai.com/v1/chat/completions', {
-  //   method: 'POST',
-  //   headers: {
-  //     'Authorization': `Bearer ${apiKey}`,
-  //     'Content-Type': 'application/json',
-  //   },
-  //   body: JSON.stringify({
-  //     model: 'gpt-4',
-  //     messages: [{ role: 'user', content: prompt }],
-  //     response_format: { type: 'json_object' },
-  //   }),
-  // });
-  // const data = await response.json();
-  // return data.choices[0].message.content;
+async function callLLM(
+  prompt: string,
+  provider: string,
+  apiKey: string
+): Promise<string> {
+  // Implement LLM API calls based on provider
+  switch (provider) {
+    case "openai":
+      return callOpenAI(prompt, apiKey);
+    case "gemini":
+      return callGemini(prompt, apiKey);
+    case "claude":
+      return callClaude(prompt, apiKey);
+    case "local":
+      return callLocalLLM(prompt, apiKey);
+    default:
+      throw new Error(`Unsupported LLM provider: ${provider}`);
+  }
+}
 
-  throw new Error("LLM API not configured");
+async function callOpenAI(prompt: string, apiKey: string): Promise<string> {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini", // Using a more cost-effective model
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+      temperature: 0.7,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
+    throw new Error(`OpenAI API error: ${error.error?.message || response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.choices[0]?.message?.content || "";
+}
+
+async function callGemini(prompt: string, apiKey: string): Promise<string> {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: prompt,
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.7,
+          responseMimeType: "application/json",
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
+    throw new Error(`Gemini API error: ${error.error?.message || response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+}
+
+async function callClaude(prompt: string, apiKey: string): Promise<string> {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "claude-3-haiku-20240307", // Using cost-effective model
+      max_tokens: 4096,
+      messages: [
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
+    throw new Error(`Claude API error: ${error.error?.message || response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.content?.[0]?.text || "";
+}
+
+async function callLocalLLM(prompt: string, apiKey: string): Promise<string> {
+  // For local services like Ollama, LM Studio, etc.
+  // The apiKey can be used as the base URL or auth token depending on the service
+  // Default to common Ollama endpoint if apiKey looks like a URL, otherwise use as-is
+  
+  const baseUrl = apiKey.startsWith("http") ? apiKey : `http://localhost:11434`;
+  const endpoint = apiKey.startsWith("http") 
+    ? `${apiKey}/api/generate` 
+    : `${baseUrl}/api/generate`;
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "llama2", // Default model, can be configured
+      prompt: prompt,
+      stream: false,
+      format: "json",
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Local LLM API error: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.response || "";
 }
 
 /**
@@ -400,8 +515,13 @@ export async function getStrategy(
 ): Promise<PlaylistStrategy> {
   const appSettings = settings || getSettings();
 
-  // If LLM is not enabled, use fallback
-  if (!appSettings.allowLLM) {
+  // Check if LLM is requested and configured
+  const llmConfig = request.llmConfig;
+  const apiKey = llmConfig?.apiKey;
+  const useLLM = request.agentType === "llm" && llmConfig && apiKey && llmConfig.provider;
+  
+  // Fallback to built-in agents if LLM not configured
+  if (!useLLM || !llmConfig || !apiKey) {
     return fallbackStrategy(request, summary);
   }
 
@@ -409,8 +529,13 @@ export async function getStrategy(
     // Build prompt
     const prompt = buildPrompt(request, summary, appSettings);
 
-    // Call LLM
-    const response = await callLLM(prompt);
+    // Call LLM with provider-specific configuration
+    // TypeScript now knows llmConfig and apiKey are defined due to the checks above
+    const response = await callLLM(
+      prompt,
+      llmConfig.provider,
+      apiKey
+    );
 
     // Extract JSON
     const jsonStr = extractJSON(response);

@@ -51,6 +51,7 @@ self.onmessage = async (event: MessageEvent<MetadataWorkerRequest>) => {
       bitrate: metadata.format.bitrate,
       sampleRate: metadata.format.sampleRate,
       channels: metadata.format.numberOfChannels,
+      bpm: metadata.common.bpm ? Math.round(metadata.common.bpm) : undefined,
       ...extractCodecInfo(metadata.format),
     };
 

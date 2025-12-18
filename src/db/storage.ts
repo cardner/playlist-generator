@@ -20,6 +20,10 @@ export type {
 import type { LibraryRoot } from "@/lib/library-selection";
 import type { FileIndexEntry } from "@/features/library/scanning";
 import type { MetadataResult } from "@/features/library/metadata";
+import { getNormalizedGenresWithStats, type GenreWithStats } from "@/features/library/genre-normalization";
+
+// Re-export GenreWithStats for convenience
+export type { GenreWithStats } from "@/features/library/genre-normalization";
 
 /**
  * Save or update library root
@@ -348,6 +352,52 @@ export async function getAllTracks(): Promise<TrackRecord[]> {
 }
 
 /**
+ * Update tempo (BPM) for a specific track
+ */
+export async function updateTrackTempo(
+  trackFileId: string,
+  libraryRootId: string,
+  bpm: number
+): Promise<void> {
+  const id = getCompositeId(trackFileId, libraryRootId);
+  const existing = await db.tracks.get(id);
+  if (!existing) {
+    throw new Error(`Track not found: ${trackFileId}`);
+  }
+  await db.tracks.update(id, {
+    tech: {
+      ...existing.tech,
+      bpm: Math.round(bpm),
+    },
+    updatedAt: Date.now(),
+  });
+}
+
+/**
+ * Update tempo (BPM) for multiple tracks
+ */
+export async function updateTracksTempo(
+  updates: Array<{ trackFileId: string; libraryRootId: string; bpm: number }>
+): Promise<void> {
+  const now = Date.now();
+  await Promise.all(
+    updates.map(async ({ trackFileId, libraryRootId, bpm }) => {
+      const id = getCompositeId(trackFileId, libraryRootId);
+      const existing = await db.tracks.get(id);
+      if (existing) {
+        await db.tracks.update(id, {
+          tech: {
+            ...existing.tech,
+            bpm: Math.round(bpm),
+          },
+          updatedAt: now,
+        });
+      }
+    })
+  );
+}
+
+/**
  * Create a scan run record
  * Uses a more robust ID generation to prevent collisions
  */
@@ -535,6 +585,16 @@ export async function getAllTrackTitles(libraryRootId?: string): Promise<string[
 }
 
 export async function getAllGenres(libraryRootId?: string): Promise<string[]> {
+  const genresWithStats = await getAllGenresWithStats(libraryRootId);
+  return genresWithStats.map((g) => g.normalized);
+}
+
+/**
+ * Get all normalized genres with statistics (track counts)
+ */
+export async function getAllGenresWithStats(
+  libraryRootId?: string
+): Promise<GenreWithStats[]> {
   let tracks: TrackRecord[];
 
   if (libraryRootId) {
@@ -543,13 +603,6 @@ export async function getAllGenres(libraryRootId?: string): Promise<string[]> {
     tracks = await db.tracks.toArray();
   }
 
-  const genreSet = new Set<string>();
-  for (const track of tracks) {
-    for (const genre of track.tags.genres) {
-      genreSet.add(genre);
-    }
-  }
-
-  return Array.from(genreSet).sort();
+  return getNormalizedGenresWithStats(tracks);
 }
 

@@ -29,6 +29,7 @@ export interface TechInfo {
   bitrate?: number;
   sampleRate?: number;
   channels?: number;
+  bpm?: number; // Beats per minute (tempo)
 }
 
 /**

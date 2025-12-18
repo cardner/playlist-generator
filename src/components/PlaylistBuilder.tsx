@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { PlaylistRequest, PlaylistRequestErrors } from "@/types/playlist";
-import { getAllGenres, getAllArtists, getAllAlbums, getAllTrackTitles, getCurrentLibraryRoot, getAllCollections, getCurrentCollectionId } from "@/db/storage";
+import { getAllGenres, getAllGenresWithStats, getAllArtists, getAllAlbums, getAllTrackTitles, getCurrentLibraryRoot, getAllCollections, getCurrentCollectionId } from "@/db/storage";
 import type { LibraryRootRecord } from "@/db/schema";
+import type { GenreWithStats } from "@/features/library/genre-normalization";
 import {
   savePlaylistDraft,
   loadPlaylistDraft,
@@ -30,6 +31,8 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AgentSelector } from "./AgentSelector";
+import type { AgentType, LLMConfig } from "@/types/playlist";
 
 interface ChipInputProps {
   values: string[];
@@ -38,6 +41,8 @@ interface ChipInputProps {
   suggestions?: string[];
   error?: string;
   icon?: React.ReactNode;
+  showCounts?: boolean;
+  genreStats?: GenreWithStats[];
 }
 
 function ChipInput({
@@ -47,6 +52,8 @@ function ChipInput({
   suggestions = [],
   error,
   icon,
+  showCounts = false,
+  genreStats = [],
 }: ChipInputProps) {
   const [inputValue, setInputValue] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -76,6 +83,13 @@ function ChipInput({
   const filteredSuggestions = suggestions.filter(
     (s) => !values.includes(s) && s.toLowerCase().includes(inputValue.toLowerCase())
   );
+
+  // Get track count for a genre if showing counts
+  const getTrackCount = (genre: string): number | undefined => {
+    if (!showCounts || genreStats.length === 0) return undefined;
+    const stat = genreStats.find((g) => g.normalized === genre);
+    return stat?.trackCount;
+  };
 
   return (
     <div className="space-y-2">
@@ -112,16 +126,24 @@ function ChipInput({
         </div>
         {showSuggestions && filteredSuggestions.length > 0 && (
           <div className="absolute z-10 w-full mt-1 bg-app-surface border border-app-border rounded-sm shadow-lg max-h-48 overflow-y-auto">
-            {filteredSuggestions.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                onClick={() => handleAdd(suggestion)}
-                className="w-full px-4 py-2 text-left text-app-primary hover:bg-app-hover transition-colors"
-              >
-                {suggestion}
-              </button>
-            ))}
+            {filteredSuggestions.map((suggestion) => {
+              const trackCount = getTrackCount(suggestion);
+              return (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => handleAdd(suggestion)}
+                  className="w-full px-4 py-2 text-left text-app-primary hover:bg-app-hover transition-colors flex items-center justify-between"
+                >
+                  <span>{suggestion}</span>
+                  {trackCount !== undefined && (
+                    <span className="text-app-tertiary text-xs ml-2">
+                      ({trackCount} {trackCount === 1 ? 'track' : 'tracks'})
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -170,6 +192,7 @@ export function PlaylistBuilder({ onGenerate }: PlaylistBuilderProps) {
   const [collections, setCollections] = useState<LibraryRootRecord[]>([]);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [genres, setGenres] = useState<string[]>([]);
+  const [genresWithStats, setGenresWithStats] = useState<GenreWithStats[]>([]);
   const [artists, setArtists] = useState<string[]>([]);
   const [albums, setAlbums] = useState<string[]>([]);
   const [trackTitles, setTrackTitles] = useState<string[]>([]);
@@ -191,6 +214,8 @@ export function PlaylistBuilder({ onGenerate }: PlaylistBuilderProps) {
     suggestedArtists: [],
     suggestedAlbums: [],
     suggestedTracks: [],
+    agentType: "built-in",
+    llmConfig: undefined,
   });
 
   const [errors, setErrors] = useState<PlaylistRequestErrors>({});
@@ -224,8 +249,9 @@ export function PlaylistBuilder({ onGenerate }: PlaylistBuilderProps) {
     async function loadGenres() {
       try {
         setIsLoadingGenres(true);
-        const libraryGenres = await getAllGenres(selectedCollectionId || undefined);
-        setGenres(libraryGenres);
+        const genresStats = await getAllGenresWithStats(selectedCollectionId || undefined);
+        setGenresWithStats(genresStats);
+        setGenres(genresStats.map((g) => g.normalized));
       } catch (error) {
         console.error("Failed to load genres:", error);
       } finally {
@@ -416,6 +442,8 @@ export function PlaylistBuilder({ onGenerate }: PlaylistBuilderProps) {
           suggestions={genres}
           error={errors.genres}
           icon={<Music className="size-4" />}
+          showCounts={true}
+          genreStats={genresWithStats}
         />
         {isLoadingGenres && (
           <p className="text-app-tertiary text-sm mt-2">Loading genres...</p>
@@ -770,6 +798,20 @@ export function PlaylistBuilder({ onGenerate }: PlaylistBuilderProps) {
             </p>
           )}
         </div>
+      </div>
+
+      {/* Agent Selection */}
+      <div>
+        <AgentSelector
+          agentType={formData.agentType || "built-in"}
+          llmConfig={formData.llmConfig}
+          onAgentTypeChange={(type) =>
+            setFormData({ ...formData, agentType: type })
+          }
+          onLLMConfigChange={(config) =>
+            setFormData({ ...formData, llmConfig: config })
+          }
+        />
       </div>
 
       {/* Surprise */}

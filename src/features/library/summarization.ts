@@ -9,6 +9,7 @@ import { getAllTracks, getCurrentLibraryRoot } from "@/db/storage";
 import { db } from "@/db/schema";
 import type { PlaylistRequest } from "@/types/playlist";
 import type { AppSettings } from "@/lib/settings";
+import { buildGenreMappings, normalizeGenre } from "@/features/library/genre-normalization";
 
 export interface GenreCount {
   genre: string;
@@ -50,7 +51,7 @@ export interface LibrarySummary {
 }
 
 export interface MatchingIndex {
-  // Maps genre to array of trackFileIds
+  // Maps normalized genre to array of trackFileIds
   byGenre: Map<string, string[]>;
   
   // Maps artist to array of trackFileIds
@@ -68,11 +69,18 @@ export interface MatchingIndex {
   
   // Track metadata lookup
   trackMetadata: Map<string, {
-    genres: string[];
+    genres: string[]; // Original genres
+    normalizedGenres: string[]; // Normalized genres
     artist: string;
     duration?: number;
     tempoBucket?: TempoBucket;
   }>;
+  
+  // Genre normalization mappings
+  genreMappings: {
+    originalToNormalized: Map<string, string>;
+    normalizedToOriginals: Map<string, Set<string>>;
+  };
 }
 
 export interface LLMPayload {
@@ -244,6 +252,9 @@ export async function buildMatchingIndex(
     tracks = await getAllTracks();
   }
 
+  // Build genre normalization mappings
+  const { originalToNormalized, normalizedToOriginals } = buildGenreMappings(tracks);
+
   const byGenre = new Map<string, string[]>();
   const byArtist = new Map<string, string[]>();
   const byTempoBucket = new Map<TempoBucket, string[]>();
@@ -253,6 +264,7 @@ export async function buildMatchingIndex(
     string,
     {
       genres: string[];
+      normalizedGenres: string[];
       artist: string;
       duration?: number;
       tempoBucket?: TempoBucket;
@@ -269,12 +281,21 @@ export async function buildMatchingIndex(
     const trackFileId = track.trackFileId;
     allTrackIds.add(trackFileId);
 
-    // Index by genre
-    for (const genre of track.tags.genres) {
-      if (!byGenre.has(genre)) {
-        byGenre.set(genre, []);
+    // Normalize genres for this track
+    const normalizedGenres = track.tags.genres.map((g) => {
+      return originalToNormalized.get(g) || normalizeGenre(g);
+    });
+
+    // Index by normalized genre (aggregate all original variations)
+    for (const normalizedGenre of normalizedGenres) {
+      if (!byGenre.has(normalizedGenre)) {
+        byGenre.set(normalizedGenre, []);
       }
-      byGenre.get(genre)!.push(trackFileId);
+      // Only add if not already in the list (avoid duplicates)
+      const genreTracks = byGenre.get(normalizedGenre)!;
+      if (!genreTracks.includes(trackFileId)) {
+        genreTracks.push(trackFileId);
+      }
     }
 
     // Index by artist
@@ -284,8 +305,8 @@ export async function buildMatchingIndex(
     }
     byArtist.get(artist)!.push(trackFileId);
 
-    // Index by tempo bucket (currently all unknown)
-    const tempoBucket = getTempoBucket(undefined); // No BPM available yet
+    // Index by tempo bucket (use stored BPM if available)
+    const tempoBucket = getTempoBucket(track.tech?.bpm);
     byTempoBucket.get(tempoBucket)!.push(trackFileId);
 
     // Index by duration bucket
@@ -296,12 +317,13 @@ export async function buildMatchingIndex(
     }
     byDurationBucket.get(durationBucket)!.push(trackFileId);
 
-    // Store metadata
+    // Store metadata with both original and normalized genres
     trackMetadata.set(trackFileId, {
-      genres: track.tags.genres,
+      genres: track.tags.genres, // Original genres
+      normalizedGenres, // Normalized genres
       artist: track.tags.artist || "Unknown Artist",
       duration,
-      tempoBucket,
+      tempoBucket, // Calculated from track.tech?.bpm
     });
   }
 
@@ -312,6 +334,10 @@ export async function buildMatchingIndex(
     byDurationBucket,
     allTrackIds,
     trackMetadata,
+    genreMappings: {
+      originalToNormalized,
+      normalizedToOriginals,
+    },
   };
 }
 

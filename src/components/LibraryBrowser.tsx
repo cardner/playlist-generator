@@ -8,9 +8,12 @@ import {
   searchTracks,
   filterTracksByGenre,
   getAllGenres,
+  getAllGenresWithStats,
   clearLibraryData,
 } from "@/db/storage";
 import { getCurrentLibraryRoot } from "@/db/storage";
+import type { GenreWithStats } from "@/features/library/genre-normalization";
+import { normalizeGenre, buildGenreMappings } from "@/features/library/genre-normalization";
 
 type SortField = "title" | "artist" | "duration";
 type SortDirection = "asc" | "desc";
@@ -27,6 +30,8 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
   const [sortField, setSortField] = useState<SortField>("title");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [genres, setGenres] = useState<string[]>([]);
+  const [genresWithStats, setGenresWithStats] = useState<GenreWithStats[]>([]);
+  const [genreMappings, setGenreMappings] = useState<{ originalToNormalized: Map<string, string> } | null>(null);
   const [isLoading, setIsLoading] = useState(false); // Start as false - only load when we have a root
   const [libraryRootId, setLibraryRootId] = useState<string | undefined>();
   const [hasLibrary, setHasLibrary] = useState<boolean | null>(null); // null = checking, false = no library, true = has library
@@ -67,6 +72,8 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
       setTracks([]);
       setFilteredTracks([]);
       setGenres([]);
+      setGenresWithStats([]);
+      setGenreMappings(null);
       setIsLoading(false);
     }
   }, [refreshTrigger, hasLibrary]);
@@ -86,13 +93,21 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
       );
     }
 
-    // Apply genre filter
+    // Apply genre filter (using normalized genres)
     if (selectedGenre) {
-      filtered = filtered.filter((track) =>
-        track.tags.genres.some(
-          (g) => g.toLowerCase() === selectedGenre.toLowerCase()
-        )
-      );
+      const normalizedSelected = normalizeGenre(selectedGenre);
+      filtered = filtered.filter((track) => {
+        // Get normalized genres for this track
+        const trackNormalizedGenres = track.tags.genres.map((g) => {
+          if (genreMappings?.originalToNormalized) {
+            return genreMappings.originalToNormalized.get(g) || normalizeGenre(g);
+          }
+          return normalizeGenre(g);
+        });
+        return trackNormalizedGenres.some(
+          (g) => g.toLowerCase() === normalizedSelected.toLowerCase()
+        );
+      });
     }
 
     // Apply sorting
@@ -123,7 +138,7 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
     });
 
     setFilteredTracks(filtered);
-  }, [tracks, searchQuery, selectedGenre, sortField, sortDirection]);
+  }, [tracks, searchQuery, selectedGenre, sortField, sortDirection, genreMappings]);
 
   async function loadTracks() {
     setIsLoading(true);
@@ -133,6 +148,8 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
         // No library root, don't load
         setTracks([]);
         setGenres([]);
+        setGenresWithStats([]);
+        setGenreMappings(null);
         setIsLoading(false);
         return;
       }
@@ -143,8 +160,14 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
       const collectionTracks = await getTracks(root.id);
       setTracks(collectionTracks);
 
-      const allGenres = await getAllGenres(root.id);
-      setGenres(allGenres);
+      // Load normalized genres with stats
+      const genresStats = await getAllGenresWithStats(root.id);
+      setGenresWithStats(genresStats);
+      setGenres(genresStats.map((g) => g.normalized));
+
+      // Build genre mappings for filtering
+      const mappings = buildGenreMappings(collectionTracks);
+      setGenreMappings({ originalToNormalized: mappings.originalToNormalized });
     } catch (error) {
       console.error("Failed to load tracks:", error);
     } finally {
@@ -166,6 +189,8 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
       setTracks([]);
       setFilteredTracks([]);
       setGenres([]);
+      setGenresWithStats([]);
+      setGenreMappings(null);
       alert("Library data cleared successfully.");
     } catch (error) {
       console.error("Failed to clear library:", error);
@@ -240,9 +265,9 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
               className="w-full px-4 py-3 bg-app-hover text-app-primary rounded-sm border border-app-border focus:outline-none focus:border-accent-primary"
             >
               <option value="">All Genres</option>
-              {genres.map((genre) => (
-                <option key={genre} value={genre}>
-                  {genre}
+              {genresWithStats.map((genreStat) => (
+                <option key={genreStat.normalized} value={genreStat.normalized}>
+                  {genreStat.normalized} ({genreStat.trackCount} {genreStat.trackCount === 1 ? 'track' : 'tracks'})
                 </option>
               ))}
             </select>
