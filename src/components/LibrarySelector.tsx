@@ -533,21 +533,31 @@ export function LibrarySelector({
           {!isLoading ? (
             <>
               {currentRoot && currentCollectionId ? (
-                <button
-                  onClick={() => {
-                    // Trigger scan by notifying parent that library is selected
-                    // This will cause LibraryScanner to show scan UI and allow scanning
-                    if (currentRoot) {
-                      onLibrarySelected?.(currentRoot);
-                      onStartScan?.();
-                    }
-                  }}
-                  disabled={isLoading || permissionStatus !== "granted"}
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-accent-primary text-white rounded-sm hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
-                >
-                  <Music className="size-4" />
-                  <span>Start Scanning</span>
-                </button>
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                  <button
+                    onClick={() => {
+                      // Trigger scan by notifying parent that library is selected
+                      // This will cause LibraryScanner to show scan UI and allow scanning
+                      if (currentRoot) {
+                        onLibrarySelected?.(currentRoot);
+                        onStartScan?.();
+                      }
+                    }}
+                    disabled={isLoading || permissionStatus !== "granted"}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-accent-primary text-white rounded-sm hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
+                  >
+                    <Music className="size-4" />
+                    <span>Start Scanning</span>
+                  </button>
+                  <button
+                    onClick={handleChooseFolder}
+                    disabled={isLoading}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
+                  >
+                    <FolderOpen className="size-4" />
+                    <span>Add New Collection</span>
+                  </button>
+                </div>
               ) : (
                 <>
                   <button
