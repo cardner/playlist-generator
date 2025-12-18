@@ -66,7 +66,7 @@ export async function generatePlaylistFromStrategy(
   if (useLLM && llmConfig && apiKey) {
     try {
       const { buildMatchingIndex: buildTempIndex } = await import("@/features/library/summarization");
-      const tempIndex = await buildMatchingIndex(libraryRootId);
+      const tempIndex = await buildTempIndex(libraryRootId);
       
       // Get tracks that match requested genres (prioritize these)
       const genreMatchedTrackIds = new Set<string>();

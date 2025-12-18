@@ -14,10 +14,12 @@ import {
 import { cn } from "@/lib/utils";
 import type { PlaylistStrategy } from "@/features/playlists/strategy";
 
+type SectionArray = PlaylistStrategy['orderingPlan']['sections'];
+
 interface FlowArcEditorProps {
   strategy: PlaylistStrategy;
   onUpdate: (updatedStrategy: PlaylistStrategy) => void;
-  onReorder: (reorderedSections: typeof strategy.orderingPlan.sections) => void;
+  onReorder: (reorderedSections: SectionArray) => void;
 }
 
 type SectionName = "warmup" | "build" | "peak" | "cooldown" | "transition" | string;
@@ -169,7 +171,20 @@ export function FlowArcEditor({ strategy, onUpdate, onReorder }: FlowArcEditorPr
     if (draggedIndex !== null) {
       const normalized = normalizePositions(sections);
       handleUpdate(normalized);
-      onReorder(normalized);
+      // Convert to SectionArray type (only valid enum names)
+      const validSections: SectionArray = normalized.map((s) => {
+        const validName = ["warmup", "peak", "cooldown", "transition"].includes(s.name)
+          ? (s.name as "warmup" | "peak" | "cooldown" | "transition")
+          : "transition"; // Fallback to transition for custom names
+        return {
+          name: validName,
+          startPosition: s.startPosition,
+          endPosition: s.endPosition,
+          tempoTarget: s.tempoTarget,
+          energyLevel: s.energyLevel,
+        };
+      });
+      onReorder(validSections);
     }
     setDraggedIndex(null);
   };
@@ -188,8 +203,22 @@ export function FlowArcEditor({ strategy, onUpdate, onReorder }: FlowArcEditorPr
       newSections[targetIndex],
       newSections[index],
     ];
-    handleUpdate(normalizePositions(newSections));
-    onReorder(normalizePositions(newSections));
+    const normalized = normalizePositions(newSections);
+    handleUpdate(normalized);
+    // Convert to SectionArray type (only valid enum names)
+    const validSections: SectionArray = normalized.map((s) => {
+      const validName = ["warmup", "peak", "cooldown", "transition"].includes(s.name)
+        ? (s.name as "warmup" | "peak" | "cooldown" | "transition")
+        : "transition"; // Fallback to transition for custom names
+      return {
+        name: validName,
+        startPosition: s.startPosition,
+        endPosition: s.endPosition,
+        tempoTarget: s.tempoTarget,
+        energyLevel: s.energyLevel,
+      };
+    });
+    onReorder(validSections);
   };
 
   return (
