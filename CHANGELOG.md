@@ -12,6 +12,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [0.5.0] - 2025-12-19
+
+### Added
+
+- fix music preview player. still need to integrate playback UI into track list
+- add music discovery feature to playlist generation utilzing musicbrainz api
+
+### Fixed
+
+- fix undefined error for release note script
+
+### Other Changes
+
+- Merge pull request #2 from cardner/music-discovery
+- Merge pull request #1 from cardner/music-discovery
+
 ## [0.4.0] - 2025-12-18
 
 ### Added
