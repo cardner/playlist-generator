@@ -8,6 +8,7 @@
  */
 
 import type { MusicBrainzRecordingResult, MusicBrainzRecordingWithDetails } from './musicbrainz-types';
+import { logger } from '@/lib/logger';
 
 const MUSICBRAINZ_API_BASE = 'https://musicbrainz.org/ws/2';
 const USER_AGENT = 'AI-Playlist-Generator/1.0.0 (https://github.com/yourusername/ai-playlist-generator)';
@@ -143,9 +144,9 @@ export async function findSimilarRecordings(
 
     if (!response.ok) {
       if (response.status === 503) {
-        console.warn('MusicBrainz API rate limit exceeded, please wait');
+        logger.warn('MusicBrainz API rate limit exceeded, please wait');
       }
-      console.error('MusicBrainz API error:', response.status, response.statusText);
+      logger.error('MusicBrainz API error:', response.status, response.statusText);
       return [];
     }
 
@@ -190,7 +191,7 @@ export async function findSimilarRecordings(
 
     return recordings;
   } catch (error) {
-    console.error('Failed to query MusicBrainz:', error);
+    logger.error('Failed to query MusicBrainz:', error);
     return [];
   }
 }
@@ -213,7 +214,7 @@ export async function getRecordingDetails(
       if (response.status === 404) {
         return null;
       }
-      console.error('MusicBrainz API error:', response.status, response.statusText);
+      logger.error('MusicBrainz API error:', response.status, response.statusText);
       return null;
     }
 
@@ -244,7 +245,7 @@ export async function getRecordingDetails(
       })) || [],
     };
   } catch (error) {
-    console.error('Failed to get recording details:', error);
+    logger.error('Failed to get recording details:', error);
     return null;
   }
 }
@@ -278,7 +279,7 @@ export async function searchByArtistAndTitle(
     const response = await rateLimitedFetch(url);
 
     if (!response.ok) {
-      console.error('MusicBrainz API error:', response.status, response.statusText);
+      logger.error('MusicBrainz API error:', response.status, response.statusText);
       return [];
     }
 
@@ -303,7 +304,7 @@ export async function searchByArtistAndTitle(
       };
     });
   } catch (error) {
-    console.error('Failed to search MusicBrainz:', error);
+    logger.error('Failed to search MusicBrainz:', error);
     return [];
   }
 }
@@ -328,7 +329,7 @@ export async function findRecordingsByGenre(
     const response = await rateLimitedFetch(url);
 
     if (!response.ok) {
-      console.error('MusicBrainz API error:', response.status, response.statusText);
+      logger.error('MusicBrainz API error:', response.status, response.statusText);
       return [];
     }
 
@@ -353,7 +354,7 @@ export async function findRecordingsByGenre(
       };
     });
   } catch (error) {
-    console.error('Failed to find recordings by genre:', error);
+    logger.error('Failed to find recordings by genre:', error);
     return [];
   }
 }
@@ -409,7 +410,7 @@ export async function findRelatedArtists(
 
     return relatedArtists;
   } catch (error) {
-    console.error('Failed to find related artists:', error);
+    logger.error('Failed to find related artists:', error);
     return [];
   }
 }

@@ -1,110 +1,168 @@
+/**
+ * Track Sample Player Component
+ * 
+ * A standalone audio player component with visible UI for playing 30-second
+ * track previews. This component displays track information, play/pause
+ * controls, and a countdown timer.
+ * 
+ * Features:
+ * - Visible UI with track info and controls
+ * - Play/pause button with loading state
+ * - 30-second countdown timer display
+ * - Platform badge (Apple Music)
+ * - Error display
+ * - Close button
+ * 
+ * This component is used as a separate player (not inline) and can be
+ * displayed in a modal or separate section. It's useful for cases where
+ * you want a more prominent audio player UI.
+ * 
+ * @example
+ * ```typescript
+ * <TrackSamplePlayer
+ *   trackInfo={{
+ *     title: "Bohemian Rhapsody",
+ *     artist: "Queen",
+ *     album: "A Night at the Opera"
+ *   }}
+ *   sampleResult={sampleResult}
+ *   onClose={() => setShowPlayer(false)}
+ * />
+ * ```
+ */
+
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect } from "react";
 import { Play, Pause, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SampleResult } from "@/features/audio-preview/types";
+import { useAudioPreview } from "@/hooks/useAudioPreview";
+import { useAudioTimer } from "@/hooks/useAudioTimer";
 
+/**
+ * Props for TrackSamplePlayer component
+ */
 interface TrackSamplePlayerProps {
+  /** Track information for display */
   trackInfo: {
+    /** Track title */
     title: string;
+    /** Artist name */
     artist: string;
+    /** Optional album name */
     album?: string;
   };
+  /** Sample result containing preview URL */
   sampleResult: SampleResult;
+  /** Optional callback when player is closed */
   onClose?: () => void;
 }
 
 /**
  * Track sample player component
  * 
- * Plays 30-second audio previews from iTunes with play/pause controls
+ * Plays 30-second audio previews from iTunes with a visible UI including
+ * play/pause controls, track information, and a countdown timer.
+ * 
+ * This component uses the same hooks as InlineAudioPlayer but provides
+ * a full UI experience. It's useful when you want a dedicated player
+ * component rather than inline playback.
  */
 export function TrackSamplePlayer({
   trackInfo,
   sampleResult,
   onClose,
 }: TrackSamplePlayerProps) {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [timeRemaining, setTimeRemaining] = useState(30);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // Use audio preview hook for audio element management
+  const {
+    audioRef,
+    isLoading,
+    error: audioError,
+    play: playAudio,
+    pause: pauseAudio,
+    stop: stopAudio,
+    isPlaying,
+  } = useAudioPreview({
+    sampleResult,
+    autoPlay: false, // User must click play
+    onPlay: () => {
+      // Playback started
+    },
+    onPause: () => {
+      // Playback paused
+    },
+    onEnded: () => {
+      // Playback ended - close after delay
+      if (onClose) {
+        setTimeout(onClose, 500);
+      }
+    },
+    onError: (error) => {
+      // Error handled by hook
+    },
+    onLoaded: () => {
+      // Audio loaded
+    },
+  });
 
-  // Validate URL and reset state when URL changes
+  // Use timer hook for 30-second countdown
+  const { remainingSeconds, startTimer, pauseTimer, stopTimer } = useAudioTimer({
+    duration: 30000, // 30 seconds
+    onTimerEnd: () => {
+      stopAudio();
+      if (onClose) {
+        setTimeout(onClose, 500);
+      }
+    },
+  });
+
+  // Sync timer with playback state
   useEffect(() => {
-    console.log('[TrackSamplePlayer] sampleResult:', sampleResult);
-    console.log('[TrackSamplePlayer] URL:', sampleResult.url);
-    
-    if (!sampleResult.url || !sampleResult.url.startsWith('http')) {
-      console.error('[TrackSamplePlayer] Invalid preview URL:', sampleResult.url);
-      setError('Invalid preview URL');
-      setIsLoading(false);
-      return;
+    if (isPlaying) {
+      startTimer();
+    } else {
+      pauseTimer();
     }
-    // Reset state when URL changes
-    setIsLoading(true);
-    setError(null);
-    setIsPlaying(false);
-    setTimeRemaining(30);
-  }, [sampleResult]);
+  }, [isPlaying, startTimer, pauseTimer]);
 
-  const handleStop = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
+  // Reset timer when component mounts or sampleResult changes
+  useEffect(() => {
+    stopTimer();
+  }, [sampleResult.url, stopTimer]);
+
+  /**
+   * Handle play button click
+   */
+  const handlePlay = async () => {
+    try {
+      await playAudio();
+    } catch (err) {
+      // Error already handled by useAudioPreview hook
     }
-    setIsPlaying(false);
-    setTimeRemaining(30);
+  };
+
+  /**
+   * Handle pause button click
+   */
+  const handlePause = () => {
+    pauseAudio();
+  };
+
+  /**
+   * Handle stop/close
+   */
+  const handleStop = () => {
+    stopTimer();
+    stopAudio();
     if (onClose) {
       setTimeout(onClose, 500);
     }
-  }, [onClose]);
-
-  // Handle 30-second limit
-  useEffect(() => {
-    if (isPlaying) {
-      timerRef.current = setInterval(() => {
-        setTimeRemaining((prev) => {
-          if (prev <= 1) {
-            handleStop();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    }
-
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, [isPlaying, handleStop]);
-
-  const handlePlay = () => {
-    if (audioRef.current) {
-      audioRef.current.play().catch((err) => {
-        console.error('Play failed:', err);
-        setError('Failed to play audio preview');
-      });
-      setIsPlaying(true);
-    }
   };
 
-  const handlePause = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      setIsPlaying(false);
-    }
-  };
-
+  /**
+   * Get platform badge component
+   */
   const getPlatformBadge = () => {
     return (
       <span className={cn("px-2 py-0.5 rounded-sm text-xs font-medium", "bg-blue-500/10 text-blue-500")}>
@@ -113,7 +171,8 @@ export function TrackSamplePlayer({
     );
   };
 
-  if (error) {
+  // Error state UI
+  if (audioError) {
     return (
       <div className="p-4 bg-app-surface border border-app-border rounded-sm">
         <div className="flex items-center justify-between mb-2">
@@ -130,11 +189,12 @@ export function TrackSamplePlayer({
             </button>
           )}
         </div>
-        <div className="text-red-500 text-sm mt-2">{error}</div>
+        <div className="text-red-500 text-sm mt-2">{audioError}</div>
       </div>
     );
   }
 
+  // Main player UI
   return (
     <div className="p-4 bg-app-surface border border-app-border rounded-sm">
       <div className="flex items-start justify-between mb-3">
@@ -147,7 +207,7 @@ export function TrackSamplePlayer({
         </div>
         {onClose && (
           <button
-            onClick={onClose}
+            onClick={handleStop}
             className="p-1 text-app-secondary hover:text-app-primary transition-colors shrink-0"
           >
             <X className="size-4" />
@@ -186,7 +246,7 @@ export function TrackSamplePlayer({
           )}
           {!isLoading && isPlaying && (
             <div className="text-app-secondary text-sm">
-              {timeRemaining} seconds remaining
+              {remainingSeconds} seconds remaining
             </div>
           )}
           {!isLoading && !isPlaying && (
@@ -201,31 +261,6 @@ export function TrackSamplePlayer({
           ref={audioRef} 
           src={sampleResult.url} 
           preload="auto"
-          onLoadedData={() => {
-            console.log('[TrackSamplePlayer] Audio loaded successfully');
-            setIsLoading(false);
-          }}
-          onError={(e) => {
-            const audio = e.currentTarget;
-            console.error('[TrackSamplePlayer] Audio load error:', e);
-            console.error('[TrackSamplePlayer] Audio error details:', {
-              error: audio.error,
-              networkState: audio.networkState,
-              readyState: audio.readyState,
-              src: audio.src,
-              expectedUrl: sampleResult.url,
-              sampleResult: sampleResult,
-            });
-            setError('Failed to load audio preview');
-            setIsLoading(false);
-          }}
-          onEnded={() => {
-            setIsPlaying(false);
-            setTimeRemaining(30);
-            if (onClose) {
-              setTimeout(onClose, 500);
-            }
-          }}
         />
       ) : (
         <div className="text-red-500 text-sm">No valid preview URL available</div>
@@ -233,4 +268,3 @@ export function TrackSamplePlayer({
     </div>
   );
 }
-

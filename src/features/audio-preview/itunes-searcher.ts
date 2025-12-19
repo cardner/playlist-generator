@@ -6,6 +6,7 @@
  */
 
 import type { TrackInfo, SampleResult } from './types';
+import { logger } from '@/lib/logger';
 
 /**
  * Search iTunes API for a track
@@ -41,7 +42,7 @@ export async function searchiTunes(
     });
 
     if (!response.ok) {
-      console.error(`iTunes API error: ${response.status} ${response.statusText}`);
+      logger.error(`iTunes API error: ${response.status} ${response.statusText}`);
       return null;
     }
 
@@ -49,7 +50,6 @@ export async function searchiTunes(
     const results = data.results || [];
 
     if (results.length === 0) {
-      console.log(`[iTunes] No results found for: "${artist}" - "${title}"`);
       return null;
     }
 
@@ -94,7 +94,6 @@ export async function searchiTunes(
 
     // Check if best match has a preview URL
     if (!bestMatch.previewUrl) {
-      console.log(`[iTunes] No preview URL available for: "${artist}" - "${title}"`);
       return null;
     }
 
@@ -111,7 +110,7 @@ export async function searchiTunes(
       previewStartTime: 0, // iTunes previews always start at beginning
     };
   } catch (error) {
-    console.error('iTunes search failed:', error);
+    logger.error('iTunes search failed:', error);
     return null;
   }
 }

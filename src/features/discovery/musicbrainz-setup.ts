@@ -6,6 +6,7 @@
  */
 
 import { isMusicBrainzConfigured, getMusicBrainzConfig } from '@/lib/musicbrainz-config';
+import { logger } from '@/lib/logger';
 
 /**
  * Check if MusicBrainz database is accessible
@@ -23,7 +24,7 @@ export async function checkMusicBrainzConnection(): Promise<boolean> {
 
     return response.ok;
   } catch (error) {
-    console.error('MusicBrainz connection check failed:', error);
+    logger.error('MusicBrainz connection check failed:', error);
     return false;
   }
 }
@@ -60,7 +61,7 @@ export async function validateMusicBrainzSchema(): Promise<{
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error('Schema validation failed:', error);
+    logger.error('Schema validation failed:', error);
     return {
       valid: false,
       errors: [`Schema validation error: ${error instanceof Error ? error.message : 'Unknown error'}`],
@@ -93,7 +94,7 @@ export async function getMusicBrainzStats(): Promise<{
     const data = await response.json();
     return data.stats || null;
   } catch (error) {
-    console.error('Failed to get MusicBrainz stats:', error);
+    logger.error('Failed to get MusicBrainz stats:', error);
     return null;
   }
 }
