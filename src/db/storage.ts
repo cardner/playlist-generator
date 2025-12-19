@@ -283,6 +283,17 @@ export async function getFileIndexEntries(
 }
 
 /**
+ * Get file index entry by trackFileId and libraryRootId
+ */
+export async function getFileIndexEntry(
+  trackFileId: string,
+  libraryRootId: string
+): Promise<FileIndexRecord | undefined> {
+  const id = getCompositeId(trackFileId, libraryRootId);
+  return db.fileIndex.get(id);
+}
+
+/**
  * Get all file index entries (across all library roots)
  */
 export async function getAllFileIndexEntries(): Promise<FileIndexRecord[]> {

@@ -107,6 +107,18 @@ export interface SavedPlaylistRecord {
   libraryRootId?: string;
   createdAt: number;
   updatedAt: number;
+  discoveryTracks?: Array<{
+    position: number;
+    mbid: string;
+    title: string;
+    artist: string;
+    album?: string;
+    genres: string[];
+    duration?: number;
+    explanation: string;
+    inspiringTrackId: string;
+    section?: string; // Section assignment from ordering
+  }>;
 }
 
 /**

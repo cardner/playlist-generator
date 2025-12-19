@@ -487,9 +487,27 @@ export function downloadFile(
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
+  
+  // Handle cleanup after download starts
+  const cleanup = () => {
+    // Delay revocation to ensure download has started
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 100);
+  };
+  
+  // Clean up on both success and error
+  link.addEventListener('load', cleanup);
+  link.addEventListener('error', (e) => {
+    console.warn('Download link error:', e);
+    cleanup();
+  });
+  
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  
+  // Fallback cleanup if events don't fire
+  cleanup();
 }
 

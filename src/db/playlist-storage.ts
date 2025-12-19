@@ -35,6 +35,18 @@ function playlistToRecord(playlist: GeneratedPlaylist, libraryRootId?: string): 
     libraryRootId,
     createdAt: playlist.createdAt,
     updatedAt: Date.now(),
+    discoveryTracks: playlist.discoveryTracks?.map(dt => ({
+      position: dt.position,
+      mbid: dt.discoveryTrack.mbid,
+      title: dt.discoveryTrack.title,
+      artist: dt.discoveryTrack.artist,
+      album: dt.discoveryTrack.album,
+      genres: dt.discoveryTrack.genres,
+      duration: dt.discoveryTrack.duration,
+      explanation: dt.discoveryTrack.explanation || "",
+      inspiringTrackId: dt.inspiringTrackId,
+      section: dt.section,
+    })),
   };
 }
 
@@ -76,6 +88,22 @@ function recordToPlaylist(record: SavedPlaylistRecord): GeneratedPlaylist {
     createdAt: record.createdAt,
     totalDuration: record.summary.totalDuration,
     trackSelections: [], // Selections not stored, will be empty
+    discoveryTracks: record.discoveryTracks?.map(dt => ({
+      position: dt.position,
+      discoveryTrack: {
+        mbid: dt.mbid,
+        title: dt.title,
+        artist: dt.artist,
+        album: dt.album,
+        genres: dt.genres,
+        duration: dt.duration,
+        score: 0.8, // Default score (not stored)
+        inspiringTrackId: dt.inspiringTrackId,
+        explanation: dt.explanation,
+      },
+      inspiringTrackId: dt.inspiringTrackId,
+      section: dt.section,
+    })),
   };
 }
 

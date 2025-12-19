@@ -61,6 +61,12 @@ export interface GeneratedPlaylist {
   createdAt: number;
   validation?: import("@/types/playlist").PlaylistValidation;
   explanation?: import("@/types/playlist").PlaylistExplanation;
+  discoveryTracks?: Array<{
+    position: number; // Position in playlist (after library track)
+    discoveryTrack: import("@/features/discovery/types").DiscoveryTrack;
+    inspiringTrackId: string;
+    section?: string; // Assigned by ordering engine (warmup/peak/cooldown)
+  }>;
 }
 
 /**
@@ -1305,20 +1311,199 @@ export async function generatePlaylist(
   }
   const playlistId = `playlist-${Math.abs(hash).toString(36)}-${Date.now()}`;
 
+  // Discovery tracks integration (before ordering)
+  const discoveryTracks: Array<{
+    position: number;
+    discoveryTrack: import("@/features/discovery/types").DiscoveryTrack;
+    inspiringTrackId: string;
+    section?: string;
+  }> = [];
+
+  if (request.enableDiscovery) {
+    try {
+      const { findDiscoveryTracks } = await import("@/features/discovery/discovery-engine");
+      const { generateExplanation } = await import("@/features/discovery/explanation-generator");
+      
+      // Discovery frequency: Always 1:1 ratio (one discovery track per library track)
+      const shouldIncludeDiscovery = (index: number): boolean => {
+        return true; // Always include discovery track for each library track
+      };
+
+      // Find discovery tracks based on user selections from collection
+      // Prioritize tracks that match selected genres, albums, or tracks
+      const discoveryPromises: Promise<void>[] = [];
+      const usedMbids = new Set<string>();
+
+      // Get tracks that match user's selections (genres, artists, albums, tracks)
+      const selectedTracksForDiscovery = selected.filter(sel => {
+        const track = sel.track;
+        
+        // Check if track matches selected genres
+        const matchesGenre = request.genres.length === 0 || 
+          request.genres.some(genre =>
+            track.tags.genres.some(tg =>
+              tg.toLowerCase().includes(genre.toLowerCase()) ||
+              genre.toLowerCase().includes(tg.toLowerCase())
+            )
+          );
+        
+        // Check if track matches selected artists
+        const matchesArtist = !request.suggestedArtists || request.suggestedArtists.length === 0 ||
+          request.suggestedArtists.some(artist =>
+            track.tags.artist?.toLowerCase().includes(artist.toLowerCase())
+          );
+        
+        // Check if track matches selected albums
+        const matchesAlbum = !request.suggestedAlbums || request.suggestedAlbums.length === 0 ||
+          request.suggestedAlbums.some(album =>
+            track.tags.album?.toLowerCase().includes(album.toLowerCase())
+          );
+        
+        // Check if track matches selected tracks
+        const matchesTrack = !request.suggestedTracks || request.suggestedTracks.length === 0 ||
+          request.suggestedTracks.some(st =>
+            track.tags.title?.toLowerCase().includes(st.toLowerCase())
+          );
+        
+        return matchesGenre || matchesArtist || matchesAlbum || matchesTrack;
+      });
+
+      // Use selected tracks if available, otherwise use all selected tracks
+      const tracksToDiscoverFrom = selectedTracksForDiscovery.length > 0
+        ? selectedTracksForDiscovery
+        : selected;
+
+      // Process discovery tracks sequentially to respect rate limits
+      // This ensures each request completes before starting the next one
+      for (let i = 0; i < tracksToDiscoverFrom.length; i++) {
+        const originalIndex = selected.findIndex(s => s.trackFileId === tracksToDiscoverFrom[i].trackFileId);
+        
+        // Always include discovery track (1:1 ratio)
+        if (originalIndex >= 0 && !shouldIncludeDiscovery(originalIndex)) {
+          continue;
+        }
+
+        const libraryTrack = tracksToDiscoverFrom[i].track;
+        
+        try {
+          // Wait for discovery tracks to be found (rate limiting handled in musicbrainz-client)
+          const candidates = await findDiscoveryTracks({
+            libraryTrack,
+            userLibrary: allTracks,
+            request,
+            strategy,
+            excludeMbids: Array.from(usedMbids),
+          });
+
+          if (candidates.length === 0) {
+            continue;
+          }
+
+          // Select best candidate
+          const bestCandidate = candidates[0];
+          usedMbids.add(bestCandidate.mbid);
+
+          // Generate explanation that references user's selections
+          const explanation = await generateExplanation(
+            bestCandidate,
+            libraryTrack,
+            request,
+            request.llmConfig
+          );
+
+          bestCandidate.explanation = explanation;
+
+          // Add to discovery tracks array
+          discoveryTracks.push({
+            position: originalIndex >= 0 ? originalIndex + 1 : i + 1,
+            discoveryTrack: bestCandidate,
+            inspiringTrackId: libraryTrack.trackFileId,
+          });
+        } catch (error) {
+          console.warn(`Failed to find discovery track for ${libraryTrack.tags.title}:`, error);
+          // Continue with next track even if this one fails
+        }
+      }
+      
+      // Deduplicate discovery tracks by MBID (keep first occurrence)
+      const seenMbids = new Set<string>();
+      const deduplicatedDiscoveryTracks: typeof discoveryTracks = [];
+      for (const dt of discoveryTracks) {
+        if (!seenMbids.has(dt.discoveryTrack.mbid)) {
+          seenMbids.add(dt.discoveryTrack.mbid);
+          deduplicatedDiscoveryTracks.push(dt);
+        }
+      }
+      // Replace discoveryTracks array with deduplicated version
+      discoveryTracks.length = 0;
+      discoveryTracks.push(...deduplicatedDiscoveryTracks);
+    } catch (error) {
+      console.warn("Discovery track generation failed:", error);
+      // Continue without discovery tracks
+    }
+  }
+
   // Order tracks with arc and transitions
+  // Note: Discovery tracks will be inserted into the final playlist after ordering
   const ordered = orderTracks(selected, strategy, request, index);
+
+  // Build final track list with discovery tracks inserted
+  const finalTrackFileIds: string[] = [];
+  const finalOrderedTracks: typeof ordered.tracks = [];
+  
+  // Track which discovery tracks have already been added to prevent duplicates
+  const addedDiscoveryMbids = new Set<string>();
+  
+  // Insert discovery tracks after their inspiring tracks
+  for (let i = 0; i < ordered.tracks.length; i++) {
+    const orderedTrack = ordered.tracks[i];
+    finalTrackFileIds.push(orderedTrack.trackFileId);
+    finalOrderedTracks.push(orderedTrack);
+
+    // Check if there's a discovery track for this position
+    const discoveryTrack = discoveryTracks.find(
+      dt => dt.inspiringTrackId === orderedTrack.trackFileId
+    );
+
+    if (discoveryTrack && !addedDiscoveryMbids.has(discoveryTrack.discoveryTrack.mbid)) {
+      // Insert discovery track after the inspiring track
+      // Use a special marker ID for discovery tracks (mbid prefixed)
+      const discoveryTrackFileId = `discovery:${discoveryTrack.discoveryTrack.mbid}`;
+      finalTrackFileIds.push(discoveryTrackFileId);
+      
+      // Mark this discovery track as added to prevent duplicates
+      addedDiscoveryMbids.add(discoveryTrack.discoveryTrack.mbid);
+      
+      // Update discovery track with section information
+      discoveryTrack.section = orderedTrack.section;
+      
+      // Add to ordered tracks with same section as inspiring track
+      finalOrderedTracks.push({
+        trackFileId: discoveryTrackFileId,
+        position: finalOrderedTracks.length + 1,
+        section: orderedTrack.section, // Use same section as inspiring track
+        reasons: [{
+          type: "constraint" as const,
+          explanation: discoveryTrack.discoveryTrack.explanation || "Discovery track",
+          score: discoveryTrack.discoveryTrack.score,
+        }],
+        transitionScore: 0.8, // Good transition score
+      });
+    }
+  }
 
   return {
     id: playlistId,
     title: strategy.title,
     description: strategy.description,
-    trackFileIds: ordered.tracks.map((t) => t.trackFileId),
+    trackFileIds: finalTrackFileIds,
     trackSelections: selected, // Keep original selections for reference
-    orderedTracks: ordered.tracks, // Add ordered tracks with positions
+    orderedTracks: finalOrderedTracks,
     totalDuration: finalDuration,
     summary,
     strategy,
     createdAt: Date.now(),
+    discoveryTracks: discoveryTracks.length > 0 ? discoveryTracks : undefined,
   };
 }
 

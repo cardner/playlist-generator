@@ -283,6 +283,17 @@ function buildValidationPrompt(
     })
     .join("\n");
 
+  // Format discovery tracks if present
+  const discoveryTracksList = playlist.discoveryTracks
+    ? playlist.discoveryTracks
+        .slice(0, 20) // Limit discovery tracks
+        .map((dt, idx) => {
+          const dtrack = dt.discoveryTrack;
+          return `[DISCOVERY] "${dtrack.title}" by ${dtrack.artist} (${dtrack.genres.join(", ")}) - Suggested because: ${dtrack.explanation || "Similar to library track"}`;
+        })
+        .join("\n")
+    : "";
+
   // Format summary
   const genreMix = Array.from(playlist.summary.genreMix.entries())
     .map(([genre, count]) => `${genre}: ${count}`)
@@ -317,6 +328,7 @@ GENERATED PLAYLIST:
 
 TRACKS:
 ${tracksList}
+${discoveryTracksList ? `\nDISCOVERY TRACKS (not in user's library, suggested for exploration):\n${discoveryTracksList}` : ""}
 
 Evaluate:
 1. Does it match requested genres? (with tolerance for genre relationships)
@@ -325,6 +337,7 @@ Evaluate:
 4. Does it meet length requirements?
 5. Is there good diversity?
 6. Are there any obvious mismatches?
+${playlist.discoveryTracks && playlist.discoveryTracks.length > 0 ? "7. Do discovery tracks enhance the playlist and align with the user's preferences?" : ""}
 
 Return ONLY valid JSON matching this schema:
 {

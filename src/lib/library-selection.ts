@@ -439,7 +439,7 @@ export async function storeDirectoryHandle(
  * @param handleId Handle ID
  * @returns Promise resolving to directory handle or null
  */
-async function getDirectoryHandle(
+export async function getDirectoryHandle(
   handleId: string
 ): Promise<FileSystemDirectoryHandle | null> {
   try {
