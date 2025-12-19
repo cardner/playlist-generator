@@ -21,21 +21,42 @@ function getCommitsSinceLastTag() {
     let lastTag;
     try {
       lastTag = execSync('git describe --tags --abbrev=0', { encoding: 'utf8' }).trim();
+      if (!lastTag) {
+        throw new Error('No tag found');
+      }
     } catch (e) {
       // No tags exist, get all commits
-      lastTag = execSync('git rev-list --max-parents=0 HEAD', { encoding: 'utf8' }).trim();
+      try {
+        lastTag = execSync('git rev-list --max-parents=0 HEAD', { encoding: 'utf8' }).trim();
+        if (!lastTag) {
+          // No commits at all
+          return [];
+        }
+      } catch (e2) {
+        // No commits exist
+        return [];
+      }
     }
     
     // Get commits since last tag with full message
-    const commits = execSync(`git log ${lastTag}..HEAD --pretty=format:"%H|%s|%b"`, { encoding: 'utf8' })
-      .trim()
+    const logOutput = execSync(`git log ${lastTag}..HEAD --pretty=format:"%H|%s|%b"`, { encoding: 'utf8' }).trim();
+    
+    if (!logOutput) {
+      // No commits since last tag
+      return [];
+    }
+    
+    const commits = logOutput
       .split('\n')
       .filter(line => line.length > 0)
       .map(line => {
-        const [hash, subject, ...bodyParts] = line.split('|');
-        const body = bodyParts.join('|').trim();
+        const parts = line.split('|');
+        const hash = parts[0] || '';
+        const subject = parts[1] || '';
+        const body = parts.slice(2).join('|').trim();
         return { hash, subject, body };
-      });
+      })
+      .filter(commit => commit.hash && commit.subject); // Filter out invalid commits
     
     return commits;
   } catch (error) {
@@ -46,19 +67,24 @@ function getCommitsSinceLastTag() {
 
 // Parse conventional commit message
 function parseCommit(commit) {
-  const { subject, body } = commit;
-  const conventionalCommitRegex = /^(\w+)(\(.+\))?(!)?:\s*(.+)$/;
-  const match = subject.match(conventionalCommitRegex);
+  const { subject = '', body = '' } = commit;
   
-  const isBreaking = subject.includes('!') || body.includes('BREAKING CHANGE');
+  // Ensure subject is a string
+  const subjectStr = String(subject || '');
+  const bodyStr = String(body || '');
+  
+  const conventionalCommitRegex = /^(\w+)(\(.+\))?(!)?:\s*(.+)$/;
+  const match = subjectStr.match(conventionalCommitRegex);
+  
+  const isBreaking = subjectStr.includes('!') || bodyStr.includes('BREAKING CHANGE');
   
   if (!match) {
     return { 
       type: 'other', 
       scope: null,
       breaking: isBreaking, 
-      message: subject,
-      body: body,
+      message: subjectStr || 'No commit message',
+      body: bodyStr,
     };
   }
   
@@ -69,8 +95,8 @@ function parseCommit(commit) {
     type: type.toLowerCase(),
     scope,
     breaking: isBreaking,
-    message: message.trim(),
-    body: body,
+    message: (message || subjectStr).trim(),
+    body: bodyStr,
   };
 }
 
