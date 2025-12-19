@@ -839,12 +839,25 @@ export async function generatePlaylist(
   const rng = new SeededRandom(seedValue);
 
   // Calculate target duration
-  const targetDurationSeconds =
+  // In discovery mode, halve the target because each library track will get a discovery track
+  // So if user wants 30 tracks, we select 15 library tracks (which become 30 with discovery)
+  // If user wants 30 minutes, we select ~15 minutes of library tracks (which become ~30 with discovery)
+  const baseTargetDurationSeconds =
     request.length.type === "minutes"
       ? request.length.value * 60
       : request.length.value * 180; // Estimate 3 min per track
+  
+  const targetDurationSeconds = request.enableDiscovery
+    ? baseTargetDurationSeconds / 2 // Halve for discovery mode (each library track gets a discovery track)
+    : baseTargetDurationSeconds;
 
   const durationTolerance = targetDurationSeconds * 0.05; // ±5% tolerance
+  
+  // Adjust target track count for discovery mode
+  // In discovery mode, halve the target because each library track will get a discovery track
+  const targetTrackCount = request.enableDiscovery
+    ? Math.ceil(request.length.value / 2) // Halve for discovery mode
+    : request.length.value;
 
   // Get candidate tracks
   const candidateIds = new Set<string>();
@@ -974,14 +987,14 @@ export async function generatePlaylist(
   
   // Add suggested tracks first (up to a reasonable limit)
   const maxSuggestedTracks = request.length.type === "tracks" 
-    ? Math.min(suggestedCandidates.length, Math.floor(request.length.value * 0.4)) // Up to 40% of playlist
+    ? Math.min(suggestedCandidates.length, Math.floor(targetTrackCount * 0.4)) // Up to 40% of playlist
     : Math.min(suggestedCandidates.length, 15); // Or up to 15 tracks for duration-based playlists
   
   for (let i = 0; i < maxSuggestedTracks && i < suggestedCandidates.length; i++) {
     const track = suggestedCandidates[i];
     const remainingSlots =
       request.length.type === "tracks"
-        ? request.length.value - selected.length
+        ? targetTrackCount - selected.length
         : Math.ceil(
             (targetDurationSeconds - currentDuration) / 180
           );
@@ -1004,13 +1017,13 @@ export async function generatePlaylist(
         break;
       }
     } else {
-      if (selected.length >= request.length.value) {
+      if (selected.length >= targetTrackCount) {
         break;
       }
     }
   }
   const maxIterations = request.length.type === "tracks" 
-    ? request.length.value * 2 
+    ? targetTrackCount * 2 
     : 1000; // Safety limit
 
   for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -1032,7 +1045,7 @@ export async function generatePlaylist(
       }
     } else {
       // Track count target
-      if (selected.length >= request.length.value) {
+      if (selected.length >= targetTrackCount) {
         break;
       }
     }
@@ -1040,7 +1053,7 @@ export async function generatePlaylist(
     // Score remaining candidates
     const remainingSlots =
       request.length.type === "tracks"
-        ? request.length.value - selected.length
+        ? targetTrackCount - selected.length
         : Math.ceil(
             (targetDurationSeconds - currentDuration) / 180
           ); // Estimate slots
@@ -1149,7 +1162,7 @@ export async function generatePlaylist(
       if (availableArtists.length > 0) {
         // Try to add tracks first if we haven't reached the length limit
         const canAddMore = request.length.type === "tracks"
-          ? selected.length < request.length.value
+          ? selected.length < targetTrackCount
           : currentDuration < targetDurationSeconds + durationTolerance;
         
         if (canAddMore) {
@@ -1159,7 +1172,7 @@ export async function generatePlaylist(
             
             // Find a good track from this artist
             const remainingSlots = request.length.type === "tracks"
-              ? request.length.value - selected.length
+              ? targetTrackCount - selected.length
               : Math.ceil((targetDurationSeconds - currentDuration) / 180);
             
             for (const newTrack of newTracks) {
@@ -1182,7 +1195,7 @@ export async function generatePlaylist(
               uniqueArtists.add(newArtist);
               
               // Check if we've exceeded length limit
-              if (request.length.type === "tracks" && selected.length >= request.length.value) {
+              if (request.length.type === "tracks" && selected.length >= targetTrackCount) {
                 break;
               }
               if (request.length.type === "minutes" && currentDuration >= targetDurationSeconds + durationTolerance) {
@@ -1210,7 +1223,7 @@ export async function generatePlaylist(
               if (newTrack) {
                 const oldSelection = selected[i];
                 const remainingSlots = request.length.type === "tracks"
-                  ? request.length.value - selected.length + 1
+                  ? targetTrackCount - selected.length + 1
                   : Math.ceil((targetDurationSeconds - currentDuration + (oldSelection.track.tech?.durationSeconds || 180)) / 180);
                 
                 const newSelection = scoreTrack(
@@ -1243,7 +1256,7 @@ export async function generatePlaylist(
 
   // Trim to exact count if needed
   if (request.length.type === "tracks") {
-    const exactCount = request.length.value;
+    const exactCount = targetTrackCount;
     if (selected.length > exactCount) {
       // Remove lowest scoring tracks
       selected.sort((a, b) => b.score - a.score);

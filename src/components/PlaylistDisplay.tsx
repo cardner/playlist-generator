@@ -1055,16 +1055,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                           });
                           setSampleError(null);
                         } else {
-                          // Check if API keys are configured
-                          const { getAudioPreviewConfig } = await import("@/lib/audio-preview-config");
-                          const config = getAudioPreviewConfig();
-                          const hasConfig = !!(config.youtube?.apiKey || (config.spotify?.clientId && config.spotify?.clientSecret));
-                          
-                          if (!hasConfig) {
-                            setSampleError("Audio preview requires API keys. Please configure YouTube or Spotify credentials in settings.");
-                          } else {
-                            setSampleError("Preview not available for this track");
-                          }
+                          setSampleError("Preview not available for this track");
                           setTimeout(() => setSampleError(null), 8000);
                         }
                       } catch (error) {
@@ -1200,16 +1191,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                           });
                           setSampleError(null);
                         } else {
-                          // Check if API keys are configured
-                          const { getAudioPreviewConfig } = await import("@/lib/audio-preview-config");
-                          const config = getAudioPreviewConfig();
-                          const hasConfig = !!(config.youtube?.apiKey || (config.spotify?.clientId && config.spotify?.clientSecret));
-                          
-                          if (!hasConfig) {
-                            setSampleError("Audio preview requires API keys. Please configure YouTube or Spotify credentials in settings.");
-                          } else {
-                            setSampleError("Preview not available for this track");
-                          }
+                          setSampleError("Preview not available for this track");
                           setTimeout(() => setSampleError(null), 8000);
                         }
                       } catch (error) {

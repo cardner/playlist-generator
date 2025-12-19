@@ -388,8 +388,9 @@ export async function findRelatedArtists(
     }
 
     // Get artist details with relationships
-    // Use 'relations' instead of 'artist-relations' - the inc parameter should be 'relations' for artist resource
-    const artistUrl = `${MUSICBRAINZ_API_BASE}/artist/${artist.id}?inc=relations&fmt=json`;
+    // Note: 'relations' is not a valid inc parameter for artist resource
+    // Relationships are included by default in the artist response
+    const artistUrl = `${MUSICBRAINZ_API_BASE}/artist/${artist.id}?fmt=json`;
     const artistResponse = await rateLimitedFetch(artistUrl);
 
     if (!artistResponse.ok) {
