@@ -51,7 +51,7 @@ export function TrackReasonChips({
     : sortedReasons.slice(0, 4);
 
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap gap-1.5 items-start">
       {displayReasons.map((reason, index) => {
         const Icon = REASON_ICONS[reason.type] || Sparkles;
         const colorClass = REASON_COLORS[reason.type] || REASON_COLORS.surprise;
@@ -60,14 +60,14 @@ export function TrackReasonChips({
           <div
             key={index}
             className={cn(
-              "inline-flex items-center gap-1.5 px-2 py-1 rounded-sm border text-xs",
+              "inline-flex items-start gap-1.5 px-2 py-1 rounded-sm border text-xs",
               colorClass,
               compact && "text-xs px-1.5 py-0.5"
             )}
             title={reason.explanation}
           >
-            <Icon className={cn("size-3", compact && "size-2.5")} />
-            <span className="truncate max-w-[120px]">{reason.explanation}</span>
+            <Icon className={cn("size-3 flex-shrink-0 mt-0.5", compact && "size-2.5")} />
+            <span className="break-words leading-relaxed">{reason.explanation}</span>
           </div>
         );
       })}

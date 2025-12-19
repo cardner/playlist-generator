@@ -159,6 +159,7 @@ function ChipInput({
 
 interface PlaylistBuilderProps {
   onGenerate?: (request: PlaylistRequest) => void;
+  discoveryMode?: boolean;
 }
 
 const MOOD_SUGGESTIONS = [
@@ -187,7 +188,7 @@ const ACTIVITY_SUGGESTIONS = [
   "Cleaning",
 ];
 
-export function PlaylistBuilder({ onGenerate }: PlaylistBuilderProps) {
+export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistBuilderProps) {
   const router = useRouter();
   const [collections, setCollections] = useState<LibraryRootRecord[]>([]);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
@@ -208,7 +209,7 @@ export function PlaylistBuilder({ onGenerate }: PlaylistBuilderProps) {
     mood: [],
     activity: [],
     tempo: { bucket: "medium" },
-    surprise: 0.5,
+    surprise: discoveryMode ? 0.7 : 0.5,
     minArtists: undefined,
     disallowedArtists: [],
     suggestedArtists: [],
@@ -216,6 +217,8 @@ export function PlaylistBuilder({ onGenerate }: PlaylistBuilderProps) {
     suggestedTracks: [],
     agentType: "built-in",
     llmConfig: undefined,
+    enableDiscovery: discoveryMode,
+    discoveryFrequency: "every_other",
   });
 
   const [errors, setErrors] = useState<PlaylistRequestErrors>({});
@@ -243,6 +246,17 @@ export function PlaylistBuilder({ onGenerate }: PlaylistBuilderProps) {
       setFormData((prev) => ({ ...prev, ...draft }));
     }
   }, []);
+
+  // Ensure discovery is always enabled in discovery mode
+  useEffect(() => {
+    if (discoveryMode && !formData.enableDiscovery) {
+      setFormData((prev) => ({
+        ...prev,
+        enableDiscovery: true,
+        discoveryFrequency: prev.discoveryFrequency || "every_other",
+      }));
+    }
+  }, [discoveryMode, formData.enableDiscovery]);
 
   // Load genres from library
   useEffect(() => {
@@ -345,6 +359,23 @@ export function PlaylistBuilder({ onGenerate }: PlaylistBuilderProps) {
     e.preventDefault();
     setIsSubmitting(true);
 
+    // In discovery mode, require at least one selection (genres, artists, albums, or tracks)
+    if (discoveryMode) {
+      const hasGenres = (formData.genres || []).length > 0;
+      const hasArtists = (formData.suggestedArtists || []).length > 0;
+      const hasAlbums = (formData.suggestedAlbums || []).length > 0;
+      const hasTracks = (formData.suggestedTracks || []).length > 0;
+      
+      if (!hasGenres && !hasArtists && !hasAlbums && !hasTracks) {
+        setErrors({
+          ...errors,
+          genres: discoveryMode ? "Please select at least one genre, artist, album, or track from your collection to discover new music" : errors.genres,
+        });
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
     const validationErrors = validatePlaylistRequest(formData);
     setErrors(validationErrors);
 
@@ -359,20 +390,21 @@ export function PlaylistBuilder({ onGenerate }: PlaylistBuilderProps) {
     // Call onGenerate callback if provided
     if (onGenerate) {
       onGenerate(formData as PlaylistRequest);
+      setIsSubmitting(false);
     } else {
       // Store collection ID with the request
-    const requestWithCollection = {
-      ...formData,
-      collectionId: selectedCollectionId,
-    };
+      const requestWithCollection = {
+        ...formData,
+        collectionId: selectedCollectionId,
+      };
 
-    // Navigate to generating state
-    // Store request in sessionStorage for the result page
-    sessionStorage.setItem(
-      "playlist-request",
-      JSON.stringify(requestWithCollection)
-    );
-    router.push("/playlists/generating");
+      // Navigate to generating state
+      // Store request in sessionStorage for the result page
+      sessionStorage.setItem(
+        "playlist-request",
+        JSON.stringify(requestWithCollection)
+      );
+      router.push("/playlists/generating");
     }
   };
 
@@ -427,18 +459,40 @@ export function PlaylistBuilder({ onGenerate }: PlaylistBuilderProps) {
         </div>
       )}
 
-      {/* Genres */}
+      {/* Discovery Mode Introduction */}
+      {discoveryMode && (
+        <div className="border-2 border-accent-primary/30 rounded-sm p-4 bg-accent-primary/5 mb-6">
+          <div className="flex items-start gap-3">
+            <Sparkles className="size-5 text-accent-primary shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-2">
+              <h3 className="text-app-primary font-medium">
+                Discover New Music from Your Collection
+              </h3>
+              <p className="text-app-secondary text-sm">
+                Select genres, artists, albums, or tracks from your collection below. We&apos;ll use MusicBrainz to find similar new tracks that aren&apos;t in your library and add them to your playlist with explanations of why they were discovered and how they relate to your selections.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Genres - Prominent in discovery mode */}
       <div>
         <label className="flex items-center gap-2 text-app-primary mb-3">
           <Music className="size-5 text-accent-primary" />
           <span className="font-medium uppercase tracking-wider text-sm">
-            Genres
+            Select Genres from Your Collection
           </span>
         </label>
+        {discoveryMode && (
+          <p className="text-app-secondary text-sm mb-3">
+            Choose genres from your collection. We&apos;ll discover new tracks in these genres that aren&apos;t in your library.
+          </p>
+        )}
         <ChipInput
           values={formData.genres || []}
           onChange={(genres) => setFormData({ ...formData, genres })}
-          placeholder="Select or add genres..."
+          placeholder={discoveryMode ? "Select genres from your collection..." : "Select or add genres..."}
           suggestions={genres}
           error={errors.genres}
           icon={<Music className="size-4" />}
@@ -707,49 +761,53 @@ export function PlaylistBuilder({ onGenerate }: PlaylistBuilderProps) {
         />
       </div>
 
-      {/* Suggested Albums */}
-      <div>
-        <label className="flex items-center gap-2 text-app-primary mb-3">
-          <Music className="size-5 text-accent-primary" />
-          <span className="font-medium uppercase tracking-wider text-sm">
-            Include Albums
-          </span>
-        </label>
-        <p className="text-app-secondary text-sm mb-3">
-          Albums to prioritize/include in this playlist (optional)
-        </p>
-        <ChipInput
-          values={formData.suggestedAlbums || []}
-          onChange={(values) =>
-            setFormData({ ...formData, suggestedAlbums: values })
-          }
-          placeholder="Add album to include..."
-          suggestions={albums}
-          icon={<Music className="size-4" />}
-        />
-      </div>
+      {/* Suggested Albums - Shown in library mode only */}
+      {!discoveryMode && (
+        <div>
+          <label className="flex items-center gap-2 text-app-primary mb-3">
+            <Music className="size-5 text-accent-primary" />
+            <span className="font-medium uppercase tracking-wider text-sm">
+              Include Albums
+            </span>
+          </label>
+          <p className="text-app-secondary text-sm mb-3">
+            Albums to prioritize/include in this playlist (optional)
+          </p>
+          <ChipInput
+            values={formData.suggestedAlbums || []}
+            onChange={(values) =>
+              setFormData({ ...formData, suggestedAlbums: values })
+            }
+            placeholder="Add album to include..."
+            suggestions={albums}
+            icon={<Music className="size-4" />}
+          />
+        </div>
+      )}
 
-      {/* Suggested Tracks */}
-      <div>
-        <label className="flex items-center gap-2 text-app-primary mb-3">
-          <Music className="size-5 text-accent-primary" />
-          <span className="font-medium uppercase tracking-wider text-sm">
-            Include Tracks
-          </span>
-        </label>
-        <p className="text-app-secondary text-sm mb-3">
-          Specific tracks to include in this playlist (optional)
-        </p>
-        <ChipInput
-          values={formData.suggestedTracks || []}
-          onChange={(values) =>
-            setFormData({ ...formData, suggestedTracks: values })
-          }
-          placeholder="Add track name to include..."
-          suggestions={trackTitles}
-          icon={<Music className="size-4" />}
-        />
-      </div>
+      {/* Suggested Tracks - Shown in library mode only */}
+      {!discoveryMode && (
+        <div>
+          <label className="flex items-center gap-2 text-app-primary mb-3">
+            <Music className="size-5 text-accent-primary" />
+            <span className="font-medium uppercase tracking-wider text-sm">
+              Include Tracks
+            </span>
+          </label>
+          <p className="text-app-secondary text-sm mb-3">
+            Specific tracks to include in this playlist (optional)
+          </p>
+          <ChipInput
+            values={formData.suggestedTracks || []}
+            onChange={(values) =>
+              setFormData({ ...formData, suggestedTracks: values })
+            }
+            placeholder="Add track name to include..."
+            suggestions={trackTitles}
+            icon={<Music className="size-4" />}
+          />
+        </div>
+      )}
 
       {/* Artist Variety */}
       <div>
@@ -800,6 +858,78 @@ export function PlaylistBuilder({ onGenerate }: PlaylistBuilderProps) {
         </div>
       </div>
 
+      {/* Suggested Artists - Prominent in discovery mode, shown right after genres */}
+      {discoveryMode && (
+        <div>
+          <label className="flex items-center gap-2 text-app-primary mb-3">
+            <Users className="size-5 text-accent-primary" />
+            <span className="font-medium uppercase tracking-wider text-sm">
+              Select Artists from Your Collection
+            </span>
+          </label>
+          <p className="text-app-secondary text-sm mb-3">
+            Choose artists from your collection. We&apos;ll discover new tracks similar to these artists that aren&apos;t in your library.
+          </p>
+          <ChipInput
+            values={formData.suggestedArtists || []}
+            onChange={(values) =>
+              setFormData({ ...formData, suggestedArtists: values })
+            }
+            placeholder="Select artists from your collection..."
+            suggestions={artists}
+            icon={<Users className="size-4" />}
+          />
+        </div>
+      )}
+
+      {/* Suggested Albums - Prominent in discovery mode, shown right after genres */}
+      {discoveryMode && (
+        <div>
+          <label className="flex items-center gap-2 text-app-primary mb-3">
+            <Music className="size-5 text-accent-primary" />
+            <span className="font-medium uppercase tracking-wider text-sm">
+              Select Albums from Your Collection
+            </span>
+          </label>
+          <p className="text-app-secondary text-sm mb-3">
+            Choose albums from your collection. We&apos;ll discover new tracks similar to these albums that aren&apos;t in your library.
+          </p>
+          <ChipInput
+            values={formData.suggestedAlbums || []}
+            onChange={(values) =>
+              setFormData({ ...formData, suggestedAlbums: values })
+            }
+            placeholder="Select albums from your collection..."
+            suggestions={albums}
+            icon={<Music className="size-4" />}
+          />
+        </div>
+      )}
+
+      {/* Suggested Tracks - Prominent in discovery mode, shown right after genres/albums */}
+      {discoveryMode && (
+        <div>
+          <label className="flex items-center gap-2 text-app-primary mb-3">
+            <Music className="size-5 text-accent-primary" />
+            <span className="font-medium uppercase tracking-wider text-sm">
+              Select Tracks from Your Collection
+            </span>
+          </label>
+          <p className="text-app-secondary text-sm mb-3">
+            Choose specific tracks from your collection. We&apos;ll discover new tracks similar to these that aren&apos;t in your library, with explanations of how they relate.
+          </p>
+          <ChipInput
+            values={formData.suggestedTracks || []}
+            onChange={(values) =>
+              setFormData({ ...formData, suggestedTracks: values })
+            }
+            placeholder="Select tracks from your collection..."
+            suggestions={trackTitles}
+            icon={<Music className="size-4" />}
+          />
+        </div>
+      )}
+
       {/* Agent Selection */}
       <div>
         <AgentSelector
@@ -814,48 +944,175 @@ export function PlaylistBuilder({ onGenerate }: PlaylistBuilderProps) {
         />
       </div>
 
-      {/* Surprise */}
-      <div>
-        <label className="flex items-center gap-2 text-app-primary mb-3">
-          <Sparkles className="size-5 text-accent-primary" />
-          <span className="font-medium uppercase tracking-wider text-sm">
-            Surprise Level
-          </span>
-        </label>
-        <div className="space-y-3">
-          <div className="flex items-center gap-4">
-            <span className="text-app-secondary text-sm w-20">Safe</span>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={formData.surprise ?? 0.5}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  surprise: parseFloat(e.target.value),
-                })
-              }
-              className="flex-1 h-2 bg-app-hover rounded-sm appearance-none cursor-pointer accent-accent-primary"
-            />
-            <span className="text-app-secondary text-sm w-24 text-right">
-              Adventurous
+      {/* Surprise - Shown after discovery in discovery mode */}
+      {discoveryMode && (
+        <div>
+          <label className="flex items-center gap-2 text-app-primary mb-3">
+            <Sparkles className="size-5 text-accent-primary" />
+            <span className="font-medium uppercase tracking-wider text-sm">
+              Surprise Level
             </span>
+          </label>
+          <div className="space-y-3">
+            <div className="flex items-center gap-4">
+              <span className="text-app-secondary text-sm w-20">Safe</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={formData.surprise ?? 0.7}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    surprise: parseFloat(e.target.value),
+                  })
+                }
+                className="flex-1 h-2 bg-app-hover rounded-sm appearance-none cursor-pointer accent-accent-primary"
+              />
+              <span className="text-app-secondary text-sm w-24 text-right">
+                Adventurous
+              </span>
+            </div>
+            <div className="text-center">
+              <span className="text-app-tertiary text-sm">
+                {((formData.surprise ?? 0.7) * 100).toFixed(0)}%
+              </span>
+            </div>
+            {errors.surprise && (
+              <p className="text-red-500 text-sm flex items-center gap-1">
+                <AlertCircle className="size-4" />
+                {errors.surprise}
+              </p>
+            )}
           </div>
-          <div className="text-center">
-            <span className="text-app-tertiary text-sm">
-              {((formData.surprise ?? 0.5) * 100).toFixed(0)}%
-            </span>
-          </div>
-          {errors.surprise && (
-            <p className="text-red-500 text-sm flex items-center gap-1">
-              <AlertCircle className="size-4" />
-              {errors.surprise}
-            </p>
-          )}
         </div>
-      </div>
+      )}
+
+      {/* Surprise - Shown in library mode */}
+      {!discoveryMode && (
+        <div>
+          <label className="flex items-center gap-2 text-app-primary mb-3">
+            <Sparkles className="size-5 text-accent-primary" />
+            <span className="font-medium uppercase tracking-wider text-sm">
+              Surprise Level
+            </span>
+          </label>
+          <div className="space-y-3">
+            <div className="flex items-center gap-4">
+              <span className="text-app-secondary text-sm w-20">Safe</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={formData.surprise ?? 0.5}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    surprise: parseFloat(e.target.value),
+                  })
+                }
+                className="flex-1 h-2 bg-app-hover rounded-sm appearance-none cursor-pointer accent-accent-primary"
+              />
+              <span className="text-app-secondary text-sm w-24 text-right">
+                Adventurous
+              </span>
+            </div>
+            <div className="text-center">
+              <span className="text-app-tertiary text-sm">
+                {((formData.surprise ?? 0.5) * 100).toFixed(0)}%
+              </span>
+            </div>
+            {errors.surprise && (
+              <p className="text-red-500 text-sm flex items-center gap-1">
+                <AlertCircle className="size-4" />
+                {errors.surprise}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Music Discovery - Shown in library mode */}
+      {!discoveryMode && (
+        <div>
+          <label className="flex items-center gap-2 text-app-primary mb-3">
+            <Sparkles className="size-5 text-accent-primary" />
+            <span className="font-medium uppercase tracking-wider text-sm">
+              Music Discovery
+            </span>
+          </label>
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.enableDiscovery ?? false}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      enableDiscovery: e.target.checked,
+                      discoveryFrequency: e.target.checked
+                        ? formData.discoveryFrequency || "every_other"
+                        : undefined,
+                    })
+                  }
+                  className="text-accent-primary"
+                />
+                <span className="text-app-primary text-sm">
+                  Enable music discovery
+                </span>
+              </label>
+            </div>
+            {formData.enableDiscovery && (
+              <div className="pl-6 space-y-3">
+                <p className="text-app-secondary text-sm">
+                  Discover new tracks similar to your library that aren&apos;t in your collection.
+                  These tracks will be marked as &quot;New&quot; in the playlist.
+                </p>
+                <div>
+                  <label className="text-app-secondary text-sm mb-2 block">
+                    Discovery Frequency
+                  </label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="discovery-frequency-library"
+                        checked={formData.discoveryFrequency === "every"}
+                        onChange={() =>
+                          setFormData({
+                            ...formData,
+                            discoveryFrequency: "every",
+                          })
+                        }
+                        className="text-accent-primary"
+                      />
+                      <span className="text-app-primary text-sm">Every track</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="discovery-frequency-library"
+                        checked={formData.discoveryFrequency === "every_other"}
+                        onChange={() =>
+                          setFormData({
+                            ...formData,
+                            discoveryFrequency: "every_other",
+                          })
+                        }
+                        className="text-accent-primary"
+                      />
+                      <span className="text-app-primary text-sm">Every other track</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Submit Button */}
       <div className="pt-4">

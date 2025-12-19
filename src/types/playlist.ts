@@ -39,6 +39,8 @@ export interface PlaylistRequest {
   suggestedTracks?: string[]; // Track names to prioritize/include in playlist
   agentType?: AgentType; // "built-in" or "llm"
   llmConfig?: LLMConfig; // LLM provider configuration
+  enableDiscovery?: boolean; // Enable music discovery feature
+  discoveryFrequency?: "every" | "every_other" | "custom"; // How often to insert discovery tracks
 }
 
 export interface PlaylistRequestErrors {

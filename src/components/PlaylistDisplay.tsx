@@ -8,6 +8,10 @@ import { db } from "@/db/schema";
 import { PlaylistWhySummary } from "./PlaylistWhySummary";
 import { TrackReasonChips } from "./TrackReasonChips";
 import { PlaylistExport } from "./PlaylistExport";
+import { DiscoveryTrackBadge } from "./DiscoveryTrackBadge";
+import { TrackSamplePlayer } from "./TrackSamplePlayer";
+import { searchTrackSample } from "@/features/audio-preview/platform-searcher";
+import type { SampleResult } from "@/features/audio-preview/types";
 import { FlowArcEditor } from "./FlowArcEditor";
 import { generateVariant, type VariantType } from "@/features/playlists/variants";
 import { generatePlaylistTitle } from "@/features/playlists/naming";
@@ -35,6 +39,7 @@ import {
   FileMusic,
   Tag,
   GripVertical,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AlertCircle } from "lucide-react";
@@ -173,6 +178,13 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   const [pendingAlbums, setPendingAlbums] = useState<string[]>([]);
   const [pendingTracks, setPendingTracks] = useState<string[]>([]);
   const [showFlowArcEditor, setShowFlowArcEditor] = useState(false);
+  const [playingSample, setPlayingSample] = useState<{
+    trackFileId: string;
+    sampleResult: SampleResult;
+    trackInfo: { title: string; artist: string; album?: string };
+  } | null>(null);
+  const [searchingSample, setSearchingSample] = useState<string | null>(null); // trackFileId being searched
+  const [sampleError, setSampleError] = useState<string | null>(null);
 
   const checkIfSaved = useCallback(async () => {
     const saved = await isPlaylistSaved(playlist.id);
@@ -205,6 +217,8 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     loadTracks();
     loadLibraryRoot();
     checkIfSaved();
+    // Clear playing sample when playlist changes to prevent blob URL errors
+    setPlayingSample(null);
   }, [playlist, checkIfSaved, loadTracks, loadLibraryRoot]);
 
   // Load suggestions for inline editor
@@ -262,6 +276,8 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
         stableMode ? playlist.id : undefined // Use playlist ID as seed for stable mode
       );
 
+      // Clear playing sample before updating playlist to prevent blob URL errors
+      setPlayingSample(null);
       setPlaylist(generated);
       sessionStorage.setItem("generated-playlist", JSON.stringify(generated));
     } catch (error) {
@@ -981,7 +997,15 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       <div className="bg-app-surface rounded-sm border border-app-border overflow-hidden">
         <div className="divide-y divide-app-border">
           {playlist.trackFileIds.map((trackFileId, index) => {
-            const track = tracks.get(trackFileId);
+            // Check if this is a discovery track
+            const isDiscoveryTrack = trackFileId.startsWith("discovery:");
+            const discoveryTrack = isDiscoveryTrack
+              ? playlist.discoveryTracks?.find(
+                  dt => `discovery:${dt.discoveryTrack.mbid}` === trackFileId
+                )
+              : null;
+
+            const track = isDiscoveryTrack ? null : tracks.get(trackFileId);
             const selection = playlist.trackSelections.find(
               (s) => s.trackFileId === trackFileId
             );
@@ -989,22 +1013,209 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
               (t) => t.trackFileId === trackFileId
             );
 
-            if (!track) return null;
+            // Skip if neither track nor discovery track found
+            if (!track && !discoveryTrack) return null;
 
             const reasons = orderedTrack?.reasons || selection?.reasons || [];
 
+            // Render discovery track
+            if (isDiscoveryTrack && discoveryTrack) {
+              const dtrack = discoveryTrack.discoveryTrack;
+              return (
+                <div
+                  key={`${trackFileId}-${index}`}
+                  className="px-4 md:px-6 py-4 hover:bg-app-hover transition-colors group border-l-2 border-accent-primary/30 bg-accent-primary/5"
+                >
+                  <div className="flex items-start gap-4">
+                    <button
+                      onClick={async () => {
+                        console.log(`[PlaylistDisplay] Play button clicked for discovery track: ${dtrack.title} by ${dtrack.artist}`);
+                        if (searchingSample === trackFileId) {
+                          console.log(`[PlaylistDisplay] Already searching, skipping`);
+                          return;
+                        }
+                        setSearchingSample(trackFileId);
+                        try {
+                          console.log(`[PlaylistDisplay] Starting search for discovery track: ${dtrack.title} by ${dtrack.artist}`);
+                          const sampleResult = await searchTrackSample({
+                            title: dtrack.title,
+                            artist: dtrack.artist,
+                            album: dtrack.album,
+                        });
+                        console.log(`[PlaylistDisplay] Discovery track search result:`, sampleResult);
+                        if (sampleResult) {
+                          setPlayingSample({
+                            trackFileId,
+                            sampleResult,
+                            trackInfo: {
+                              title: dtrack.title,
+                              artist: dtrack.artist,
+                              album: dtrack.album,
+                            },
+                          });
+                          setSampleError(null);
+                        } else {
+                          setSampleError("Preview not available for this track");
+                          setTimeout(() => setSampleError(null), 8000);
+                        }
+                      } catch (error) {
+                        console.error("Failed to search for preview:", error);
+                        setSampleError("Failed to find preview for this track");
+                        setTimeout(() => setSampleError(null), 5000);
+                      } finally {
+                        setSearchingSample(null);
+                      }
+                      }}
+                      disabled={searchingSample === trackFileId}
+                      className="flex items-center justify-center size-8 text-app-tertiary group-hover:text-accent-primary transition-colors shrink-0 mt-1 cursor-pointer disabled:opacity-50"
+                    >
+                      {searchingSample === trackFileId ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <>
+                          <span className="text-sm group-hover:hidden">
+                            {String(index + 1).padStart(2, "0")}
+                          </span>
+                          <Play className="size-4 hidden group-hover:block" />
+                        </>
+                      )}
+                    </button>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-4 mb-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className="text-app-primary font-medium truncate">
+                              {dtrack.title}
+                            </div>
+                            <DiscoveryTrackBadge explanation={dtrack.explanation} />
+                          </div>
+                          <div className="text-app-secondary text-sm truncate">
+                            {dtrack.artist}
+                          </div>
+                          {dtrack.album && (
+                            <div className="text-app-tertiary text-xs truncate mt-1">
+                              {dtrack.album}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {dtrack.duration && (
+                            <div className="text-app-secondary text-sm tabular-nums shrink-0">
+                              {formatDuration(dtrack.duration)}
+                            </div>
+                          )}
+                          <button
+                            onClick={() => {
+                              // Remove discovery track from playlist
+                              const updatedTrackFileIds = playlist.trackFileIds.filter(
+                                id => id !== trackFileId
+                              );
+                              const updatedDiscoveryTracks = playlist.discoveryTracks?.filter(
+                                dt => `discovery:${dt.discoveryTrack.mbid}` !== trackFileId
+                              );
+                              setPlaylist({
+                                ...playlist,
+                                trackFileIds: updatedTrackFileIds,
+                                discoveryTracks: updatedDiscoveryTracks,
+                              });
+                            }}
+                            disabled={isRegenerating}
+                            className="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:bg-red-500/10 rounded-sm transition-all disabled:opacity-50"
+                            title="Remove discovery track"
+                          >
+                            <Trash2 className="size-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Discovery Explanation */}
+                      {dtrack.explanation && (
+                        <div className="mt-2 p-2 bg-app-hover rounded-sm border border-app-border">
+                          <p className="text-app-secondary text-xs leading-relaxed">
+                            {dtrack.explanation}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Why This Track Chips */}
+                      {reasons.length > 0 && (
+                        <div className="mt-2">
+                          <TrackReasonChips reasons={reasons} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            // Render regular library track
+            if (!track) return null;
+
             return (
               <div
-                key={trackFileId}
+                key={`${trackFileId}-${index}`}
                 className="px-4 md:px-6 py-4 hover:bg-app-hover transition-colors group"
               >
                 <div className="flex items-start gap-4">
-                  <div className="flex items-center justify-center size-8 text-app-tertiary group-hover:text-accent-primary transition-colors shrink-0 mt-1">
-                    <span className="text-sm group-hover:hidden">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <Play className="size-4 hidden group-hover:block" />
-                  </div>
+                  <button
+                    onClick={async () => {
+                      console.log(`[PlaylistDisplay] Play button clicked for track: ${track.tags.title} by ${track.tags.artist}`);
+                      if (searchingSample === trackFileId) {
+                        console.log(`[PlaylistDisplay] Already searching, skipping`);
+                        return;
+                      }
+                      setSearchingSample(trackFileId);
+                      try {
+                        console.log(`[PlaylistDisplay] Starting search for: ${track.tags.title} by ${track.tags.artist}`);
+                        const sampleResult = await searchTrackSample({
+                          title: track.tags.title || "Unknown Title",
+                          artist: track.tags.artist || "Unknown Artist",
+                          album: track.tags.album,
+                          year: track.tags.year,
+                        }, {
+                          trackFileId: track.trackFileId,
+                          libraryRootId: playlistCollectionId || libraryRootId || undefined,
+                        });
+                        console.log(`[PlaylistDisplay] Search result:`, sampleResult);
+                        if (sampleResult) {
+                          setPlayingSample({
+                            trackFileId,
+                            sampleResult,
+                            trackInfo: {
+                              title: track.tags.title || "Unknown Title",
+                              artist: track.tags.artist || "Unknown Artist",
+                              album: track.tags.album,
+                            },
+                          });
+                          setSampleError(null);
+                        } else {
+                          setSampleError("Preview not available for this track");
+                          setTimeout(() => setSampleError(null), 8000);
+                        }
+                      } catch (error) {
+                        console.error("Failed to search for preview:", error);
+                        setSampleError("Failed to find preview for this track");
+                        setTimeout(() => setSampleError(null), 5000);
+                      } finally {
+                        setSearchingSample(null);
+                      }
+                    }}
+                    disabled={searchingSample === trackFileId}
+                    className="flex items-center justify-center size-8 text-app-tertiary group-hover:text-accent-primary transition-colors shrink-0 mt-1 cursor-pointer disabled:opacity-50"
+                  >
+                    {searchingSample === trackFileId ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <>
+                        <span className="text-sm group-hover:hidden">
+                          {String(index + 1).padStart(2, "0")}
+                        </span>
+                        <Play className="size-4 hidden group-hover:block" />
+                      </>
+                    )}
+                  </button>
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-4 mb-2">
@@ -1049,6 +1260,33 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
           })}
         </div>
       </div>
+
+      {/* Sample Error Message */}
+      {sampleError && (
+        <div className="bg-red-500/10 border border-red-500/20 rounded-sm p-4">
+          <div className="flex items-center gap-2 text-red-500 text-sm">
+            <AlertCircle className="size-4" />
+            <span>{sampleError}</span>
+            <button
+              onClick={() => setSampleError(null)}
+              className="ml-auto p-1 hover:bg-red-500/20 rounded-sm transition-colors"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Sample Player */}
+      {playingSample && (
+        <div className="bg-app-surface rounded-sm border border-app-border p-6">
+          <TrackSamplePlayer
+            trackInfo={playingSample.trackInfo}
+            sampleResult={playingSample.sampleResult}
+            onClose={() => setPlayingSample(null)}
+          />
+        </div>
+      )}
 
       {/* Export Section */}
       <div className="bg-app-surface rounded-sm border border-app-border p-6">
