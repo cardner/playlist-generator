@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [0.6.1] - 2025-12-20
+
+### Fixed
+
+- improve scanning of network drives
+
 ## [0.6.0] - 2025-12-20
 
 ### Added
