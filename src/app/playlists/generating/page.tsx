@@ -11,6 +11,7 @@ import {
 } from "@/features/playlists";
 import { getCurrentLibrarySummary } from "@/features/library/summarization";
 import { getCurrentLibraryRoot } from "@/db/storage";
+import { logger } from "@/lib/logger";
 
 export default function GeneratingPage() {
   const router = useRouter();
@@ -72,7 +73,7 @@ export default function GeneratingPage() {
         };
         sessionStorage.setItem("generated-playlist", JSON.stringify(serializable));
       } catch (err) {
-        console.error("Failed to generate playlist:", err);
+        logger.error("Failed to generate playlist:", err);
         setError(
           err instanceof Error ? err.message : "Failed to generate playlist"
         );

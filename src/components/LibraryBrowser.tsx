@@ -1,3 +1,39 @@
+/**
+ * LibraryBrowser Component
+ * 
+ * Component for browsing and searching the user's music library. Provides
+ * filtering, sorting, and search capabilities for viewing scanned tracks.
+ * 
+ * Features:
+ * - Track search by title, artist, or album
+ * - Genre filtering with normalized genre support
+ * - Sortable columns (title, artist, duration)
+ * - Genre statistics display
+ * - Clear library functionality
+ * - Optimized rendering for large libraries (1000+ tracks)
+ * 
+ * State Management:
+ * - Loads tracks from IndexedDB on mount
+ * - Manages search query and filter state
+ * - Handles sorting configuration
+ * - Uses `useMemo` for optimized filtering and sorting
+ * 
+ * Performance Optimizations:
+ * - Memoized filtering and sorting to prevent unnecessary re-renders
+ * - Efficient genre normalization and mapping
+ * - Limits search results for performance
+ * 
+ * Props:
+ * - `refreshTrigger`: Number to trigger refresh (for external updates)
+ * 
+ * @module components/LibraryBrowser
+ * 
+ * @example
+ * ```tsx
+ * <LibraryBrowser refreshTrigger={refreshCount} />
+ * ```
+ */
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -14,6 +50,7 @@ import {
 import { getCurrentLibraryRoot } from "@/db/storage";
 import type { GenreWithStats } from "@/features/library/genre-normalization";
 import { normalizeGenre, buildGenreMappings } from "@/features/library/genre-normalization";
+import { logger } from "@/lib/logger";
 
 type SortField = "title" | "artist" | "duration";
 type SortDirection = "asc" | "desc";
@@ -24,7 +61,6 @@ interface LibraryBrowserProps {
 
 export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
   const [tracks, setTracks] = useState<TrackRecord[]>([]);
-  const [filteredTracks, setFilteredTracks] = useState<TrackRecord[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedGenre, setSelectedGenre] = useState<string>("");
   const [sortField, setSortField] = useState<SortField>("title");
@@ -70,7 +106,6 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
     } else {
       // No library, clear tracks
       setTracks([]);
-      setFilteredTracks([]);
       setGenres([]);
       setGenresWithStats([]);
       setGenreMappings(null);
@@ -78,8 +113,8 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
     }
   }, [refreshTrigger, hasLibrary]);
 
-  // Filter and sort tracks
-  useEffect(() => {
+  // Filter and sort tracks using useMemo for better performance
+  const filteredTracks = useMemo(() => {
     let filtered = [...tracks];
 
     // Apply search filter
@@ -89,7 +124,7 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
         (track) =>
           track.tags.title.toLowerCase().includes(query) ||
           track.tags.artist.toLowerCase().includes(query) ||
-          track.tags.album.toLowerCase().includes(query)
+          track.tags.album?.toLowerCase().includes(query)
       );
     }
 
@@ -110,8 +145,8 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
       });
     }
 
-    // Apply sorting
-    filtered.sort((a, b) => {
+    // Apply sorting (create new array to avoid mutating original)
+    return [...filtered].sort((a, b) => {
       let aValue: string | number;
       let bValue: string | number;
 
@@ -136,8 +171,6 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
       if (aValue > bValue) return sortDirection === "asc" ? 1 : -1;
       return 0;
     });
-
-    setFilteredTracks(filtered);
   }, [tracks, searchQuery, selectedGenre, sortField, sortDirection, genreMappings]);
 
   async function loadTracks() {
@@ -169,7 +202,7 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
       const mappings = buildGenreMappings(collectionTracks);
       setGenreMappings({ originalToNormalized: mappings.originalToNormalized });
     } catch (error) {
-      console.error("Failed to load tracks:", error);
+      logger.error("Failed to load tracks:", error);
     } finally {
       setIsLoading(false);
     }
@@ -187,13 +220,12 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
     try {
       await clearLibraryData();
       setTracks([]);
-      setFilteredTracks([]);
       setGenres([]);
       setGenresWithStats([]);
       setGenreMappings(null);
       alert("Library data cleared successfully.");
     } catch (error) {
-      console.error("Failed to clear library:", error);
+      logger.error("Failed to clear library:", error);
       alert("Failed to clear library data.");
     }
   }

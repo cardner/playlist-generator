@@ -5,6 +5,8 @@
  * can be sent to external services (like LLMs).
  */
 
+import { logger } from "./logger";
+
 export interface AppSettings {
   /**
    * Whether LLM integration is enabled at all
@@ -48,7 +50,7 @@ export function getSettings(): AppSettings {
       };
     }
   } catch (error) {
-    console.error("Failed to load settings:", error);
+    logger.error("Failed to load settings:", error);
   }
 
   return defaultSettings;
@@ -67,7 +69,7 @@ export function saveSettings(settings: AppSettings): void {
   try {
     localStorage.setItem("app-settings", JSON.stringify(settings));
   } catch (error) {
-    console.error("Failed to save settings:", error);
+    logger.error("Failed to save settings:", error);
   }
 }
 

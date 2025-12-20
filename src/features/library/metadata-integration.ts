@@ -8,6 +8,7 @@ import type { LibraryRoot } from "@/lib/library-selection";
 import { getLibraryFiles } from "@/lib/library-selection";
 import type { FileIndexEntry, FileIndexDiff } from "./scanning";
 import type { LibraryFile } from "@/lib/library-selection";
+import { logger } from "@/lib/logger";
 
 /**
  * Get a file handle from a relative path
@@ -64,8 +65,6 @@ export async function getLibraryFilesForEntries(
     throw new Error("Only handle mode supported for metadata parsing");
   }
 
-  console.log(`getLibraryFilesForEntries: Looking for ${entries.length} files`);
-
   // Get root directory handle from database
   const { db } = await import("@/db/schema");
   const handleRecord = await db.directoryHandles.get(root.handleId!);
@@ -78,30 +77,19 @@ export async function getLibraryFilesForEntries(
   let processed = 0;
   let found = 0;
   let notFound = 0;
-  const lastLogTime = Date.now();
 
   // For large libraries, use direct path navigation (faster)
   // For small libraries, fallback to traversal (more reliable)
   const useDirectPath = entries.length > 1000;
   
   if (useDirectPath) {
-    console.log("Using direct path navigation for large library...");
-    
     // Process entries with relative paths first (faster)
     const entriesWithPaths = entries.filter(e => e.relativePath);
     const entriesWithoutPaths = entries.filter(e => !e.relativePath);
     
-    console.log(`${entriesWithPaths.length} entries with paths, ${entriesWithoutPaths.length} without paths`);
-    
     // Process entries with paths using direct navigation
     for (const entry of entriesWithPaths) {
       processed++;
-      
-      // Log progress every 100 files or every 2 seconds
-      const now = Date.now();
-      if (processed % 100 === 0 || now - lastLogTime > 2000) {
-        console.log(`Processing files: ${processed}/${entries.length}, found: ${found}, not found: ${notFound}`);
-      }
       
       try {
         const fileHandle = await getFileHandleFromPath(rootHandle, entry.relativePath!);
@@ -121,14 +109,14 @@ export async function getLibraryFilesForEntries(
             });
             found++;
           } else {
-            console.warn(`File properties mismatch for ${entry.relativePath}: size ${file.size} vs ${entry.size}, mtime ${file.lastModified} vs ${entry.mtime}`);
+            logger.warn(`File properties mismatch for ${entry.relativePath}: size ${file.size} vs ${entry.size}, mtime ${file.lastModified} vs ${entry.mtime}`);
             notFound++;
           }
         } else {
           notFound++;
         }
       } catch (error) {
-        console.warn(`Failed to get file for ${entry.relativePath}:`, error);
+        logger.warn(`Failed to get file for ${entry.relativePath}:`, error);
         notFound++;
       }
       
@@ -140,7 +128,6 @@ export async function getLibraryFilesForEntries(
     
     // For entries without paths, fall back to traversal (but only for those entries)
     if (entriesWithoutPaths.length > 0) {
-      console.log(`Falling back to traversal for ${entriesWithoutPaths.length} entries without paths...`);
       const entryMap = new Map<string, FileIndexEntry>();
       for (const entry of entriesWithoutPaths) {
         entryMap.set(entry.trackFileId, entry);
@@ -162,25 +149,12 @@ export async function getLibraryFilesForEntries(
     }
   } else {
     // For smaller libraries, use traversal (more reliable)
-    console.log("Using directory traversal for small library...");
     const entryMap = new Map<string, FileIndexEntry>();
     for (const entry of entries) {
       entryMap.set(entry.trackFileId, entry);
     }
 
-    let filesTraversed = 0;
-    let lastLogTime = Date.now();
-
     for await (const libraryFile of getLibraryFiles(root)) {
-      filesTraversed++;
-      
-      // Log progress every 100 files or every 2 seconds
-      const now = Date.now();
-      if (filesTraversed % 100 === 0 || now - lastLogTime > 2000) {
-        console.log(`Traversing files: ${filesTraversed} checked, ${libraryFiles.length} matched, ${entryMap.size} remaining`);
-        lastLogTime = now;
-      }
-      
       if (entryMap.has(libraryFile.trackFileId)) {
         libraryFiles.push(libraryFile);
         entryMap.delete(libraryFile.trackFileId);
@@ -188,7 +162,6 @@ export async function getLibraryFilesForEntries(
         
         // If we've found all files, we can stop early
         if (entryMap.size === 0) {
-          console.log(`Found all ${libraryFiles.length} files, stopping traversal`);
           break;
         }
       }
@@ -197,16 +170,15 @@ export async function getLibraryFilesForEntries(
     notFound = entryMap.size;
   }
   
-  console.log(`getLibraryFilesForEntries complete: Found ${found} of ${entries.length} entries (${notFound} not found)`);
-  
   if (libraryFiles.length === 0 && entries.length > 0) {
-    console.error("ERROR: No files matched! This might indicate a problem with trackFileId generation.");
-    console.log("Sample entry trackFileId:", entries[0]?.trackFileId);
-    console.log("Sample entry relativePath:", entries[0]?.relativePath);
+    logger.error("No files matched! This might indicate a problem with trackFileId generation.", {
+      sampleTrackFileId: entries[0]?.trackFileId,
+      sampleRelativePath: entries[0]?.relativePath,
+    });
   }
   
   if (notFound > 0) {
-    console.warn(`Warning: ${notFound} entries were not matched. Files may have been moved or deleted.`);
+    logger.warn(`${notFound} entries were not matched. Files may have been moved or deleted.`);
   }
 
   return libraryFiles;

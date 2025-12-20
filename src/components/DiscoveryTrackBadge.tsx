@@ -1,3 +1,32 @@
+/**
+ * DiscoveryTrackBadge Component
+ * 
+ * Visual badge component that indicates a track is a discovery track (not in
+ * the user's library). Used in PlaylistDisplay to mark discovery tracks that
+ * were suggested by MusicBrainz.
+ * 
+ * Features:
+ * - Sparkles icon for visual distinction
+ * - "New" label
+ * - Optional tooltip with explanation
+ * - Accent color styling
+ * 
+ * Props:
+ * - `className`: Optional CSS classes
+ * - `showTooltip`: Whether to show tooltip on hover
+ * - `explanation`: Optional explanation text for tooltip
+ * 
+ * @module components/DiscoveryTrackBadge
+ * 
+ * @example
+ * ```tsx
+ * <DiscoveryTrackBadge
+ *   showTooltip={true}
+ *   explanation="Suggested because it's similar to 'Bohemian Rhapsody'"
+ * />
+ * ```
+ */
+
 "use client";
 
 import { Sparkles } from "lucide-react";

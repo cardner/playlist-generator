@@ -1,3 +1,42 @@
+/**
+ * StorageWarning Component
+ * 
+ * Component that displays a warning when IndexedDB storage usage exceeds 80%.
+ * Provides storage cleanup functionality to free up space by removing old data.
+ * 
+ * Features:
+ * - Storage quota monitoring
+ * - Usage percentage display
+ * - Critical warning (90%+ usage)
+ * - One-click cleanup functionality
+ * - Storage statistics display
+ * - Dismissible warning
+ * 
+ * State Management:
+ * - Loads storage quota info and statistics on mount
+ * - Manages cleanup progress state
+ * - Handles cleanup execution and result display
+ * 
+ * Cleanup Operations:
+ * - Removes old scan runs
+ * - Cleans up orphaned file index entries
+ * - Removes orphaned tracks
+ * - Updates storage statistics after cleanup
+ * 
+ * Props:
+ * - `className`: Optional CSS classes
+ * - `onDismiss`: Optional callback when warning is dismissed
+ * 
+ * @module components/StorageWarning
+ * 
+ * @example
+ * ```tsx
+ * <StorageWarning
+ *   onDismiss={() => setShowWarning(false)}
+ * />
+ * ```
+ */
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -13,6 +52,7 @@ import {
   type StorageStats,
 } from "@/db/storage-cleanup";
 import { cn } from "@/lib/utils";
+import { logger } from "@/lib/logger";
 
 interface StorageWarningProps {
   className?: string;
@@ -32,7 +72,7 @@ export function StorageWarning({ className, onDismiss }: StorageWarningProps) {
         const { ensureMigrationComplete } = await import("@/db/migration-helper");
         await ensureMigrationComplete();
       } catch (error) {
-        console.warn("Failed to ensure migration complete:", error);
+        logger.warn("Failed to ensure migration complete:", error);
         // Continue anyway - database might still work
       }
       
@@ -42,7 +82,7 @@ export function StorageWarning({ className, onDismiss }: StorageWarningProps) {
         setQuotaInfo(quota);
         setStats(storageStats);
       } catch (error) {
-        console.error("Failed to load storage info:", error);
+        logger.error("Failed to load storage info:", error);
         // Don't set state on error - component will just not render
       }
     }
@@ -69,11 +109,11 @@ export function StorageWarning({ className, onDismiss }: StorageWarningProps) {
         setQuotaInfo(newQuota);
         setStats(newStats);
       } catch (statsError) {
-        console.error("Failed to reload stats after cleanup:", statsError);
+        logger.error("Failed to reload stats after cleanup:", statsError);
         // Don't show error to user - cleanup succeeded
       }
     } catch (error) {
-      console.error("Failed to cleanup storage:", error);
+      logger.error("Failed to cleanup storage:", error);
       alert("Failed to cleanup storage. Please try again.");
     } finally {
       setIsCleaning(false);

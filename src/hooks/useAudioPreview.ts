@@ -109,6 +109,22 @@ export function useAudioPreview(options: UseAudioPreviewOptions): UseAudioPrevie
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const previousUrlRef = useRef<string | null>(null);
 
+  // Use refs for callbacks to avoid re-creating event listeners on every render
+  const onPlayRef = useRef(onPlay);
+  const onPauseRef = useRef(onPause);
+  const onEndedRef = useRef(onEnded);
+  const onErrorRef = useRef(onError);
+  const onLoadedRef = useRef(onLoaded);
+
+  // Keep refs in sync with props
+  useEffect(() => {
+    onPlayRef.current = onPlay;
+    onPauseRef.current = onPause;
+    onEndedRef.current = onEnded;
+    onErrorRef.current = onError;
+    onLoadedRef.current = onLoaded;
+  }, [onPlay, onPause, onEnded, onError, onLoaded]);
+
   /**
    * Validate URL and setup audio element
    */
@@ -126,7 +142,7 @@ export function useAudioPreview(options: UseAudioPreviewOptions): UseAudioPrevie
       );
       setError(errorMessage);
       setIsLoading(false);
-      onError?.(errorMessage);
+      onErrorRef.current?.(errorMessage);
       return;
     }
 
@@ -148,9 +164,10 @@ export function useAudioPreview(options: UseAudioPreviewOptions): UseAudioPrevie
     }
 
     // Setup event listeners
+    // Use refs for callbacks to avoid recreating listeners when callbacks change
     const handleLoadedData = () => {
       setIsLoading(false);
-      onLoaded?.();
+      onLoadedRef.current?.();
 
       // Auto-play if requested
       if (autoPlay && urlChanged) {
@@ -158,25 +175,25 @@ export function useAudioPreview(options: UseAudioPreviewOptions): UseAudioPrevie
           const errorMessage = handleAudioPreviewError(err, 'auto-playing');
           setError(errorMessage);
           setIsLoading(false);
-          onError?.(errorMessage);
+          onErrorRef.current?.(errorMessage);
         });
       }
     };
 
     const handlePlay = () => {
       setIsPlaying(true);
-      onPlay?.();
+      onPlayRef.current?.();
     };
 
     const handlePause = () => {
       setIsPlaying(false);
-      onPause?.();
+      onPauseRef.current?.();
     };
 
     const handleEnded = () => {
       setIsPlaying(false);
       resetAudioElement(audio);
-      onEnded?.();
+      onEndedRef.current?.();
     };
 
     const handleError = (e: Event) => {
@@ -193,7 +210,7 @@ export function useAudioPreview(options: UseAudioPreviewOptions): UseAudioPrevie
       setError(errorMessage);
       setIsLoading(false);
       setIsPlaying(false);
-      onError?.(errorMessage);
+      onErrorRef.current?.(errorMessage);
     };
 
     // Add event listeners
@@ -211,7 +228,7 @@ export function useAudioPreview(options: UseAudioPreviewOptions): UseAudioPrevie
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('error', handleError);
     };
-  }, [sampleResult, autoPlay, onPlay, onPause, onEnded, onError, onLoaded]);
+  }, [sampleResult, autoPlay]); // Removed callback dependencies - using refs instead
 
   /**
    * Play the audio
@@ -227,10 +244,10 @@ export function useAudioPreview(options: UseAudioPreviewOptions): UseAudioPrevie
     } catch (err) {
       const errorMessage = handleAudioPreviewError(err, 'playing audio');
       setError(errorMessage);
-      onError?.(errorMessage);
+      onErrorRef.current?.(errorMessage);
       throw err;
     }
-  }, [onError]);
+  }, []); // No dependencies - using ref for callback
 
   /**
    * Pause the audio

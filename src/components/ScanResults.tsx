@@ -1,3 +1,33 @@
+/**
+ * ScanResults Component
+ * 
+ * Displays the results of a library scan operation. Shows statistics about
+ * files found, added, changed, and removed, along with scan duration.
+ * Provides a rescan button for re-running the scan.
+ * 
+ * Features:
+ * - Statistics grid (total, added, changed, removed)
+ * - Scan duration display
+ * - Rescan button
+ * - Color-coded statistics (added/changed in accent, removed in red)
+ * 
+ * Props:
+ * - `result`: Scan result object with statistics
+ * - `onRescan`: Callback when rescan button is clicked
+ * - `isScanning`: Whether a scan is currently in progress
+ * 
+ * @module components/ScanResults
+ * 
+ * @example
+ * ```tsx
+ * <ScanResults
+ *   result={scanResult}
+ *   onRescan={() => startScan()}
+ *   isScanning={isScanning}
+ * />
+ * ```
+ */
+
 "use client";
 
 import { RefreshCw } from "lucide-react";

@@ -1,7 +1,35 @@
 /**
- * Library summarization for matching and LLM payloads
+ * Library Summarization for Matching and LLM Payloads
  * 
- * Provides aggregated statistics and optimized indexes for playlist generation
+ * This module provides aggregated statistics and optimized indexes for playlist generation.
+ * It analyzes the user's music library to create summaries that can be used for:
+ * - Matching tracks based on genre, artist, tempo, and duration
+ * - Building LLM payloads for playlist strategy generation
+ * - Providing library statistics to the UI
+ * 
+ * Key Features:
+ * - Genre and artist distribution analysis
+ * - Tempo bucket classification (slow/medium/fast)
+ * - Duration statistics (min, max, average, total)
+ * - Recently added tracks tracking
+ * - Optimized matching indexes for fast playlist generation
+ * 
+ * Privacy: Artist counts are only included if privacy settings allow sending track names to LLM.
+ * 
+ * @module features/library/summarization
+ * 
+ * @example
+ * ```typescript
+ * import { getCurrentLibrarySummary, buildMatchingIndex } from '@/features/library/summarization';
+ * 
+ * // Get library summary
+ * const summary = await getCurrentLibrarySummary();
+ * console.log(`Library has ${summary.totalTracks} tracks`);
+ * 
+ * // Build matching index for playlist generation
+ * const index = await buildMatchingIndex();
+ * const rockTracks = index.byGenre.get('Rock') || [];
+ * ```
  */
 
 import type { TrackRecord, ScanRunRecord } from "@/db/schema";

@@ -1,3 +1,50 @@
+/**
+ * PlaylistExport Component
+ * 
+ * Component for exporting generated playlists in various formats (M3U, PLS, XSPF, CSV, JSON).
+ * Handles track lookup, path resolution, and file download. Supports multiple export
+ * configurations including path strategies and playlist location settings.
+ * 
+ * Features:
+ * - Export to multiple formats (M3U, PLS, XSPF, CSV, JSON)
+ * - Configurable path strategies (relative-to-playlist, relative-to-library-root, absolute)
+ * - Playlist location settings (root or subfolder)
+ * - Automatic track lookup from IndexedDB
+ * - File index integration for path resolution
+ * - Relink prompt for moved libraries
+ * - Export preferences persistence (localStorage)
+ * - Collection-aware export (uses playlist's original collection)
+ * 
+ * State Management:
+ * - Manages export progress and error states
+ * - Tracks export configuration (location, path strategy, prefix)
+ * - Handles library root path checking
+ * - Manages relink prompt display
+ * 
+ * Export Process:
+ * 1. User selects export format
+ * 2. Component looks up tracks from IndexedDB
+ * 3. Resolves file paths based on configuration
+ * 4. Generates export file content
+ * 5. Triggers browser download
+ * 
+ * Props:
+ * - `playlist`: The generated playlist to export
+ * - `libraryRootId`: Optional library root ID for path resolution
+ * - `playlistCollectionId`: Collection ID the playlist was created from
+ * 
+ * @module components/PlaylistExport
+ * 
+ * @example
+ * ```tsx
+ * <PlaylistExport
+ *   playlist={generatedPlaylist}
+ *   libraryRootId="root-123"
+ *   playlistCollectionId="collection-456"
+ * />
+ * ```
+ */
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -18,6 +65,7 @@ import { db } from "@/db/schema";
 import { hasRelativePaths } from "@/features/library/relink";
 import { RelinkLibraryRoot } from "./RelinkLibraryRoot";
 import type { LibraryRootRecord } from "@/db/schema";
+import { logger } from "@/lib/logger";
 import {
   Download,
   FileText,
@@ -194,7 +242,7 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
       // Download file
       downloadFile(result.content, filename, result.mimeType);
     } catch (err) {
-      console.error("Export failed:", err);
+      logger.error("Export failed:", err);
       setError(err instanceof Error ? err.message : "Failed to export playlist");
     } finally {
       setIsExporting(null);

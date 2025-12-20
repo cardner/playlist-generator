@@ -1,7 +1,31 @@
 /**
- * Playlist naming utilities
+ * Playlist Naming Utilities
  * 
- * Generates creative titles with optional emoji
+ * This module generates creative playlist titles and subtitles based on the playlist
+ * request and strategy. It can optionally include emojis that match the mood, activity,
+ * or genre of the playlist.
+ * 
+ * Naming Strategy:
+ * 1. Uses strategy title if available and meaningful
+ * 2. Falls back to combining mood, activity, and genre
+ * 3. Generates descriptive subtitle
+ * 4. Selects appropriate emoji based on mood/activity/genre
+ * 
+ * Emoji Selection Priority:
+ * 1. Mood emojis (calm → 🌊, energetic → ⚡)
+ * 2. Activity emojis (workout → 💪, studying → 📚)
+ * 3. Genre emojis (rock → 🎸, jazz → 🎷)
+ * 4. Vibe tags from strategy
+ * 
+ * @module features/playlists/naming
+ * 
+ * @example
+ * ```typescript
+ * import { generatePlaylistTitle } from '@/features/playlists/naming';
+ * 
+ * const { title, subtitle, emoji } = generatePlaylistTitle(request, strategy, true);
+ * // Returns: { title: "Energetic Workout", subtitle: "Rock & Pop • energetic vibes • for workout", emoji: "💪" }
+ * ```
  */
 
 import type { PlaylistRequest } from "@/types/playlist";

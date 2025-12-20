@@ -1,5 +1,24 @@
 /**
- * Chunked storage operations for large datasets
+ * Chunked Storage Operations for Large Datasets
+ * 
+ * This module provides chunked storage operations to handle large datasets
+ * efficiently while avoiding browser quota errors and keeping the UI responsive.
+ * 
+ * Key Features:
+ * - Processes records in configurable chunk sizes (default: 1000)
+ * - Yields to UI thread periodically to prevent freezing
+ * - Handles quota errors gracefully with retry logic
+ * - Supports progress callbacks for long-running operations
+ * 
+ * @module db/storage-chunking
+ * 
+ * @example
+ * ```typescript
+ * // Save 10,000 file index entries in chunks
+ * await saveFileIndexEntriesChunked(entries, 1000, (progress) => {
+ *   console.log(`Processed ${progress.processed} of ${progress.total}`);
+ * });
+ * ```
  */
 
 import { db } from "./schema";
@@ -11,10 +30,32 @@ import {
   type StorageError,
 } from "./storage-errors";
 
-const DEFAULT_CHUNK_SIZE = 1000; // Process 1000 records at a time
+/**
+ * Default chunk size for batch operations
+ * 
+ * Processing 1000 records at a time balances performance with memory usage
+ * and prevents UI freezing. Adjust based on average record size and available memory.
+ */
+const DEFAULT_CHUNK_SIZE = 1000;
 
 /**
  * Save file index entries in chunks
+ * 
+ * Processes file index entries in batches to avoid quota errors and keep
+ * the UI responsive. Automatically handles quota errors with retry logic.
+ * 
+ * Performance: Yields to UI thread every 5 chunks to prevent freezing.
+ * 
+ * @param entries - File index entries to save
+ * @param chunkSize - Number of records per chunk (default: 1000)
+ * @param onProgress - Optional progress callback
+ * 
+ * @example
+ * ```typescript
+ * await saveFileIndexEntriesChunked(entries, 1000, (progress) => {
+ *   updateProgressBar(progress.processed / progress.total);
+ * });
+ * ```
  */
 export async function saveFileIndexEntriesChunked(
   entries: FileIndexRecord[],
@@ -43,6 +84,23 @@ export async function saveFileIndexEntriesChunked(
 
 /**
  * Save track metadata in chunks
+ * 
+ * Processes track records in batches to avoid quota errors and keep
+ * the UI responsive. Track records are typically larger than file index
+ * entries, so this function uses the same chunking strategy.
+ * 
+ * Performance: Yields to UI thread every 5 chunks to prevent freezing.
+ * 
+ * @param tracks - Track records to save
+ * @param chunkSize - Number of records per chunk (default: 1000)
+ * @param onProgress - Optional progress callback
+ * 
+ * @example
+ * ```typescript
+ * await saveTrackMetadataChunked(tracks, 1000, (progress) => {
+ *   console.log(`Saved ${progress.processed} of ${progress.total} tracks`);
+ * });
+ * ```
  */
 export async function saveTrackMetadataChunked(
   tracks: TrackRecord[],
@@ -71,6 +129,23 @@ export async function saveTrackMetadataChunked(
 
 /**
  * Delete entries in chunks
+ * 
+ * Deletes database entries in batches to avoid quota errors and keep
+ * the UI responsive. Supports tracks, fileIndex, and scanRuns tables.
+ * 
+ * Performance: Yields to UI thread every 5 chunks to prevent freezing.
+ * 
+ * @param ids - Array of record IDs to delete
+ * @param table - Table name to delete from
+ * @param chunkSize - Number of IDs per chunk (default: 1000)
+ * @param onProgress - Optional progress callback
+ * 
+ * @example
+ * ```typescript
+ * await deleteEntriesChunked(trackIds, 'tracks', 1000, (progress) => {
+ *   console.log(`Deleted ${progress.processed} of ${progress.total}`);
+ * });
+ * ```
  */
 export async function deleteEntriesChunked(
   ids: string[],
@@ -100,6 +175,22 @@ export async function deleteEntriesChunked(
 
 /**
  * Check quota before large operation and warn if needed
+ * 
+ * Estimates storage requirements for a large operation and checks if
+ * there's enough quota available. Returns warnings if storage is near limit.
+ * 
+ * @param recordCount - Number of records to be stored
+ * @param avgRecordSizeBytes - Average size per record in bytes (default: 500)
+ * @returns Object with allowed status, optional warning message, and quota info
+ * 
+ * @example
+ * ```typescript
+ * const check = await checkQuotaForLargeOperation(10000, 500);
+ * if (!check.allowed) {
+ *   alert(check.warning);
+ *   return;
+ * }
+ * ```
  */
 export async function checkQuotaForLargeOperation(
   recordCount: number,

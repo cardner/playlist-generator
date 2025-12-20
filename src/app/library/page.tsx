@@ -10,6 +10,7 @@ import { getCurrentLibraryRoot, getCurrentCollectionId } from "@/db/storage";
 import { ensureMigrationComplete } from "@/db/migration-helper";
 import type { LibraryRoot } from "@/lib/library-selection";
 import type { PermissionStatus } from "@/lib/library-selection";
+import { logger } from "@/lib/logger";
 
 export default function LibraryPage() {
   const [libraryRoot, setLibraryRoot] = useState<LibraryRoot | null>(null);
@@ -34,23 +35,17 @@ export default function LibraryPage() {
       await ensureMigrationComplete();
       
       try {
-        console.log("LibraryPage: Checking for existing scans...");
         let root = await getCurrentLibraryRoot();
-        console.log("LibraryPage: Current library root from DB:", root);
         
         // If no library root record exists, check if we have tracks/fileIndex entries
         // and try to infer the library root ID from them
         if (!root) {
-          console.log("LibraryPage: No library root record found, checking for tracks/fileIndex...");
           const { getAllTracks, getAllFileIndexEntries } = await import("@/db/storage");
           const allTracks = await getAllTracks();
           const allFileIndex = await getAllFileIndexEntries();
           
-          console.log(`LibraryPage: Found ${allTracks.length} tracks, ${allFileIndex.length} file index entries`);
-          
           if (allTracks.length === 0 && allFileIndex.length === 0) {
             // No data found
-            console.log("LibraryPage: No tracks or file index entries found");
             setHasExistingScans(false);
             return;
           }
@@ -60,12 +55,9 @@ export default function LibraryPage() {
           const fileIndexRootIds = new Set(allFileIndex.map(f => f.libraryRootId).filter(Boolean));
           const allRootIds = new Set([...trackRootIds, ...fileIndexRootIds]);
           
-          console.log(`LibraryPage: Found library root IDs:`, Array.from(allRootIds));
-          
           if (allRootIds.size > 0) {
             // Use the first (or most common) library root ID
             const inferredRootId = Array.from(allRootIds)[0];
-            console.log(`LibraryPage: Inferred library root ID: ${inferredRootId}`);
             
             // Try to get scan runs for this root ID
             const { getScanRuns } = await import("@/db/storage");
@@ -73,11 +65,9 @@ export default function LibraryPage() {
             const hasSuccessfulScan = scanRuns.some(run => run.finishedAt && run.total > 0);
             const hasData = allTracks.length > 0 || allFileIndex.length > 0;
             
-            console.log(`LibraryPage: hasSuccessfulScan=${hasSuccessfulScan}, hasData=${hasData}`);
-            
             if (hasData && hasSuccessfulScan) {
               // We have data but no library root record - try to reconstruct it
-              console.warn("LibraryPage: Found tracks/fileIndex but no library root record - attempting reconstruction");
+              logger.warn("Found tracks/fileIndex but no library root record - attempting reconstruction");
               setCurrentLibraryRootId(inferredRootId);
               setHasExistingScans(true);
               
@@ -86,14 +76,13 @@ export default function LibraryPage() {
               const reconstructedRoot = await getSavedLibraryRoot();
               
               if (reconstructedRoot) {
-                console.log("LibraryPage: Successfully reconstructed library root:", reconstructedRoot);
                 setLibraryRoot(reconstructedRoot);
                 // Request permission for the reconstructed root
                 const { requestLibraryPermission } = await import("@/lib/library-selection");
                 const permission = await requestLibraryPermission(reconstructedRoot);
                 setPermissionStatus(permission);
               } else {
-                console.warn("LibraryPage: Failed to reconstruct library root - components will work with root ID only");
+                logger.warn("Failed to reconstruct library root - components will work with root ID only");
                 // LibraryBrowser and LibrarySummary can still work with just the root ID
               }
               return;
@@ -101,7 +90,6 @@ export default function LibraryPage() {
           }
           
           // No data found
-          console.log("LibraryPage: No tracks or file index entries found");
           setHasExistingScans(false);
           return;
         }
@@ -113,51 +101,38 @@ export default function LibraryPage() {
         const fileIndex = await getFileIndexEntries(root.id);
         const scanRuns = await getScanRuns(root.id);
         
-        console.log(`LibraryPage: Found ${tracks.length} tracks, ${fileIndex.length} file index entries, ${scanRuns.length} scan runs`);
-        
         // Consider it an existing scan if we have tracks or file index entries
         // and at least one successful scan run
         const hasSuccessfulScan = scanRuns.some(run => run.finishedAt && run.total > 0);
         const hasData = tracks.length > 0 || fileIndex.length > 0;
-        
-        console.log(`LibraryPage: hasSuccessfulScan=${hasSuccessfulScan}, hasData=${hasData}`);
         
         setHasExistingScans(hasData && hasSuccessfulScan);
         setCurrentLibraryRootId(root.id);
         
         // If we have existing scans, load the saved library root
         if (hasData && hasSuccessfulScan) {
-          console.log("LibraryPage: Loading saved library root...");
           const { getSavedLibraryRoot } = await import("@/lib/library-selection");
           const savedRoot = await getSavedLibraryRoot();
-          console.log("LibraryPage: getSavedLibraryRoot returned:", savedRoot);
           
           if (savedRoot) {
-            console.log("LibraryPage: Setting library root state:", savedRoot);
             setLibraryRoot(savedRoot);
             // Also request permission for the saved root
             const { requestLibraryPermission } = await import("@/lib/library-selection");
             const permission = await requestLibraryPermission(savedRoot);
-            console.log("LibraryPage: Permission status:", permission);
             setPermissionStatus(permission);
           } else {
-            console.warn("LibraryPage: getSavedLibraryRoot returned null");
+            logger.warn("getSavedLibraryRoot returned null");
           }
         } else {
           setHasExistingScans(false);
         }
       } catch (err) {
-        console.error("Failed to check existing scans:", err);
+        logger.error("Failed to check existing scans:", err);
         setHasExistingScans(false);
       }
     }
     checkExistingScans();
   }, [isNewSelection]); // Skip if new selection was made
-
-  // Debug: Log when libraryRoot changes
-  useEffect(() => {
-    console.log("LibraryPage: libraryRoot state changed:", libraryRoot);
-  }, [libraryRoot]);
 
   // Update library root ID when root changes or after scan completes
   useEffect(() => {
@@ -177,7 +152,7 @@ export default function LibraryPage() {
           setCurrentLibraryRootId(root?.id || null);
         }
       } catch (err) {
-        console.error("Failed to update root ID:", err);
+        logger.error("Failed to update root ID:", err);
         // Don't set state on error - let user retry
       }
     }
@@ -201,9 +176,6 @@ export default function LibraryPage() {
 
   // Update hasExistingScans when scan completes (scan is now complete)
   const handleScanComplete = async () => {
-    // Verify data persistence before refreshing
-    console.log("Scan complete callback triggered, verifying data persistence...");
-    
     // Small delay to ensure all database writes are complete
     await new Promise(resolve => setTimeout(resolve, 200));
     
@@ -212,10 +184,6 @@ export default function LibraryPage() {
     const root = await getCurrentLibraryRoot();
     
     if (root) {
-      const fileIndex = await getFileIndexEntries(root.id);
-      const tracks = await getTracks(root.id);
-      console.log(`Data persistence verified: ${fileIndex.length} file index entries, ${tracks.length} tracks`);
-      
       // Update root ID to ensure components have latest data
       setCurrentLibraryRootId(root.id);
       
@@ -238,14 +206,12 @@ export default function LibraryPage() {
           key={collectionRefresh}
           refreshTrigger={collectionRefresh}
           onLibrarySelected={(root) => {
-            console.log("LibraryPage: Folder selected", root);
             setLibraryRoot(root);
             setIsNewSelection(true);
             // Explicitly set to false (not null) so LibraryScanner shows scan button immediately
             setHasExistingScans(false);
           }}
           onPermissionStatus={(status) => {
-            console.log("LibraryPage: Permission status", status);
             setPermissionStatus(status);
           }}
           onStartScan={() => {

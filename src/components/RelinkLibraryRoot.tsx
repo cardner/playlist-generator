@@ -1,9 +1,55 @@
+/**
+ * RelinkLibraryRoot Component
+ * 
+ * Component for relinking a library root when the folder has been moved or renamed.
+ * Provides UI for initiating the relink process, displaying progress, and showing
+ * results (matched/unmatched tracks).
+ * 
+ * Features:
+ * - Relink initiation button
+ * - Progress display during relinking
+ * - Results summary (matched/unmatched counts)
+ * - Error handling and display
+ * - Success callback on completion
+ * 
+ * Relinking Process:
+ * 1. User clicks "Relink Library"
+ * 2. System prompts for new folder location
+ * 3. Matches existing tracks by relativePath + size + mtime
+ * 4. Creates new library root with updated paths
+ * 5. Updates all matched tracks and file index entries
+ * 
+ * State Management:
+ * - Manages relinking state (idle, in-progress, complete)
+ * - Tracks progress updates from relink function
+ * - Stores and displays relink results
+ * 
+ * Props:
+ * - `libraryRootId`: ID of the library root to relink
+ * - `onRelinkComplete`: Callback when relink succeeds (receives new root ID)
+ * - `onError`: Optional callback when relink fails
+ * 
+ * @module components/RelinkLibraryRoot
+ * 
+ * @example
+ * ```tsx
+ * <RelinkLibraryRoot
+ *   libraryRootId="root-123"
+ *   onRelinkComplete={(newRootId) => {
+ *     // Update UI with new root ID
+ *     setLibraryRootId(newRootId);
+ *   }}
+ * />
+ * ```
+ */
+
 "use client";
 
 import { useState } from "react";
 import { relinkLibraryRoot, type RelinkProgress } from "@/features/library/relink";
 import { FolderOpen, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { logger } from "@/lib/logger";
 
 interface RelinkLibraryRootProps {
   libraryRootId: string;
@@ -48,7 +94,7 @@ export function RelinkLibraryRoot({
         onRelinkComplete(relinkResult.newRootId);
       }
     } catch (error) {
-      console.error("Relink failed:", error);
+      logger.error("Relink failed:", error);
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       setResult({
         success: false,

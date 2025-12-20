@@ -161,13 +161,15 @@ export const InlineAudioPlayer = forwardRef<InlineAudioPlayerRef, InlineAudioPla
   }
 
   // Render hidden audio element
+  // Note: key uses only trackFileId to maintain stable component identity
+  // URL changes are handled by useAudioPreview hook updating the src attribute
   return (
     <audio
       ref={audioRef}
       src={sampleResult.url}
       preload="auto"
       style={{ display: 'none' }}
-      key={`${trackFileId}-${sampleResult.url}`} // Force re-render when URL changes
+      key={trackFileId}
     />
   );
 });

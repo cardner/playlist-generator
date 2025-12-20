@@ -1,8 +1,34 @@
 /**
- * Deterministic matching engine for playlist generation
+ * Deterministic Matching Engine for Playlist Generation
  * 
- * Selects REAL tracks from IndexedDB using strategy + request.
- * Enforces constraints and provides explainable reasons for each track.
+ * This is the core orchestrator for playlist generation. It selects real tracks from
+ * IndexedDB using a combination of user request parameters and LLM-generated strategy.
+ * The engine enforces constraints and provides explainable reasons for each track selection.
+ * 
+ * Generation Pipeline:
+ * 1. **Filtering**: Filters candidate tracks based on constraints (genre, tempo, duration)
+ * 2. **Scoring**: Scores tracks using multiple factors (genre match, tempo, diversity, surprise)
+ * 3. **Selection**: Selects top-scoring tracks with optional LLM refinement
+ * 4. **Summary**: Generates summary statistics (genre mix, tempo distribution, etc.)
+ * 5. **Ordering**: Orders tracks using flow arc (warmup → build → peak → cooldown)
+ * 6. **Discovery**: Integrates discovery tracks (if enabled) after library tracks
+ * 
+ * Key Features:
+ * - Deterministic selection (same request = same playlist, unless LLM refinement is used)
+ * - Explainable reasons for each track selection
+ * - Constraint enforcement (required genres, tempo ranges, duration limits)
+ * - Flow arc ordering for smooth listening experience
+ * - Discovery track integration for music exploration
+ * 
+ * @module features/playlists/matching-engine
+ * 
+ * @example
+ * ```typescript
+ * import { generatePlaylist } from '@/features/playlists/matching-engine';
+ * 
+ * const playlist = await generatePlaylist(request, strategy, index);
+ * // Returns: GeneratedPlaylist with tracks, summary, and ordering
+ * ```
  */
 
 import type { PlaylistRequest } from "@/types/playlist";
@@ -12,6 +38,9 @@ import type { TrackRecord } from "@/db/schema";
 import type { LLMRefinedTrackScore, LLMProvider } from "@/types/playlist";
 import { orderTracks } from "./ordering";
 import { normalizeGenre } from "@/features/library/genre-normalization";
+import { logger } from "@/lib/logger";
+import { scoreTrack, refineTrackSelectionWithLLM } from "./track-selection";
+import { generatePlaylistSummary } from "./summary";
 
 export interface TrackReason {
   type: "genre_match" | "tempo_match" | "duration_fit" | "diversity" | "surprise" | "constraint";
@@ -94,716 +123,6 @@ class SeededRandom {
   }
 }
 
-/**
- * Calculate genre match score (hard/soft matching)
- * Uses normalized genres for matching
- */
-function calculateGenreMatch(
-  track: TrackRecord,
-  requestedGenres: string[],
-  strategy: PlaylistStrategy,
-  matchingIndex: MatchingIndex
-): { score: number; reasons: TrackReason[] } {
-  const reasons: TrackReason[] = [];
-  let score = 0;
-
-  if (requestedGenres.length === 0) {
-    return { score: 1, reasons: [] };
-  }
-
-  // Normalize requested genres
-  const normalizedRequested = requestedGenres.map((g) => normalizeGenre(g));
-  const normalizedRequestedLower = normalizedRequested.map((g) => g.toLowerCase());
-
-  // Get normalized genres for this track from metadata
-  const trackMetadata = matchingIndex.trackMetadata.get(track.trackFileId);
-  const trackNormalizedGenres = trackMetadata?.normalizedGenres || 
-    track.tags.genres.map((g) => normalizeGenre(g));
-  const trackNormalizedLower = trackNormalizedGenres.map((g) => g.toLowerCase());
-
-  // Hard match: exact normalized genre match
-  const exactMatches = trackNormalizedLower.filter((tg) =>
-    normalizedRequestedLower.includes(tg)
-  );
-  if (exactMatches.length > 0) {
-    score = exactMatches.length / normalizedRequested.length;
-    // Get display names for matched genres
-    const matchedGenres = exactMatches.map((lower) => {
-      const normalized = trackNormalizedGenres.find((g) => g.toLowerCase() === lower);
-      return normalized || lower;
-    });
-    reasons.push({
-      type: "genre_match",
-      explanation: `Matches ${exactMatches.length} requested genre(s): ${matchedGenres.join(", ")}`,
-      score: 1.0,
-    });
-  } else {
-    // Soft match: partial/substring match on normalized genres
-    const partialMatches = trackNormalizedLower.filter((tg) =>
-      normalizedRequestedLower.some((rg) => tg.includes(rg) || rg.includes(tg))
-    );
-    if (partialMatches.length > 0) {
-      score = (partialMatches.length / normalizedRequested.length) * 0.7;
-      const matchedGenres = partialMatches.map((lower) => {
-        const normalized = trackNormalizedGenres.find((g) => g.toLowerCase() === lower);
-        return normalized || lower;
-      });
-      reasons.push({
-        type: "genre_match",
-        explanation: `Partial genre match: ${matchedGenres.join(", ")}`,
-        score: 0.7,
-      });
-    } else {
-      score = 0;
-    }
-  }
-
-  // Check against required genres in strategy (normalized)
-  if (strategy.constraints.requiredGenres) {
-    const requiredNormalized = strategy.constraints.requiredGenres.map((g) =>
-      normalizeGenre(g).toLowerCase()
-    );
-    const hasRequired = trackNormalizedLower.some((tg) => requiredNormalized.includes(tg));
-    if (!hasRequired) {
-      score *= 0.3; // Heavy penalty for missing required genres
-      reasons.push({
-        type: "constraint",
-        explanation: "Missing required genre",
-        score: 0.3,
-      });
-    }
-  }
-
-  return { score, reasons };
-}
-
-/**
- * Calculate tempo match score
- */
-function calculateTempoMatch(
-  track: TrackRecord,
-  request: PlaylistRequest,
-  strategy: PlaylistStrategy,
-  matchingIndex: MatchingIndex
-): { score: number; reasons: TrackReason[] } {
-  const reasons: TrackReason[] = [];
-  let score = 0.5; // Default neutral
-
-  const trackTempoBucket =
-    matchingIndex.trackMetadata.get(track.trackFileId)?.tempoBucket ||
-    "unknown";
-
-  // Match tempo bucket
-  if (request.tempo.bucket) {
-    if (trackTempoBucket === request.tempo.bucket) {
-      score = 1.0;
-      reasons.push({
-        type: "tempo_match",
-        explanation: `Matches tempo bucket: ${request.tempo.bucket}`,
-        score: 1.0,
-      });
-    } else if (trackTempoBucket === "unknown") {
-      score = 0.5; // Neutral for unknown
-    } else {
-      score = 0.2; // Low score for wrong tempo
-    }
-  }
-
-  // Match BPM range if specified
-  if (request.tempo.bpmRange) {
-    // Note: BPM not currently extracted, so this is placeholder
-    // When BPM is available, check if track BPM falls within range
-    if (trackTempoBucket === "unknown") {
-      score = 0.5;
-    }
-  }
-
-  // Check strategy tempo guidance
-  if (strategy.tempoGuidance.targetBucket) {
-    if (trackTempoBucket === strategy.tempoGuidance.targetBucket) {
-      score = Math.max(score, 0.9);
-    } else if (
-      strategy.tempoGuidance.allowVariation &&
-      trackTempoBucket !== "unknown"
-    ) {
-      score = Math.max(score, 0.6); // Allow some variation
-    }
-  }
-
-  return { score, reasons };
-}
-
-/**
- * Calculate duration fit score
- */
-function calculateDurationFit(
-  track: TrackRecord,
-  targetDuration: number, // seconds
-  currentDuration: number, // seconds
-  remainingSlots: number
-): { score: number; reasons: TrackReason[] } {
-  const reasons: TrackReason[] = [];
-  const trackDuration = track.tech?.durationSeconds || 180; // Default 3 min
-  const newDuration = currentDuration + trackDuration;
-  const remainingDuration = targetDuration - currentDuration;
-  const avgRemaining = remainingDuration / Math.max(remainingSlots, 1);
-
-  // Score based on how well this track fits the remaining duration
-  const durationDiff = Math.abs(trackDuration - avgRemaining);
-  const maxDiff = avgRemaining * 0.5; // 50% tolerance
-  const fitScore = Math.max(0, 1 - durationDiff / maxDiff);
-
-  if (fitScore > 0.8) {
-    reasons.push({
-      type: "duration_fit",
-      explanation: `Duration fits well (${Math.round(trackDuration / 60)}:${String(Math.round(trackDuration % 60)).padStart(2, "0")})`,
-      score: fitScore,
-    });
-  } else if (fitScore > 0.5) {
-    reasons.push({
-      type: "duration_fit",
-      explanation: `Duration acceptable`,
-      score: fitScore,
-    });
-  }
-
-  return { score: fitScore, reasons };
-}
-
-/**
- * Calculate diversity score with penalties
- */
-function calculateDiversity(
-  track: TrackRecord,
-  previousTracks: TrackRecord[],
-  strategy: PlaylistStrategy
-): { score: number; reasons: TrackReason[] } {
-  const reasons: TrackReason[] = [];
-  let score = 1.0;
-
-  const diversityRules = strategy.diversityRules;
-  const recentTracks = previousTracks.slice(-diversityRules.artistSpacing);
-  const recentArtists = new Set(recentTracks.map((t) => t.tags.artist));
-  const recentGenres = new Set(
-    recentTracks.flatMap((t) => t.tags.genres.map((g) => g.toLowerCase()))
-  );
-
-  // Artist diversity
-  const artistCount = previousTracks.filter(
-    (t) => t.tags.artist === track.tags.artist
-  ).length;
-
-  if (artistCount >= diversityRules.maxTracksPerArtist) {
-    score *= 0.1; // Heavy penalty
-    reasons.push({
-      type: "diversity",
-      explanation: `Too many tracks from ${track.tags.artist} (${artistCount})`,
-      score: 0.1,
-    });
-  } else if (recentArtists.has(track.tags.artist)) {
-    score *= 0.3; // Penalty for recent artist
-    reasons.push({
-      type: "diversity",
-      explanation: `Same artist appeared recently`,
-      score: 0.3,
-    });
-  } else {
-    reasons.push({
-      type: "diversity",
-      explanation: `Good artist diversity`,
-      score: 1.0,
-    });
-  }
-
-  // Genre diversity
-  const trackGenres = track.tags.genres.map((g) => g.toLowerCase());
-  const hasRecentGenre = trackGenres.some((g) => recentGenres.has(g));
-
-  if (hasRecentGenre) {
-    score *= 0.7; // Light penalty for recent genre
-  }
-
-  // Album diversity (bonus)
-  const recentAlbums = new Set(recentTracks.map((t) => t.tags.album));
-  if (!recentAlbums.has(track.tags.album)) {
-    score *= 1.1; // Small bonus for different album
-  }
-
-  return { score, reasons };
-}
-
-/**
- * Calculate surprise factor (include nearby genres/artists)
- */
-function calculateSurprise(
-  track: TrackRecord,
-  requestedGenres: string[],
-  previousTracks: TrackRecord[],
-  matchingIndex: MatchingIndex,
-  surpriseLevel: number
-): { score: number; reasons: TrackReason[] } {
-  const reasons: TrackReason[] = [];
-  let score = 0;
-
-  if (surpriseLevel < 0.1) {
-    return { score: 0, reasons: [] }; // No surprise for very safe playlists
-  }
-
-  // Normalize requested genres
-  const normalizedRequested = requestedGenres.map((g) => normalizeGenre(g));
-  const normalizedRequestedLower = normalizedRequested.map((g) => g.toLowerCase());
-
-  // Get normalized genres for this track
-  const trackMetadata = matchingIndex.trackMetadata.get(track.trackFileId);
-  const trackNormalizedGenres = trackMetadata?.normalizedGenres || 
-    track.tags.genres.map((g) => normalizeGenre(g));
-  const trackNormalizedLower = trackNormalizedGenres.map((g) => g.toLowerCase());
-
-  // Check if track has requested genres (using normalized)
-  const hasRequestedGenre = trackNormalizedLower.some((tg) =>
-    normalizedRequestedLower.includes(tg)
-  );
-
-  if (!hasRequestedGenre) {
-    // This is a surprise track - check if it's "nearby"
-    // Find artists that appear with requested genres (using normalized genres)
-    const artistsWithRequestedGenres = new Set<string>();
-    for (const genre of normalizedRequestedLower) {
-      const genreTracks = matchingIndex.byGenre.get(genre) || [];
-      for (const trackId of genreTracks) {
-        const metadata = matchingIndex.trackMetadata.get(trackId);
-        if (metadata) {
-          artistsWithRequestedGenres.add(metadata.artist);
-        }
-      }
-    }
-
-    // If this artist appears with requested genres, it's a good surprise
-    if (artistsWithRequestedGenres.has(track.tags.artist)) {
-      score = surpriseLevel * 0.5; // Moderate surprise bonus
-      reasons.push({
-        type: "surprise",
-        explanation: `Surprise track from ${track.tags.artist} (related to requested genres)`,
-        score: score,
-      });
-    } else {
-      // Check if any previous tracks share normalized genres with this track
-      const previousNormalizedGenres = new Set<string>();
-      for (const prevTrack of previousTracks) {
-        const prevMetadata = matchingIndex.trackMetadata.get(prevTrack.trackFileId);
-        const prevNormalized = prevMetadata?.normalizedGenres || 
-          prevTrack.tags.genres.map((g) => normalizeGenre(g));
-        prevNormalized.forEach((g) => previousNormalizedGenres.add(g.toLowerCase()));
-      }
-      const sharedGenres = trackNormalizedLower.filter((g) => previousNormalizedGenres.has(g));
-
-      if (sharedGenres.length > 0) {
-        score = surpriseLevel * 0.3; // Small surprise bonus
-        const sharedGenreDisplay = trackNormalizedGenres.find((g) => 
-          sharedGenres.includes(g.toLowerCase())
-        ) || sharedGenres[0];
-        reasons.push({
-          type: "surprise",
-          explanation: `Surprise track with shared genre: ${sharedGenreDisplay}`,
-          score: score,
-        });
-      }
-    }
-  }
-
-  return { score, reasons };
-}
-
-/**
- * Score a track comprehensively
- */
-function scoreTrack(
-  track: TrackRecord,
-  request: PlaylistRequest,
-  strategy: PlaylistStrategy,
-  matchingIndex: MatchingIndex,
-  previousTracks: TrackRecord[],
-  currentDuration: number,
-  targetDuration: number,
-  remainingSlots: number
-): TrackSelection {
-  const weights = strategy.scoringWeights;
-
-  // Calculate component scores
-  const genreMatch = calculateGenreMatch(
-    track,
-    request.genres,
-    strategy,
-    matchingIndex
-  );
-  const tempoMatch = calculateTempoMatch(
-    track,
-    request,
-    strategy,
-    matchingIndex
-  );
-  const durationFit = calculateDurationFit(
-    track,
-    targetDuration,
-    currentDuration,
-    remainingSlots
-  );
-  const diversity = calculateDiversity(track, previousTracks, strategy);
-  const surprise = calculateSurprise(
-    track,
-    request.genres,
-    previousTracks,
-    matchingIndex,
-    request.surprise
-  );
-
-  // Check if track matches suggestions (bonus score)
-  let suggestionBonus = 0;
-  const suggestionReasons: TrackReason[] = [];
-  
-  if (request.suggestedArtists && request.suggestedArtists.length > 0) {
-    const artist = track.tags.artist?.toLowerCase().trim();
-    const suggestedArtistsLower = request.suggestedArtists.map((a) => a.toLowerCase().trim());
-    if (artist && suggestedArtistsLower.includes(artist)) {
-      suggestionBonus += 0.3;
-      suggestionReasons.push({
-        type: "constraint",
-        explanation: `From suggested artist: ${track.tags.artist}`,
-        score: 0.3,
-      });
-    }
-  }
-  
-  if (request.suggestedAlbums && request.suggestedAlbums.length > 0) {
-    const album = track.tags.album?.toLowerCase().trim();
-    const suggestedAlbumsLower = request.suggestedAlbums.map((a) => a.toLowerCase().trim());
-    if (album && suggestedAlbumsLower.includes(album)) {
-      suggestionBonus += 0.3;
-      suggestionReasons.push({
-        type: "constraint",
-        explanation: `From suggested album: ${track.tags.album}`,
-        score: 0.3,
-      });
-    }
-  }
-  
-  if (request.suggestedTracks && request.suggestedTracks.length > 0) {
-    const title = track.tags.title?.toLowerCase().trim();
-    const suggestedTracksLower = request.suggestedTracks.map((t) => t.toLowerCase().trim());
-    if (title && suggestedTracksLower.includes(title)) {
-      suggestionBonus += 0.5; // Higher bonus for exact track match
-      suggestionReasons.push({
-        type: "constraint",
-        explanation: `Suggested track: ${track.tags.title}`,
-        score: 0.5,
-      });
-    }
-  }
-
-  // Combine all reasons
-  const reasons: TrackReason[] = [
-    ...genreMatch.reasons,
-    ...tempoMatch.reasons,
-    ...durationFit.reasons,
-    ...diversity.reasons,
-    ...surprise.reasons,
-    ...suggestionReasons,
-  ];
-
-  // Calculate weighted score with suggestion bonus
-  const score =
-    genreMatch.score * weights.genreMatch +
-    tempoMatch.score * weights.tempoMatch +
-    durationFit.score * 0.15 + // Duration fit weight
-    diversity.score * weights.diversity +
-    surprise.score * (request.surprise * 0.1) + // Surprise weight scales with surprise level
-    suggestionBonus; // Add suggestion bonus (can push score above 1.0)
-
-  return {
-    trackFileId: track.trackFileId,
-    track,
-    score,
-    reasons,
-    genreMatch: genreMatch.score,
-    tempoMatch: tempoMatch.score,
-    durationFit: durationFit.score,
-    diversity: diversity.score,
-    surprise: surprise.score,
-  };
-}
-
-/**
- * Refine track scores using LLM for semantic understanding
- */
-async function refineTrackSelectionWithLLM(
-  candidates: TrackSelection[],
-  request: PlaylistRequest,
-  previousTracks: TrackRecord[],
-  remainingSlots: number,
-  provider: LLMProvider,
-  apiKey: string,
-  topN: number = 25,
-  timeout: number = 20000
-): Promise<Map<string, LLMRefinedTrackScore> | null> {
-  try {
-    // Take top N candidates
-    const topCandidates = candidates.slice(0, topN);
-    if (topCandidates.length === 0) {
-      return null;
-    }
-
-    // Build prompt
-    const prompt = buildRefinementPrompt(request, topCandidates, previousTracks, remainingSlots);
-
-    // Call LLM with timeout
-    const responsePromise = callLLMForRefinement(prompt, provider, apiKey);
-    const timeoutPromise = new Promise<string>((_, reject) =>
-      setTimeout(() => reject(new Error("Refinement timeout")), timeout)
-    );
-
-    const response = await Promise.race([responsePromise, timeoutPromise]);
-    const jsonStr = extractJSONFromResponse(response);
-    const parsed = JSON.parse(jsonStr);
-
-    // Build map of refined scores - map by trackFileId
-    const refinedScores = new Map<string, LLMRefinedTrackScore>();
-    if (Array.isArray(parsed.tracks)) {
-      for (const item of parsed.tracks) {
-        // item.trackFileId is actually the index (1-based) from the prompt
-        const index = parseInt(item.trackFileId || "0", 10);
-        if (index > 0 && index <= topCandidates.length) {
-          const candidate = topCandidates[index - 1];
-          if (candidate && typeof item.refinedScore === "number") {
-            refinedScores.set(candidate.trackFileId, {
-              trackFileId: candidate.trackFileId,
-              refinedScore: Math.max(0, Math.min(1, item.refinedScore)),
-              explanation: item.explanation || "",
-              semanticMatch: {
-                moodMatch: item.semanticMatch?.moodMatch === true,
-                activityMatch: item.semanticMatch?.activityMatch === true,
-                genreRelationship: item.semanticMatch?.genreRelationship || "unknown",
-              },
-            });
-          }
-        }
-      }
-    }
-
-    return refinedScores.size > 0 ? refinedScores : null;
-  } catch (error) {
-    console.warn("LLM track refinement failed:", error);
-    return null; // Fall back to algorithmic scores only
-  }
-}
-
-/**
- * Call LLM API for track refinement
- */
-async function callLLMForRefinement(
-  prompt: string,
-  provider: LLMProvider,
-  apiKey: string
-): Promise<string> {
-  switch (provider) {
-    case "openai":
-      return callOpenAIForRefinement(prompt, apiKey);
-    case "gemini":
-      return callGeminiForRefinement(prompt, apiKey);
-    case "claude":
-      return callClaudeForRefinement(prompt, apiKey);
-    case "local":
-      return callLocalLLMForRefinement(prompt, apiKey);
-    default:
-      throw new Error(`Unsupported LLM provider: ${provider}`);
-  }
-}
-
-async function callOpenAIForRefinement(prompt: string, apiKey: string): Promise<string> {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
-      response_format: { type: "json_object" },
-      temperature: 0.7,
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
-    throw new Error(`OpenAI API error: ${error.error?.message || response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data.choices[0]?.message?.content || "";
-}
-
-async function callGeminiForRefinement(prompt: string, apiKey: string): Promise<string> {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: prompt }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          responseMimeType: "application/json",
-        },
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
-    throw new Error(`Gemini API error: ${error.error?.message || response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-}
-
-async function callClaudeForRefinement(prompt: string, apiKey: string): Promise<string> {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "claude-3-haiku-20240307",
-      max_tokens: 4096,
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
-    throw new Error(`Claude API error: ${error.error?.message || response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data.content?.[0]?.text || "";
-}
-
-async function callLocalLLMForRefinement(prompt: string, apiKey: string): Promise<string> {
-  const baseUrl = apiKey.startsWith("http") ? apiKey : `http://localhost:11434`;
-  const endpoint = apiKey.startsWith("http") 
-    ? `${apiKey}/api/generate` 
-    : `${baseUrl}/api/generate`;
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "llama2",
-      prompt: prompt,
-      stream: false,
-      format: "json",
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Local LLM API error: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data.response || "";
-}
-
-/**
- * Extract JSON from LLM response
- */
-function extractJSONFromResponse(response: string): string {
-  const jsonMatch = response.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  if (jsonMatch) {
-    return jsonMatch[1].trim();
-  }
-  
-  const jsonObjectMatch = response.match(/\{[\s\S]*\}/);
-  if (jsonObjectMatch) {
-    return jsonObjectMatch[0];
-  }
-  
-  return response.trim();
-}
-
-/**
- * Build refinement prompt
- */
-function buildRefinementPrompt(
-  request: PlaylistRequest,
-  candidates: TrackSelection[],
-  previousTracks: TrackRecord[],
-  remainingSlots: number
-): string {
-  const previousTracksList = previousTracks
-    .slice(-5) // Last 5 tracks for context
-    .map((t) => `"${t.tags.title}" by ${t.tags.artist}`)
-    .join(", ");
-
-  const candidatesList = candidates.map((candidate, idx) => {
-    const track = candidate.track;
-    return `${idx + 1}. "${track.tags.title}" by ${track.tags.artist} (${track.tags.genres.join(", ")}) - ${Math.round((track.tech?.durationSeconds || 180) / 60)}:${String(Math.round((track.tech?.durationSeconds || 180) % 60)).padStart(2, "0")}`;
-  }).join("\n");
-
-  return `You are evaluating music tracks for playlist inclusion. Given the user's request and track metadata, score each track (0-1) and explain why it matches or doesn't match semantically.
-
-USER REQUEST:
-- Genres: ${request.genres.join(", ") || "Any"}
-- Mood: ${request.mood.join(", ") || "Any"}
-- Activity: ${request.activity.join(", ") || "Any"}
-- Tempo: ${request.tempo.bucket || "Any"}
-- Surprise level: ${request.surprise} (0=safe, 1=adventurous)
-
-CURRENT PLAYLIST CONTEXT:
-- Tracks already selected: ${previousTracksList || "None"}
-- Remaining slots: ${remainingSlots}
-
-CANDIDATE TRACKS:
-${candidatesList}
-
-For each track, provide:
-- trackFileId: string (use the track number from the list above, e.g., "1", "2", etc. - we'll map it back)
-- refinedScore: number (0-1) - semantic match score
-- explanation: string (why it matches/doesn't match semantically)
-- semanticMatch: object { moodMatch: boolean, activityMatch: boolean, genreRelationship: string }
-
-Consider:
-- Semantic understanding of mood/activity (e.g., "energetic" vs "upbeat", "working out" needs high energy)
-- Cultural context (e.g., certain artists/styles are known for specific activities)
-- Genre relationships (e.g., "indie rock" and "alternative" overlap)
-- How well the track fits the overall playlist flow
-
-Return ONLY valid JSON matching this schema:
-{
-  "tracks": [
-    {
-      "trackFileId": string (track number as string, e.g., "1"),
-      "refinedScore": number (0-1),
-      "explanation": string,
-      "semanticMatch": {
-        "moodMatch": boolean,
-        "activityMatch": boolean,
-        "genreRelationship": string
-      }
-    }
-  ]
-}`;
-}
 
 /**
  * Generate playlist with deterministic track selection
@@ -1114,7 +433,7 @@ export async function generatePlaylist(
           llmRefinementCalled = true; // Mark as called to prevent further calls
         }
       } catch (error) {
-        console.warn("LLM refinement failed, using algorithmic scores:", error);
+        logger.warn("LLM refinement failed, using algorithmic scores:", error);
         // Continue with algorithmic scores only, mark as called to prevent retries
         llmRefinementCalled = true;
       }
@@ -1270,48 +589,8 @@ export async function generatePlaylist(
     0
   );
 
-  // Build summary
-  const genreMix = new Map<string, number>();
-  const tempoMix = new Map<string, number>();
-  const artistMix = new Map<string, number>();
-  const durations: number[] = [];
-
-  for (const selection of selected) {
-    const track = selection.track;
-    const metadata = index.trackMetadata.get(track.trackFileId);
-
-    // Genre mix
-    for (const genre of track.tags.genres) {
-      genreMix.set(genre, (genreMix.get(genre) || 0) + 1);
-    }
-
-    // Tempo mix
-    const tempoBucket = metadata?.tempoBucket || "unknown";
-    tempoMix.set(tempoBucket, (tempoMix.get(tempoBucket) || 0) + 1);
-
-    // Artist mix
-    artistMix.set(track.tags.artist, (artistMix.get(track.tags.artist) || 0) + 1);
-
-    // Duration stats
-    const duration = track.tech?.durationSeconds || 0;
-    if (duration > 0) {
-      durations.push(duration);
-    }
-  }
-
-  const summary: PlaylistSummary = {
-    totalDuration: finalDuration,
-    trackCount: selected.length,
-    genreMix,
-    tempoMix,
-    artistMix,
-    avgDuration:
-      durations.length > 0
-        ? durations.reduce((a, b) => a + b, 0) / durations.length
-        : 0,
-    minDuration: durations.length > 0 ? Math.min(...durations) : 0,
-    maxDuration: durations.length > 0 ? Math.max(...durations) : 0,
-  };
+  // Generate summary statistics
+  const summary = generatePlaylistSummary(selected, index);
 
   // Generate playlist ID (deterministic based on inputs)
   const idSeed = `${libraryRootId || "all"}-${JSON.stringify(request)}-${Date.now()}`;
@@ -1433,7 +712,7 @@ export async function generatePlaylist(
             inspiringTrackId: libraryTrack.trackFileId,
           });
         } catch (error) {
-          console.warn(`Failed to find discovery track for ${libraryTrack.tags.title}:`, error);
+          logger.warn(`Failed to find discovery track for ${libraryTrack.tags.title}:`, error);
           // Continue with next track even if this one fails
         }
       }
@@ -1451,7 +730,7 @@ export async function generatePlaylist(
       discoveryTracks.length = 0;
       discoveryTracks.push(...deduplicatedDiscoveryTracks);
     } catch (error) {
-      console.warn("Discovery track generation failed:", error);
+      logger.warn("Discovery track generation failed:", error);
       // Continue without discovery tracks
     }
   }

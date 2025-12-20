@@ -1,3 +1,42 @@
+/**
+ * MetadataProgress Component
+ * 
+ * Displays progress during metadata parsing from audio files. Shows files parsed,
+ * total files, errors, batch progress, and estimated time remaining.
+ * 
+ * Features:
+ * - Progress bar with percentage
+ * - File count display (parsed/total)
+ * - Error count display
+ * - Batch progress (if batched processing)
+ * - Estimated time remaining
+ * - Current file name display
+ * 
+ * Props:
+ * - `parsed`: Number of files parsed so far
+ * - `total`: Total number of files to parse
+ * - `errors`: Number of files that failed to parse
+ * - `currentFile`: Optional name of current file being parsed
+ * - `batch`: Current batch number (if batched)
+ * - `totalBatches`: Total number of batches (if batched)
+ * - `estimatedTimeRemaining`: Estimated seconds remaining
+ * 
+ * @module components/MetadataProgress
+ * 
+ * @example
+ * ```tsx
+ * <MetadataProgress
+ *   parsed={250}
+ *   total={500}
+ *   errors={2}
+ *   batch={3}
+ *   totalBatches={5}
+ *   estimatedTimeRemaining={120}
+ *   currentFile="Music/Album/Track.mp3"
+ * />
+ * ```
+ */
+
 "use client";
 
 import { Loader2 } from "lucide-react";

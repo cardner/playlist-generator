@@ -1,6 +1,45 @@
+/**
+ * PlaylistDisplay Component
+ * 
+ * Main component for displaying and interacting with generated playlists.
+ * Provides a comprehensive view of playlist tracks, reasons, discovery tracks,
+ * and various playlist manipulation features.
+ * 
+ * Features:
+ * - Displays playlist tracks with inline audio preview
+ * - Shows track selection reasons and explanations
+ * - Supports playlist variants (calmer, faster, more variety, etc.)
+ * - Allows playlist regeneration with seed control
+ * - Provides playlist export functionality
+ * - Supports flow arc editing and reordering
+ * - Integrates discovery tracks with explanations
+ * 
+ * State Management:
+ * - Uses `useAudioPreviewState` hook for managing audio playback across multiple tracks
+ * - Manages track loading and lookup from IndexedDB
+ * - Handles playlist editing state (flow arc, track reordering)
+ * - Tracks variant generation and regeneration state
+ * 
+ * Performance Optimizations:
+ * - Uses `useMemo` to pre-compute track data and avoid redundant lookups
+ * - Memoizes expensive computations (track data maps, filtering)
+ * - Optimized rendering for large playlists (100+ tracks)
+ * 
+ * @module components/PlaylistDisplay
+ * 
+ * @example
+ * ```tsx
+ * <PlaylistDisplay
+ *   playlist={generatedPlaylist}
+ *   libraryRootId="root-123"
+ *   playlistCollectionId="collection-456"
+ * />
+ * ```
+ */
+
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
 import { useRouter } from "next/navigation";
 import type { GeneratedPlaylist } from "@/features/playlists";
 import { getAllTracks, getTracks, getCurrentLibraryRoot } from "@/db/storage";
@@ -570,16 +609,30 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     try {
       const sampleResult = await searchTrackSample(trackInfo);
       if (sampleResult) {
+        // Clear searching state BEFORE setting sample result to ensure autoPlay works
+        // This ensures that when the audio element loads, autoPlay prop will be true
+        setSearchingTrack(null);
         setSampleResult(trackFileId, sampleResult);
         setPlayingTrack(trackFileId);
         // Audio will auto-play via InlineAudioPlayer with autoPlay prop
+        // If audio already loaded, trigger play programmatically as fallback
+        setTimeout(async () => {
+          const audioControls = audioRefs.current.get(trackFileId);
+          if (audioControls && playingTrackId === trackFileId) {
+            try {
+              await audioControls.play();
+            } catch {
+              // Ignore play errors - user may have paused or switched tracks
+            }
+          }
+        }, 50);
       } else {
         setTrackError(trackFileId, "Preview not available for this track");
+        setSearchingTrack(null);
       }
     } catch (error) {
       logger.error("[PlaylistDisplay] Failed to search for preview:", error);
       setTrackError(trackFileId, "Failed to find preview for this track");
-    } finally {
       setSearchingTrack(null);
     }
   }, [playingTrackId, hasSampleResult, getSampleResult, setSampleResult, setTrackError, setPlayingTrack, clearPlayingTrack, setSearchingTrack]);
@@ -1087,27 +1140,52 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       {/* Track List */}
       <div className="bg-app-surface rounded-sm border border-app-border overflow-hidden">
         <div className="divide-y divide-app-border">
-          {playlist.trackFileIds.map((trackFileId, index) => {
-            // Check if this is a discovery track
-            const isDiscoveryTrack = trackFileId.startsWith("discovery:");
-            const discoveryTrack = isDiscoveryTrack
-              ? playlist.discoveryTracks?.find(
-                  dt => `discovery:${dt.discoveryTrack.mbid}` === trackFileId
-                )
-              : null;
-
-            const track = isDiscoveryTrack ? null : tracks.get(trackFileId);
-            const selection = playlist.trackSelections.find(
-              (s) => s.trackFileId === trackFileId
-            );
-            const orderedTrack = playlist.orderedTracks?.find(
-              (t) => t.trackFileId === trackFileId
-            );
-
-            // Skip if neither track nor discovery track found
-            if (!track && !discoveryTrack) return null;
-
-            const reasons = orderedTrack?.reasons || selection?.reasons || [];
+          {useMemo(() => {
+            // Pre-compute track data for all tracks to avoid repeated lookups
+            const discoveryTracksMap = new Map();
+            
+            // Build discovery tracks map
+            if (playlist.discoveryTracks) {
+              for (const dt of playlist.discoveryTracks) {
+                discoveryTracksMap.set(`discovery:${dt.discoveryTrack.mbid}`, dt);
+              }
+            }
+            
+            // Build selections map
+            const selectionsMap = new Map();
+            for (const selection of playlist.trackSelections) {
+              selectionsMap.set(selection.trackFileId, selection);
+            }
+            
+            // Build ordered tracks map
+            const orderedTracksMap = new Map();
+            if (playlist.orderedTracks) {
+              for (const orderedTrack of playlist.orderedTracks) {
+                orderedTracksMap.set(orderedTrack.trackFileId, orderedTrack);
+              }
+            }
+            
+            return playlist.trackFileIds.map((trackFileId, index) => {
+              const isDiscoveryTrack = trackFileId.startsWith("discovery:");
+              const discoveryTrack = isDiscoveryTrack ? discoveryTracksMap.get(trackFileId) : null;
+              const track = isDiscoveryTrack ? null : tracks.get(trackFileId);
+              const selection = selectionsMap.get(trackFileId);
+              const orderedTrack = orderedTracksMap.get(trackFileId);
+              
+              if (!track && !discoveryTrack) return null;
+              
+              return {
+                trackFileId,
+                index,
+                isDiscoveryTrack,
+                discoveryTrack,
+                track,
+                selection,
+                orderedTrack,
+                reasons: orderedTrack?.reasons || selection?.reasons || [],
+              };
+            }).filter((item): item is NonNullable<typeof item> => item !== null);
+          }, [playlist.trackFileIds, playlist.discoveryTracks, playlist.trackSelections, playlist.orderedTracks, tracks]).map(({ trackFileId, index, isDiscoveryTrack, discoveryTrack, track, reasons }) => {
 
             // Render discovery track
             if (isDiscoveryTrack && discoveryTrack) {
@@ -1234,13 +1312,23 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                       setTrackError(trackFileId, error);
                       clearPlayingTrack();
                     }}
-                    onLoaded={() => {
+                    onLoaded={async () => {
                       // Audio loaded successfully - trigger play if needed
-                      if (playingTrackId === trackFileId && !searchingTrackId) {
-                        const audioControls = audioRefs.current.get(trackFileId);
-                        if (audioControls) {
-                          audioControls.play();
-                        }
+                      // Check if this track should be playing (even if searchingTrackId is temporarily set)
+                      // The searchingTrackId will be cleared before sampleResult is set, but
+                      // if loadeddata fires before that, we still want to play
+                      if (playingTrackId === trackFileId) {
+                        // Use a small delay to allow state updates to propagate
+                        setTimeout(async () => {
+                          const audioControls = audioRefs.current.get(trackFileId);
+                          if (audioControls && playingTrackId === trackFileId && !searchingTrackId) {
+                            try {
+                              await audioControls.play();
+                            } catch {
+                              // Ignore play errors - user may have paused or switched tracks
+                            }
+                          }
+                        }, 10);
                       }
                     }}
                   />
@@ -1345,13 +1433,23 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                       setTrackError(trackFileId, error);
                       clearPlayingTrack();
                     }}
-                    onLoaded={() => {
+                    onLoaded={async () => {
                       // Audio loaded successfully - trigger play if needed
-                      if (playingTrackId === trackFileId && !searchingTrackId) {
-                        const audioControls = audioRefs.current.get(trackFileId);
-                        if (audioControls) {
-                          audioControls.play();
-                        }
+                      // Check if this track should be playing (even if searchingTrackId is temporarily set)
+                      // The searchingTrackId will be cleared before sampleResult is set, but
+                      // if loadeddata fires before that, we still want to play
+                      if (playingTrackId === trackFileId) {
+                        // Use a small delay to allow state updates to propagate
+                        setTimeout(async () => {
+                          const audioControls = audioRefs.current.get(trackFileId);
+                          if (audioControls && playingTrackId === trackFileId && !searchingTrackId) {
+                            try {
+                              await audioControls.play();
+                            } catch {
+                              // Ignore play errors - user may have paused or switched tracks
+                            }
+                          }
+                        }, 10);
                       }
                     }}
                   />

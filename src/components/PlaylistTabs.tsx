@@ -1,3 +1,31 @@
+/**
+ * PlaylistTabs Component
+ * 
+ * Tab navigation component for switching between playlist creation modes:
+ * "From Library" (standard playlist generation) and "Discover New Music"
+ * (discovery mode with MusicBrainz integration).
+ * 
+ * Features:
+ * - Two-tab interface (library/discovery)
+ * - Active tab highlighting
+ * - Icon indicators (Music/Sparkles)
+ * - Accessible (ARIA attributes, role="tab")
+ * 
+ * Props:
+ * - `activeTab`: Currently active tab ('library' or 'discovery')
+ * - `onTabChange`: Callback when tab is changed
+ * 
+ * @module components/PlaylistTabs
+ * 
+ * @example
+ * ```tsx
+ * <PlaylistTabs
+ *   activeTab={mode}
+ *   onTabChange={(tab) => setMode(tab)}
+ * />
+ * ```
+ */
+
 "use client";
 
 import { Music, Sparkles } from "lucide-react";
@@ -10,6 +38,9 @@ interface PlaylistTabsProps {
 
 /**
  * Tab navigation component for playlist creation modes
+ * 
+ * Renders two tabs for switching between library-based and discovery-based
+ * playlist generation modes.
  */
 export function PlaylistTabs({ activeTab, onTabChange }: PlaylistTabsProps) {
   return (

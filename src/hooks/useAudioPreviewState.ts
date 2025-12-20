@@ -32,7 +32,7 @@
  * ```
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { SampleResult } from '@/features/audio-preview/types';
 
 /**
@@ -79,6 +79,8 @@ export interface UseAudioPreviewStateReturn {
  * - `playingTrackId`: Currently playing track ID (only one can play at a time)
  * - `searchingTrackId`: Currently searching track ID (only one search at a time)
  * 
+ * Uses refs to store latest Maps for efficient callbacks without re-renders.
+ * 
  * @returns State management functions and current state
  */
 export function useAudioPreviewState(): UseAudioPreviewStateReturn {
@@ -88,33 +90,54 @@ export function useAudioPreviewState(): UseAudioPreviewStateReturn {
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
   const [searchingTrackId, setSearchingTrackId] = useState<string | null>(null);
 
+  // Use refs to store latest Maps for callbacks (avoids stale closures)
+  const trackSampleResultsRef = useRef<Map<string, SampleResult>>(trackSampleResults);
+  const trackErrorsRef = useRef<Map<string, string>>(trackErrors);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    trackSampleResultsRef.current = trackSampleResults;
+  }, [trackSampleResults]);
+
+  useEffect(() => {
+    trackErrorsRef.current = trackErrors;
+  }, [trackErrors]);
+
   /**
    * Get cached sample result for a track
+   * 
+   * Uses ref to access latest state without causing re-renders
    */
   const getSampleResult = useCallback((trackFileId: string): SampleResult | undefined => {
-    return trackSampleResults.get(trackFileId);
-  }, [trackSampleResults]);
+    return trackSampleResultsRef.current.get(trackFileId);
+  }, []);
 
   /**
    * Get error message for a track
+   * 
+   * Uses ref to access latest state without causing re-renders
    */
   const getError = useCallback((trackFileId: string): string | undefined => {
-    return trackErrors.get(trackFileId);
-  }, [trackErrors]);
+    return trackErrorsRef.current.get(trackFileId);
+  }, []);
 
   /**
    * Check if a track has a cached result
+   * 
+   * Uses ref to access latest state without causing re-renders
    */
   const hasSampleResult = useCallback((trackFileId: string): boolean => {
-    return trackSampleResults.has(trackFileId);
-  }, [trackSampleResults]);
+    return trackSampleResultsRef.current.has(trackFileId);
+  }, []);
 
   /**
    * Check if a track has an error
+   * 
+   * Uses ref to access latest state without causing re-renders
    */
   const hasError = useCallback((trackFileId: string): boolean => {
-    return trackErrors.has(trackFileId);
-  }, [trackErrors]);
+    return trackErrorsRef.current.has(trackFileId);
+  }, []);
 
   /**
    * Set sample result for a track

@@ -1,13 +1,47 @@
 /**
- * Metadata extraction and normalization
+ * Metadata Extraction and Normalization
  * 
- * Handles parsing audio file metadata and normalizing tags
+ * This module handles parsing audio file metadata and normalizing tags to ensure
+ * consistent data formats across different file types and metadata sources.
+ * 
+ * Key Features:
+ * - Normalizes tags (title, artist, album, genres, year, track numbers)
+ * - Extracts technical information (duration, codec, bitrate, BPM)
+ * - Handles missing or malformed metadata gracefully
+ * - Provides fallback values for missing data
+ * 
+ * @module features/library/metadata
+ * 
+ * @example
+ * ```typescript
+ * import { normalizeTitle, normalizeArtist, normalizeGenres } from '@/features/library/metadata';
+ * 
+ * const title = normalizeTitle(metadata.title, filename);
+ * const artist = normalizeArtist(metadata.artist);
+ * const genres = normalizeGenres(metadata.genre);
+ * ```
  */
 
 import type { LibraryFile } from "@/lib/library-selection";
 
 /**
  * Normalized metadata tags
+ * 
+ * Represents standardized metadata tags extracted from audio files.
+ * All fields are normalized to ensure consistency across the application.
+ * 
+ * @example
+ * ```typescript
+ * const tags: NormalizedTags = {
+ *   title: "Bohemian Rhapsody",
+ *   artist: "Queen",
+ *   album: "A Night at the Opera",
+ *   genres: ["Rock", "Progressive Rock"],
+ *   year: 1975,
+ *   trackNo: 1,
+ *   discNo: 1
+ * };
+ * ```
  */
 export interface NormalizedTags {
   title: string;
@@ -21,6 +55,22 @@ export interface NormalizedTags {
 
 /**
  * Technical information about the audio file
+ * 
+ * Contains technical metadata extracted from the audio file, including
+ * codec information, audio properties, and optionally detected tempo (BPM).
+ * 
+ * @example
+ * ```typescript
+ * const tech: TechInfo = {
+ *   durationSeconds: 355,
+ *   codec: "mp3",
+ *   container: "mp3",
+ *   bitrate: 320,
+ *   sampleRate: 44100,
+ *   channels: 2,
+ *   bpm: 72
+ * };
+ * ```
  */
 export interface TechInfo {
   durationSeconds?: number;
@@ -34,6 +84,19 @@ export interface TechInfo {
 
 /**
  * Metadata parsing result
+ * 
+ * Represents the result of parsing metadata from an audio file.
+ * Includes normalized tags, technical information, and any warnings or errors.
+ * 
+ * @example
+ * ```typescript
+ * const result: MetadataResult = {
+ *   trackFileId: "file123",
+ *   tags: { title: "Song", artist: "Artist", album: "Album", genres: [] },
+ *   tech: { durationSeconds: 240 },
+ *   warnings: ["Missing year information"]
+ * };
+ * ```
  */
 export interface MetadataResult {
   trackFileId: string;
@@ -61,6 +124,19 @@ export interface MetadataWorkerResponse {
 
 /**
  * Normalize title - fallback to filename without extension
+ * 
+ * Normalizes track title, falling back to filename (without extension) if title is missing.
+ * Trims whitespace and ensures a non-empty string is returned.
+ * 
+ * @param title - Track title from metadata (may be undefined)
+ * @param filename - Filename as fallback
+ * @returns Normalized title string
+ * 
+ * @example
+ * ```typescript
+ * normalizeTitle("  Song Title  ", "track.mp3") // Returns: "Song Title"
+ * normalizeTitle(undefined, "My Song.mp3") // Returns: "My Song"
+ * ```
  */
 export function normalizeTitle(title: string | undefined, filename: string): string {
   if (title && title.trim()) {
@@ -73,6 +149,18 @@ export function normalizeTitle(title: string | undefined, filename: string): str
 
 /**
  * Normalize artist string
+ * 
+ * Normalizes artist name, returning "Unknown Artist" if missing or empty.
+ * Trims whitespace and ensures a non-empty string is returned.
+ * 
+ * @param artist - Artist name from metadata (may be undefined)
+ * @returns Normalized artist string (never empty)
+ * 
+ * @example
+ * ```typescript
+ * normalizeArtist("  The Beatles  ") // Returns: "The Beatles"
+ * normalizeArtist(undefined) // Returns: "Unknown Artist"
+ * ```
  */
 export function normalizeArtist(artist: string | undefined): string {
   if (!artist || !artist.trim()) {
@@ -83,6 +171,18 @@ export function normalizeArtist(artist: string | undefined): string {
 
 /**
  * Normalize album string
+ * 
+ * Normalizes album name, returning "Unknown Album" if missing or empty.
+ * Trims whitespace and ensures a non-empty string is returned.
+ * 
+ * @param album - Album name from metadata (may be undefined)
+ * @returns Normalized album string (never empty)
+ * 
+ * @example
+ * ```typescript
+ * normalizeAlbum("  Abbey Road  ") // Returns: "Abbey Road"
+ * normalizeAlbum(undefined) // Returns: "Unknown Album"
+ * ```
  */
 export function normalizeAlbum(album: string | undefined): string {
   if (!album || !album.trim()) {
@@ -93,6 +193,22 @@ export function normalizeAlbum(album: string | undefined): string {
 
 /**
  * Normalize genres - deduplicate and trim
+ * 
+ * Normalizes genre tags by:
+ * - Converting single strings to arrays
+ * - Trimming whitespace
+ * - Removing empty genres
+ * - Deduplicating (case-insensitive)
+ * 
+ * @param genres - Genre tags (string, array, or undefined)
+ * @returns Array of normalized, unique genre strings
+ * 
+ * @example
+ * ```typescript
+ * normalizeGenres("Rock, Pop") // Returns: ["Rock", "Pop"]
+ * normalizeGenres(["Rock", "rock", "Pop"]) // Returns: ["Rock", "Pop"]
+ * normalizeGenres(undefined) // Returns: []
+ * ```
  */
 export function normalizeGenres(genres: string[] | string | undefined): string[] {
   if (!genres) {
@@ -120,6 +236,20 @@ export function normalizeGenres(genres: string[] | string | undefined): string[]
 
 /**
  * Normalize year - safely coerce to number
+ * 
+ * Validates and normalizes year values. Only accepts years between 1900 and 2100.
+ * Returns undefined for invalid or out-of-range values.
+ * 
+ * @param year - Year value (number, string, or undefined)
+ * @returns Normalized year number (1900-2100) or undefined
+ * 
+ * @example
+ * ```typescript
+ * normalizeYear(1975) // Returns: 1975
+ * normalizeYear("1980") // Returns: 1980
+ * normalizeYear(1800) // Returns: undefined (out of range)
+ * normalizeYear("invalid") // Returns: undefined
+ * ```
  */
 export function normalizeYear(year: number | string | undefined): number | undefined {
   if (year === undefined || year === null) {

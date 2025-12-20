@@ -10,6 +10,7 @@ import { parseMetadataForFiles, type MetadataProgressCallback } from "./metadata
 import type { MetadataResult } from "./metadata";
 import { saveTrackMetadata } from "@/db/storage";
 import { isQuotaExceededError, getStorageQuotaInfo } from "@/db/storage-errors";
+import { logger } from "@/lib/logger";
 
 export interface BatchedParseOptions {
   batchSize?: number; // Files per batch (default: 500)
@@ -67,15 +68,11 @@ export async function parseMetadataBatched(
   let totalSaved = 0;
   const startTime = Date.now();
 
-  console.log(`Starting batched metadata parsing: ${files.length} files in ${totalBatches} batches of ${batchSize}`);
-
   for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
     const batchStart = batchIndex * batchSize;
     const batchEnd = Math.min(batchStart + batchSize, files.length);
     const batchFiles = files.slice(batchStart, batchEnd);
     const batchNumber = batchIndex + 1;
-
-    console.log(`Processing batch ${batchNumber}/${totalBatches}: files ${batchStart + 1}-${batchEnd} of ${files.length}`);
 
     // Parse this batch
     const batchResults: MetadataResult[] = [];
@@ -111,8 +108,6 @@ export async function parseMetadataBatched(
       totalParsed += batchFiles.length;
       totalErrors += batchErrorCount;
 
-      console.log(`Batch ${batchNumber} complete: ${batchSuccessCount} successful, ${batchErrorCount} errors`);
-
       // Save this batch to IndexedDB if enabled
       if (saveAfterEachBatch && batchSuccessCount > 0) {
         try {
@@ -125,9 +120,8 @@ export async function parseMetadataBatched(
           );
           
           totalSaved += batchSuccessCount;
-          console.log(`Batch ${batchNumber} saved: ${batchSuccessCount} tracks to IndexedDB`);
         } catch (err) {
-          console.error(`Error saving batch ${batchNumber}:`, err);
+          logger.error(`Error saving batch ${batchNumber}:`, err);
           
           // Handle quota errors
           if (isQuotaExceededError(err)) {
@@ -153,7 +147,7 @@ export async function parseMetadataBatched(
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
     } catch (err) {
-      console.error(`Error processing batch ${batchNumber}:`, err);
+      logger.error(`Error processing batch ${batchNumber}:`, err);
       
       // If saving failed, we still have the parsed results
       // Continue with next batch but log the error
@@ -178,8 +172,6 @@ export async function parseMetadataBatched(
     errors: totalErrors,
     saved: totalSaved,
   });
-
-  console.log(`Batched parsing complete: ${allResults.length} results, ${totalSaved} saved, ${totalErrors} errors`);
 
   return allResults;
 }

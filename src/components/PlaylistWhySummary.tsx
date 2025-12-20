@@ -1,3 +1,34 @@
+/**
+ * PlaylistWhySummary Component
+ * 
+ * Displays a comprehensive summary explaining why a playlist was generated
+ * the way it was. Shows genre mix, tempo profile, duration statistics, flow arc,
+ * and vibe tags to help users understand the playlist composition.
+ * 
+ * Features:
+ * - Genre distribution display (top 5 genres)
+ * - Tempo profile (slow/medium/fast distribution)
+ * - Duration statistics (total, average, track count)
+ * - Flow arc sections display
+ * - Vibe tags from strategy
+ * - Handles Map deserialization from sessionStorage
+ * 
+ * Data Handling:
+ * - Handles both Map and plain object formats (from JSON deserialization)
+ * - Converts plain objects back to Maps for processing
+ * - Formats duration in human-readable format (hours/minutes)
+ * 
+ * Props:
+ * - `playlist`: The generated playlist to summarize
+ * 
+ * @module components/PlaylistWhySummary
+ * 
+ * @example
+ * ```tsx
+ * <PlaylistWhySummary playlist={generatedPlaylist} />
+ * ```
+ */
+
 "use client";
 
 import type { GeneratedPlaylist } from "@/features/playlists";

@@ -1,3 +1,43 @@
+/**
+ * CollectionConfigEditor Component
+ * 
+ * Modal/form component for editing collection configuration. Allows editing
+ * collection name and relinking the directory handle (if using File System
+ * Access API).
+ * 
+ * Features:
+ * - Collection name editing with validation
+ * - Duplicate name checking
+ * - Directory handle relinking (for handle mode)
+ * - Collection metadata display (mode, created/updated dates)
+ * - Error handling and display
+ * - Save/cancel actions
+ * 
+ * State Management:
+ * - Manages form state (name, error, saving, relinking)
+ * - Validates name uniqueness
+ * - Handles directory relinking
+ * 
+ * Props:
+ * - `collection`: The collection to edit
+ * - `onSave`: Callback when changes are saved
+ * - `onCancel`: Optional callback when editing is cancelled
+ * 
+ * @module components/CollectionConfigEditor
+ * 
+ * @example
+ * ```tsx
+ * <CollectionConfigEditor
+ *   collection={selectedCollection}
+ *   onSave={(updated) => {
+ *     // Update collection
+ *     updateCollection(updated);
+ *   }}
+ *   onCancel={() => setShowEditor(false)}
+ * />
+ * ```
+ */
+
 "use client";
 
 import { useState, useEffect } from "react";

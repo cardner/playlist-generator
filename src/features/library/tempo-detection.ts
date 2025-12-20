@@ -4,6 +4,7 @@
 
 import type { TrackRecord } from "@/db/schema";
 import type { LLMProvider } from "@/types/playlist";
+import { logger } from "@/lib/logger";
 
 export interface TempoDetectionResult {
   trackFileId: string;
@@ -184,7 +185,7 @@ export async function detectTempoWithLLM(
 
     return null;
   } catch (error) {
-    console.warn(`Failed to detect tempo for track ${track.trackFileId}:`, error);
+    logger.warn(`Failed to detect tempo for track ${track.trackFileId}:`, error);
     return null;
   }
 }
@@ -253,11 +254,9 @@ export async function detectTempoBatchWithLLM(
         }
       }
       
-      // Log results
-      if (results.size > 0) {
-        console.log(`✓ Detected tempo for ${results.size} out of ${tracks.length} tracks`);
-      } else {
-        console.warn(`⚠ No tempo detected. LLM response structure:`, parsed);
+      // Log results (only warn if no results)
+      if (results.size === 0) {
+        logger.warn(`No tempo detected. LLM response structure:`, parsed);
       }
     } else if (parsed.bpm && typeof parsed.bpm === "number") {
       // Handle case where LLM returns single BPM for all tracks (fallback)
@@ -267,16 +266,14 @@ export async function detectTempoBatchWithLLM(
         for (const track of tracks) {
           results.set(track.trackFileId, bpm);
         }
-        console.log(`✓ Assigned estimated tempo ${bpm} BPM to ${tracks.length} tracks (fallback)`);
       }
     } else {
-      console.warn(`⚠ LLM did not return expected format. Response:`, parsed);
+      logger.warn(`LLM did not return expected format. Response:`, parsed);
     }
   } catch (error) {
-    console.warn("Batch tempo detection failed:", error);
+    logger.warn("Batch tempo detection failed:", error);
     // Try individual detection as fallback for critical tracks
     if (tracks.length <= 5) {
-      console.log("Attempting individual tempo detection as fallback...");
       for (const track of tracks) {
         try {
           const bpm = await detectTempoWithLLM(track, provider, apiKey, 10000);

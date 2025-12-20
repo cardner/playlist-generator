@@ -11,6 +11,7 @@ import type { LibrarySummary } from "@/features/library/summarization";
 import type { AppSettings } from "@/lib/settings";
 import { buildLLMPayload } from "@/features/library/summarization";
 import { getSettings } from "@/lib/settings";
+import { logger } from "@/lib/logger";
 
 /**
  * Zod schema for PlaylistStrategy
@@ -546,7 +547,7 @@ export async function getStrategy(
 
     return validated;
   } catch (error) {
-    console.warn("LLM strategy generation failed, using fallback:", error);
+    logger.warn("LLM strategy generation failed, using fallback:", error);
     return fallbackStrategy(request, summary);
   }
 }

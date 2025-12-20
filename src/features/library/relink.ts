@@ -12,6 +12,7 @@ import { buildFileIndex } from "./scanning";
 import { db, getCompositeId } from "@/db/schema";
 import type { FileIndexRecord, TrackRecord } from "@/db/schema";
 import { saveLibraryRoot } from "@/db/storage";
+import { logger } from "@/lib/logger";
 
 export interface RelinkResult {
   success: boolean;
@@ -61,7 +62,7 @@ export async function relinkLibraryRoot(
     
     // If we have file index but no tracks, that's okay - we can still relink
     if (oldTracks.length === 0 && oldFileIndex.length > 0) {
-      console.warn("No tracks found, but file index exists. Relinking file index only.");
+      logger.warn("No tracks found, but file index exists. Relinking file index only.");
     }
 
     // Build a lookup map: relativePath + size + mtime -> trackFileId
@@ -204,7 +205,7 @@ export async function relinkLibraryRoot(
       newRootId,
     };
   } catch (error) {
-    console.error("Relink failed:", error);
+    logger.error("Relink failed:", error);
     return {
       success: false,
       matched: 0,

@@ -1,5 +1,21 @@
 /**
- * Validation utilities for playlist requests
+ * Playlist Request Validation Utilities
+ * 
+ * This module provides validation functions for playlist generation requests.
+ * Validates all required fields, ranges, and constraints before playlist generation.
+ * 
+ * @module lib/playlist-validation
+ * 
+ * @example
+ * ```typescript
+ * const errors = validatePlaylistRequest(request);
+ * if (hasErrors(errors)) {
+ *   // Display errors to user
+ *   console.error(errors);
+ * } else {
+ *   // Proceed with playlist generation
+ * }
+ * ```
  */
 
 import type { PlaylistRequest, PlaylistRequestErrors } from "@/types/playlist";

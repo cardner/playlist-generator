@@ -1,25 +1,67 @@
+/**
+ * LibraryScanner Component
+ * 
+ * Orchestrates the library scanning and metadata parsing workflow.
+ * Manages the complete process from file scanning to metadata extraction,
+ * displaying progress and results to the user.
+ * 
+ * Features:
+ * - File system scanning with progress tracking
+ * - Metadata parsing with progress tracking
+ * - Error handling and display
+ * - Scan result summary
+ * - Automatic metadata parsing after scan completion
+ * - Support for rescanning existing libraries
+ * - Handles both File System Access API and fallback modes
+ * 
+ * Workflow:
+ * 1. User selects library folder (via LibrarySelector)
+ * 2. Component triggers file scanning
+ * 3. Displays scan progress (files found, scanned)
+ * 4. On scan completion, automatically triggers metadata parsing
+ * 5. Displays metadata parsing progress
+ * 6. Shows final results summary
+ * 
+ * State Management:
+ * - Uses `useLibraryScanning` hook for scanning logic
+ * - Uses `useMetadataParsing` hook for metadata parsing logic
+ * - Manages component-level state for UI coordination
+ * - Handles callbacks for scan completion and new selections
+ * 
+ * Props:
+ * - `libraryRoot`: The selected library root (null if not selected)
+ * - `permissionStatus`: Current permission status for file access
+ * - `onNewSelection`: Callback when a new folder is selected
+ * - `onScanComplete`: Callback when scan and parsing complete
+ * - `hasExistingScans`: Whether there are existing scans (for UI state)
+ * - `triggerScan`: Flag to trigger scan immediately
+ * 
+ * @module components/LibraryScanner
+ * 
+ * @example
+ * ```tsx
+ * <LibraryScanner
+ *   libraryRoot={selectedRoot}
+ *   permissionStatus="granted"
+ *   onScanComplete={() => {
+ *     // Refresh library browser
+ *     refreshLibrary();
+ *   }}
+ *   triggerScan={shouldScan}
+ * />
+ * ```
+ */
+
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
 import type { LibraryRoot } from "@/lib/library-selection";
-import {
-  type ScanResult,
-  type ScanProgressCallback,
-  parseMetadataForFiles,
-  type MetadataResult,
-  type MetadataProgressCallback,
-} from "@/features/library";
-import { scanLibraryWithPersistence } from "@/features/library/scanning-persist";
-import { getLibraryFilesForEntries } from "@/features/library/metadata-integration";
-import {
-  saveTrackMetadata,
-  removeTrackMetadata,
-  updateScanRun,
-} from "@/db/storage";
-import { isQuotaExceededError, getStorageQuotaInfo, formatStorageSize } from "@/db/storage-errors";
 import { ScanProgress } from "./ScanProgress";
 import { ScanResults } from "./ScanResults";
 import { MetadataProgress } from "./MetadataProgress";
+import { useLibraryScanning } from "@/hooks/useLibraryScanning";
+import { useMetadataParsing } from "@/hooks/useMetadataParsing";
+import { logger } from "@/lib/logger";
 
 interface LibraryScannerProps {
   libraryRoot: LibraryRoot | null;
@@ -38,32 +80,76 @@ export function LibraryScanner({
   hasExistingScans,
   triggerScan,
 }: LibraryScannerProps) {
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
-  const [scanProgress, setScanProgress] = useState<{
-    found: number;
-    scanned: number;
-    currentFile?: string;
-  } | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [currentRootId, setCurrentRootId] = useState<string | null>(null);
-  const [isParsingMetadata, setIsParsingMetadata] = useState(false);
-  const [metadataResults, setMetadataResults] = useState<MetadataResult[] | null>(null);
-  const [filesToParse, setFilesToParse] = useState<any[]>([]);
-  const [metadataProgress, setMetadataProgress] = useState<{
-    parsed: number;
-    total: number;
-    errors: number;
-    currentFile?: string;
-    batch?: number;
-    totalBatches?: number;
-    estimatedTimeRemaining?: number;
-  } | null>(null);
-  const [currentLibraryRootId, setCurrentLibraryRootId] = useState<string | null>(null);
-  const [scanRunId, setScanRunId] = useState<string | null>(null);
-  const [refreshBrowser, setRefreshBrowser] = useState(0);
   const [isNewSelection, setIsNewSelection] = useState(false);
   const [isInitialMount, setIsInitialMount] = useState(true);
+
+  // Use hooks for scanning and metadata parsing logic
+  const {
+    isScanning,
+    scanResult,
+    scanProgress,
+    error: scanError,
+    libraryRootId,
+    scanRunId,
+    handleScan: handleScanInternal,
+    handleRescan,
+    clearError: clearScanError,
+    clearScanResult,
+  } = useLibraryScanning({
+    libraryRoot,
+    permissionStatus,
+    onScanComplete: () => {
+      // Scan complete callback is handled separately below
+    },
+  });
+
+  const {
+    isParsingMetadata,
+    metadataResults,
+    metadataProgress,
+    error: parseError,
+    handleParseMetadata,
+    clearError: clearParseError,
+  } = useMetadataParsing({
+    onParseComplete: onScanComplete,
+    scanRunId,
+  });
+
+  // Wrapper for handleScan that triggers scanning
+  const handleScan = useCallback(async () => {
+    await handleScanInternal();
+    // Metadata parsing will be triggered automatically by useEffect below
+    // when scanResult becomes available
+  }, [handleScanInternal]);
+
+  // Combine errors from scanning and parsing
+  const error = scanError || parseError;
+
+  // Trigger metadata parsing when scan completes
+  useEffect(() => {
+    // Only trigger if:
+    // 1. Scan result is available
+    // 2. Library root is available
+    // 3. Library root ID is available
+    // 4. Not already parsing metadata
+    // 5. Metadata hasn't been parsed yet (no results)
+    // 6. Library root is in "handle" mode (required for metadata parsing)
+    if (
+      scanResult &&
+      libraryRoot &&
+      libraryRootId &&
+      !isParsingMetadata &&
+      metadataResults === null &&
+      libraryRoot.mode === "handle"
+    ) {
+      // Trigger metadata parsing
+      handleParseMetadata(scanResult, libraryRoot, libraryRootId).catch((err) => {
+        // Error is already handled by the hook, just log here for debugging
+        logger.error("Failed to trigger metadata parsing:", err);
+      });
+    }
+  }, [scanResult, libraryRoot, libraryRootId, isParsingMetadata, metadataResults, handleParseMetadata]);
 
   // Get current root ID
   const getRootId = (root: LibraryRoot | null): string | null => {
@@ -76,364 +162,36 @@ export function LibraryScanner({
     setIsInitialMount(false);
   }, []);
 
-  // Debug: Log when libraryRoot prop changes
-  useEffect(() => {
-    console.log("LibraryScanner: libraryRoot prop changed:", libraryRoot, {
-      name: libraryRoot?.name,
-      mode: libraryRoot?.mode,
-      handleId: libraryRoot?.handleId,
-    });
-  }, [libraryRoot]);
-
   // Clear scan result when library root changes
   useEffect(() => {
     const rootId = getRootId(libraryRoot);
-    console.log("Root change effect", {
-      rootId,
-      currentRootId,
-      hasLibraryRoot: !!libraryRoot,
-      isInitialMount,
-      rootName: libraryRoot?.name,
-    });
     
     // Update currentRootId when libraryRoot changes (even if rootId is null)
     if (rootId !== currentRootId) {
       if (rootId) {
-        console.log("Library root changed, clearing scan result", { rootId, currentRootId });
-        setScanResult(null);
-        setError(null);
+        clearScanResult();
+        clearParseError();
         setCurrentRootId(rootId);
         // If this is a new root (not initial mount), mark as new selection
         if (libraryRoot && !isInitialMount) {
-          console.log("Marking as new selection");
           setIsNewSelection(true);
           onNewSelection?.();
         }
       } else if (libraryRoot === null && currentRootId !== null) {
         // Library root was cleared
-        console.log("Library root cleared");
         setCurrentRootId(null);
-        setScanResult(null);
-        setError(null);
+        clearScanResult();
+        clearParseError();
       }
     }
-  }, [libraryRoot, currentRootId, onNewSelection, isInitialMount]);
+  }, [libraryRoot, currentRootId, onNewSelection, isInitialMount, clearScanResult, clearParseError]);
 
-  // Define handleParseMetadata first since handleScan depends on it
-  const handleParseMetadata = useCallback(async (
-    result: ScanResult,
-    root: LibraryRoot,
-    libraryRootId: string
-  ) => {
-    if (root.mode !== "handle") {
-      return; // Only handle mode supports metadata parsing
-    }
-
-    try {
-      setIsParsingMetadata(true);
-      setMetadataProgress({
-        parsed: 0,
-        total: result.entries.length,
-        errors: 0,
-      });
-
-      // Get entries that need metadata parsing (added + changed)
-      // For now, parse all entries (can be optimized to only parse added/changed)
-      const entriesToParse = result.entries;
-
-      // Get LibraryFile objects for these entries
-      console.log(`Getting library files for ${entriesToParse.length} entries...`);
-      const libraryFiles = await getLibraryFilesForEntries(root, entriesToParse);
-      console.log(`Retrieved ${libraryFiles.length} library files`);
-
-      if (libraryFiles.length === 0) {
-        console.warn("No library files found for entries - cannot parse metadata");
-        console.log("This might happen if files were moved or the directory handle is invalid");
-        setIsParsingMetadata(false);
-        setMetadataProgress(null);
-        // Still notify completion - file index is saved even if metadata parsing fails
-        onScanComplete?.();
-        return;
-      }
-
-      // Use batched parsing for large libraries to prevent timeouts
-      const useBatched = libraryFiles.length > 1000;
-      let results: MetadataResult[];
-      let successCount: number;
-      let errorCount: number;
-      
-      if (useBatched) {
-        console.log(`Starting batched metadata parsing for ${libraryFiles.length} files...`);
-        
-        // Import batched parser
-        const { parseMetadataBatched } = await import("@/features/library/metadata-batched");
-        
-        // Adjust batch size and concurrency based on library size
-        const batchSize = libraryFiles.length > 10000 ? 500 : 1000;
-        const concurrency = libraryFiles.length > 5000 ? 2 : 3;
-        
-        console.log(`Using batched parsing: batch size ${batchSize}, concurrency ${concurrency}`);
-        
-        const onBatchedProgress = (progress: any) => {
-          const percent = Math.round((progress.parsed / progress.total) * 100);
-          const timeRemaining = progress.estimatedTimeRemaining 
-            ? `${Math.round(progress.estimatedTimeRemaining / 60)}m ${progress.estimatedTimeRemaining % 60}s`
-            : "calculating...";
-          
-          console.log(
-            `Batch ${progress.batch}/${progress.totalBatches}: ` +
-            `${progress.parsed}/${progress.total} (${percent}%) - ` +
-            `${progress.errors} errors, ${progress.saved} saved - ` +
-            `ETA: ${timeRemaining}`
-          );
-          
-          // Update UI progress state
-          setMetadataProgress({
-            parsed: progress.parsed,
-            total: progress.total,
-            errors: progress.errors,
-            currentFile: progress.currentFile,
-            batch: progress.batch,
-            totalBatches: progress.totalBatches,
-            estimatedTimeRemaining: progress.estimatedTimeRemaining,
-          });
-        };
-        
-        results = await parseMetadataBatched(
-          libraryFiles,
-          libraryRootId,
-          onBatchedProgress,
-          {
-            batchSize,
-            concurrency,
-            saveAfterEachBatch: true, // Save incrementally
-          }
-        );
-        
-        console.log(`Batched metadata parsing complete: ${results.length} results`);
-        
-        successCount = results.filter((r) => !r.error && r.tags).length;
-        errorCount = results.filter((r) => r.error).length;
-        console.log(`Parsing results: ${successCount} successful, ${errorCount} errors`);
-        
-        setMetadataResults(results);
-        
-        // Verify final count (tracks were saved incrementally during batching)
-        const { getTracks } = await import("@/db/storage");
-        const savedTracks = await getTracks(libraryRootId);
-        const savedCount = savedTracks.length;
-        
-        console.log(`Final verification: ${savedCount} tracks in database (expected ${successCount})`);
-        
-        if (savedCount < successCount) {
-          console.warn(`Warning: Expected ${successCount} tracks but only ${savedCount} were saved`);
-        } else if (savedCount > 0) {
-          console.log(`✓ Successfully saved ${savedCount} tracks to IndexedDB`);
-        }
-      } else {
-        // For smaller libraries, use direct parsing (faster)
-        console.log(`Starting metadata parsing for ${libraryFiles.length} files...`);
-        
-        // Adjust concurrency based on library size
-        const concurrency = libraryFiles.length > 500 ? 3 : 5;
-        console.log(`Using concurrency level: ${concurrency}`);
-        
-        const onMetadataProgress: MetadataProgressCallback = (progress) => {
-          // Log progress more frequently for large libraries
-          const logInterval = libraryFiles.length > 500 ? 50 : 100;
-          if (progress.parsed % logInterval === 0 || progress.parsed === progress.total) {
-            const percent = Math.round((progress.parsed / progress.total) * 100);
-            console.log(`Metadata parsing progress: ${progress.parsed}/${progress.total} (${percent}%) - ${progress.errors} errors`);
-          }
-          
-          // Update UI progress state
-          setMetadataProgress({
-            parsed: progress.parsed,
-            total: progress.total,
-            errors: progress.errors,
-            currentFile: progress.currentFile,
-          });
-        };
-
-        results = await parseMetadataForFiles(libraryFiles, onMetadataProgress, concurrency);
-        console.log(`Metadata parsing complete: ${results.length} results`);
-        
-        successCount = results.filter((r) => !r.error && r.tags).length;
-        errorCount = results.filter((r) => r.error).length;
-        console.log(`Parsing results: ${successCount} successful, ${errorCount} errors`);
-        
-        setMetadataResults(results);
-
-        // Persist metadata results (with progress tracking for large libraries)
-        try {
-          console.log(`Saving ${successCount} tracks to database...`);
-          await saveTrackMetadata(
-            results,
-            libraryRootId,
-            (progress) => {
-              if (progress.processed % 100 === 0 || progress.processed === progress.total) {
-                console.log(`Saving metadata: ${progress.processed}/${progress.total}`);
-              }
-            }
-          );
-          
-          // Verify data was saved successfully
-          const { getTracks } = await import("@/db/storage");
-          const savedTracks = await getTracks(libraryRootId);
-          const savedCount = savedTracks.length;
-          const expectedCount = successCount;
-          
-          console.log(`Metadata saved: ${savedCount} tracks in database (expected ${expectedCount})`);
-          
-          if (savedCount < expectedCount) {
-            console.warn(`Warning: Expected ${expectedCount} tracks but only ${savedCount} were saved`);
-          } else if (savedCount > 0) {
-            console.log(`✓ Successfully saved ${savedCount} tracks to IndexedDB`);
-          }
-        } catch (err) {
-          console.error("Error saving track metadata:", err);
-          // Handle quota errors during metadata saving
-          if (isQuotaExceededError(err)) {
-            const quotaInfo = await getStorageQuotaInfo();
-            const quotaMessage = quotaInfo
-              ? `Storage quota exceeded while saving metadata. You're using ${quotaInfo.usagePercent.toFixed(1)}% of available storage. Please clean up old data.`
-              : "Storage quota exceeded while saving metadata. Please clean up old data.";
-            setError(quotaMessage);
-            throw err; // Re-throw to stop processing
-          }
-          throw err; // Re-throw other errors
-        }
-      }
-
-      // Update scan run with parse error count (for both batched and direct parsing)
-      if (scanRunId) {
-        await updateScanRun(scanRunId, errorCount);
-      }
-
-      // Remove metadata for deleted tracks
-      if (result.removed > 0) {
-        // Get removed entries from the diff (they're not in result.entries)
-        // For now, we'll handle this in scanning-persist.ts
-        // This is a placeholder - actual removal happens during scanning
-      }
-      
-      // Final verification
-      const { getFileIndexEntries, getTracks } = await import("@/db/storage");
-      const savedFileIndex = await getFileIndexEntries(libraryRootId);
-      const savedTracks = await getTracks(libraryRootId);
-      console.log(`Final verification - File index: ${savedFileIndex.length} entries, Tracks: ${savedTracks.length} tracks`);
-      
-      if (savedTracks.length === 0 && successCount > 0) {
-        console.error("ERROR: Tracks were parsed but not saved to database!");
-        setError("Failed to save tracks to database. Please try scanning again.");
-      } else if (savedTracks.length > 0) {
-        console.log(`✓ Successfully saved ${savedTracks.length} tracks to IndexedDB`);
-      }
-      
-      // Notify parent that scan and data persistence is complete
-      // This will trigger refresh of LibrarySummary and LibraryBrowser
-      console.log("✓ Scan complete - data persisted successfully, notifying parent component");
-      onScanComplete?.();
-    } catch (err) {
-      console.error("Failed to parse metadata:", err);
-      setError(`Failed to parse metadata: ${err instanceof Error ? err.message : String(err)}`);
-      // Don't fail the scan if metadata parsing fails, but still notify completion
-      // The file index is already saved, so we can still show results
-      onScanComplete?.();
-    } finally {
-      setIsParsingMetadata(false);
-      setMetadataProgress(null); // Clear progress when done
-    }
-  }, [onScanComplete, scanRunId]);
-
-  const handleScan = useCallback(async () => {
-    if (!libraryRoot || permissionStatus !== "granted") {
-      console.log("Cannot scan: missing root or permission", { libraryRoot: !!libraryRoot, permissionStatus });
-      return;
-    }
-
-    console.log("Starting scan", { libraryRoot: libraryRoot.name, mode: libraryRoot.mode });
-    setIsScanning(true);
-    setError(null);
-    setScanProgress({ found: 0, scanned: 0 });
-
-    const onProgress: ScanProgressCallback = (progress) => {
-      setScanProgress(progress);
-    };
-
-    try {
-      let result: ScanResult;
-      let libraryRootId: string;
-
-      if (libraryRoot.mode === "handle") {
-        console.log("Scanning with handle mode");
-        const scanResult = await scanLibraryWithPersistence(libraryRoot, onProgress);
-        result = scanResult.result;
-        libraryRootId = scanResult.libraryRoot.id;
-        setCurrentLibraryRootId(libraryRootId);
-        
-        // Get scan run ID (we'll need to track this)
-        const { getScanRuns } = await import("@/db/storage");
-        const runs = await getScanRuns(libraryRootId);
-        if (runs.length > 0) {
-          setScanRunId(runs[runs.length - 1].id);
-        }
-        
-        console.log("Scan complete", result);
-      } else {
-        // Fallback mode requires file list - this shouldn't happen in normal flow
-        throw new Error(
-          "Fallback mode scanning requires file list. Please re-select your folder."
-        );
-      }
-
-      setScanResult(result);
-
-      // Verify file index was saved after scanning
-      const { getFileIndexEntries } = await import("@/db/storage");
-      const savedFileIndex = await getFileIndexEntries(libraryRootId);
-      console.log(`File index saved after scan: ${savedFileIndex.length} entries (expected ${result.total})`);
-
-      // After scanning, parse metadata for added/changed files
-      if (result.added > 0 || result.changed > 0) {
-        await handleParseMetadata(result, libraryRoot, libraryRootId);
-      } else {
-        // If no new/changed files, still verify persistence and notify completion
-        console.log("No new or changed files, verifying existing data...");
-        const { getTracks } = await import("@/db/storage");
-        const existingTracks = await getTracks(libraryRootId);
-        console.log(`Existing tracks in database: ${existingTracks.length}`);
-        
-        // Notify completion even if no metadata parsing was needed
-        onScanComplete?.();
-      }
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to scan library";
-      setError(errorMessage);
-      console.error("Scan error:", err);
-    } finally {
-      setIsScanning(false);
-      setScanProgress(null);
-    }
-  }, [libraryRoot, permissionStatus, handleParseMetadata, onScanComplete]);
+  // Metadata parsing is now handled by useMetadataParsing hook
 
   // When permission becomes granted for a new selection, trigger scan
   // BUT only if there are no existing scans (to prevent auto-scanning on page load)
   useEffect(() => {
     const rootId = getRootId(libraryRoot);
-    console.log("Permission effect check", {
-      isNewSelection,
-      hasLibraryRoot: !!libraryRoot,
-      permissionStatus,
-      mode: libraryRoot?.mode,
-      isScanning,
-      hasScanResult: !!scanResult,
-      rootId,
-      currentRootId,
-      rootIdMatch: rootId === currentRootId,
-      hasExistingScans,
-    });
 
     // Trigger scan if:
     // 1. triggerScan prop is true (explicit trigger from parent)
@@ -454,7 +212,6 @@ export function LibraryScanner({
     );
 
     if (shouldTriggerScan) {
-      console.log("Triggering scan", { triggerScan, isNewSelection });
       // Reset flag first to prevent duplicate scans
       setIsNewSelection(false);
       // Trigger scan immediately
@@ -465,11 +222,7 @@ export function LibraryScanner({
   // Note: Auto-scan is handled by the permission effect above
   // handleParseMetadata and handleScan are defined above, before the useEffect
 
-  const handleRescan = () => {
-    setScanResult(null);
-    setError(null);
-    handleScan();
-  };
+  // handleRescan is provided by useLibraryScanning hook
 
   if (!libraryRoot) {
     return (
@@ -555,7 +308,7 @@ export function LibraryScanner({
   }
 
   if (scanResult) {
-    const isComplete = !isParsingMetadata && (metadataResults !== null || filesToParse.length === 0);
+    const isComplete = !isParsingMetadata && metadataResults !== null;
     
     return (
       <div className="space-y-4 max-w-4xl">

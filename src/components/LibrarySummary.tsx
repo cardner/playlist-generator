@@ -1,3 +1,39 @@
+/**
+ * LibrarySummary Component
+ * 
+ * Displays a summary of the user's music library including track count, genre
+ * distribution, tempo distribution, and duration statistics. Used throughout
+ * the application to show library status and statistics.
+ * 
+ * Features:
+ * - Track count display
+ * - Genre distribution (top genres with counts)
+ * - Tempo distribution (slow/medium/fast buckets)
+ * - Duration statistics (total, average)
+ * - Loading and error states
+ * - Refresh trigger support
+ * 
+ * State Management:
+ * - Loads summary data on mount and when refreshTrigger changes
+ * - Checks for library existence before loading
+ * - Handles loading and error states
+ * 
+ * Props:
+ * - `className`: Optional CSS classes
+ * - `libraryRootId`: Optional specific library root to summarize
+ * - `refreshTrigger`: Number to trigger refresh (increment to refresh)
+ * 
+ * @module components/LibrarySummary
+ * 
+ * @example
+ * ```tsx
+ * <LibrarySummary
+ *   libraryRootId="root-123"
+ *   refreshTrigger={refreshCount}
+ * />
+ * ```
+ */
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -12,6 +48,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { logger } from "@/lib/logger";
 
 interface LibrarySummaryProps {
   className?: string;
@@ -71,10 +108,9 @@ export function LibrarySummary({ className, libraryRootId, refreshTrigger }: Lib
           data = await getCurrentLibrarySummary(true);
         }
         
-        console.log(`Library summary loaded: ${data.totalTracks} tracks`);
         setSummary(data);
       } catch (err) {
-        console.error("Failed to load library summary:", err);
+        logger.error("Failed to load library summary:", err);
         setError("Failed to load library summary");
       } finally {
         setIsLoading(false);

@@ -2,6 +2,8 @@
  * Configuration for MusicBrainz database connection
  */
 
+import { logger } from "./logger";
+
 export interface MusicBrainzConfig {
   host: string;
   port: number;
@@ -54,7 +56,7 @@ export function getMusicBrainzConfig(): MusicBrainzConfig | null {
         cachedConfig = JSON.parse(stored);
         return cachedConfig;
       } catch (e) {
-        console.error('Failed to parse MusicBrainz config:', e);
+        logger.error('Failed to parse MusicBrainz config:', e);
         return null;
       }
     }

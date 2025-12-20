@@ -1,11 +1,42 @@
 /**
- * Playlist export functionality
+ * Playlist Export Functionality
  * 
- * Supports multiple export formats: M3U, PLS, XSPF, CSV, JSON
+ * This module provides functionality to export generated playlists in various formats
+ * that can be imported into music players and other applications.
+ * 
+ * Supported Formats:
+ * - **M3U**: Standard playlist format (UTF-8 with #EXTM3U header)
+ * - **PLS**: Winamp playlist format
+ * - **XSPF**: XML Shareable Playlist Format (open standard)
+ * - **CSV**: Comma-separated values (for spreadsheet import)
+ * - **JSON**: Structured data format (for programmatic use)
+ * 
+ * Path Strategies:
+ * - **relative-to-playlist**: Paths relative to playlist file location
+ * - **relative-to-library-root**: Paths relative to library root folder
+ * - **absolute**: Full absolute file paths
+ * 
+ * Features:
+ * - Handles missing file paths gracefully
+ * - Escapes special characters for each format
+ * - Supports discovery tracks (external URLs)
+ * - Formats duration as MM:SS
+ * - Normalizes file paths for cross-platform compatibility
+ * 
+ * @module features/playlists/export
+ * 
+ * @example
+ * ```typescript
+ * import { exportPlaylist } from '@/features/playlists/export';
+ * 
+ * const result = await exportPlaylist(playlist, 'm3u', trackLookups, config);
+ * // Returns: { content: '#EXTM3U\n...', mimeType: 'audio/x-mpegurl', extension: 'm3u' }
+ * ```
  */
 
 import type { GeneratedPlaylist } from "./matching-engine";
 import type { TrackRecord, FileIndexRecord } from "@/db/schema";
+import { logger } from "@/lib/logger";
 
 export interface TrackLookup {
   track: TrackRecord;
@@ -499,7 +530,7 @@ export function downloadFile(
   // Clean up on both success and error
   link.addEventListener('load', cleanup);
   link.addEventListener('error', (e) => {
-    console.warn('Download link error:', e);
+    logger.warn('Download link error:', e);
     cleanup();
   });
   

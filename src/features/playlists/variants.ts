@@ -1,7 +1,28 @@
 /**
- * Playlist variant generation
+ * Playlist Variant Generation
  * 
- * Creates modified versions of playlist requests for quick iteration
+ * This module generates modified versions of playlist requests for quick iteration.
+ * Variants allow users to easily create similar playlists with slight modifications
+ * (e.g., calmer, faster, more variety, more of a specific genre).
+ * 
+ * Supported Variants:
+ * - **calmer**: Reduces tempo, adds calm moods, reduces surprise
+ * - **faster**: Increases tempo, adds energetic moods, increases surprise
+ * - **more_variety**: Increases surprise for more diverse tracks
+ * - **more_genre**: Adds a specific genre to the request
+ * 
+ * @module features/playlists/variants
+ * 
+ * @example
+ * ```typescript
+ * import { generateVariant } from '@/features/playlists/variants';
+ * 
+ * // Create a calmer version
+ * const calmerRequest = generateVariant(originalRequest, { type: 'calmer' });
+ * 
+ * // Add more of a specific genre
+ * const moreRock = generateVariant(originalRequest, { type: 'more_genre', genre: 'Rock' });
+ * ```
  */
 
 import type { PlaylistRequest } from "@/types/playlist";

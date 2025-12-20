@@ -10,6 +10,7 @@ import type { GeneratedPlaylist } from "./matching-engine";
 import { getAllTracks } from "@/db/storage";
 import { db } from "@/db/schema";
 import type { TrackRecord } from "@/db/schema";
+import { logger } from "@/lib/logger";
 
 // Re-export types from matching engine
 export type {
@@ -122,7 +123,7 @@ export async function generatePlaylistFromStrategy(
               }
             }
           } catch (error) {
-            console.warn(`Tempo detection batch ${i / batchSize + 1} failed:`, error);
+            logger.warn(`Tempo detection batch ${i / batchSize + 1} failed:`, error);
             // Continue with next batch
           }
         }
@@ -146,7 +147,7 @@ export async function generatePlaylistFromStrategy(
         }
       }
     } catch (error) {
-      console.warn("Tempo detection failed, continuing without detected tempos:", error);
+      logger.warn("Tempo detection failed, continuing without detected tempos:", error);
     }
   }
 
@@ -242,7 +243,7 @@ export async function generatePlaylistFromStrategy(
         }
       }
     } catch (error) {
-      console.warn("Post-selection tempo detection failed:", error);
+      logger.warn("Post-selection tempo detection failed:", error);
       // Continue with playlist as-is
     }
   }
@@ -276,7 +277,7 @@ export async function generatePlaylistFromStrategy(
         explanation: explanation || undefined,
       };
     } catch (error) {
-      console.warn("LLM validation/explanation failed:", error);
+      logger.warn("LLM validation/explanation failed:", error);
       // Return playlist without validation/explanation
       return playlist;
     }
