@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [0.6.2] - 2025-12-20
+
+### Fixed
+
+- attempt to fix permissions errors on prod site
+
 ## [0.6.1] - 2025-12-20
 
 ### Fixed
