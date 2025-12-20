@@ -1,3 +1,39 @@
+/**
+ * ThemeProvider Component
+ * 
+ * React context provider for managing application theme (light/dark mode).
+ * Handles theme persistence in localStorage and applies theme to document root.
+ * 
+ * Features:
+ * - Theme state management (light/dark)
+ * - localStorage persistence
+ * - SSR-safe (handles server-side rendering)
+ * - Document attribute updates for CSS theming
+ * - Context API for theme access throughout app
+ * 
+ * State Management:
+ * - Manages theme state internally
+ * - Syncs with localStorage
+ * - Updates document.documentElement.setAttribute('data-theme', theme)
+ * 
+ * Usage:
+ * Wrap the application root with ThemeProvider, then use `useTheme()` hook
+ * in any component to access theme state and toggle function.
+ * 
+ * @module components/ThemeProvider
+ * 
+ * @example
+ * ```tsx
+ * // In root layout
+ * <ThemeProvider>
+ *   <App />
+ * </ThemeProvider>
+ * 
+ * // In any component
+ * const { theme, toggleTheme } = useTheme();
+ * ```
+ */
+
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
@@ -19,6 +55,12 @@ const defaultTheme: ThemeContextType = {
   toggleTheme: () => {},
 };
 
+/**
+ * Theme provider component
+ * 
+ * Provides theme context to all child components. Manages theme state,
+ * persistence, and document attribute updates.
+ */
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("dark");
   const [mounted, setMounted] = useState(false);

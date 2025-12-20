@@ -1,5 +1,19 @@
 /**
- * Feature detection utilities for browser capabilities
+ * Feature Detection Utilities
+ * 
+ * This module provides functions to detect browser capabilities and API support.
+ * Useful for feature detection and graceful degradation when APIs are not available.
+ * 
+ * @module lib/feature-detection
+ * 
+ * @example
+ * ```typescript
+ * if (supportsFileSystemAccess()) {
+ *   // Use File System Access API
+ * } else {
+ *   // Fall back to file input
+ * }
+ * ```
  */
 
 /**

@@ -9,6 +9,7 @@ import { Music, Trash2, Loader2, AlertCircle, Database } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getCollection, getCurrentCollectionId } from "@/db/storage";
 import type { LibraryRootRecord } from "@/db/schema";
+import { logger } from "@/lib/logger";
 
 interface PlaylistWithCollection {
   playlist: GeneratedPlaylist;
@@ -60,7 +61,7 @@ export default function SavedPlaylistsPage() {
 
       setPlaylists(playlistsWithNames);
     } catch (err) {
-      console.error("Failed to load saved playlists:", err);
+      logger.error("Failed to load saved playlists:", err);
       setError(err instanceof Error ? err.message : "Failed to load playlists");
     } finally {
       setIsLoading(false);
@@ -80,7 +81,7 @@ export default function SavedPlaylistsPage() {
       }
       await loadPlaylists();
     } catch (err) {
-      console.error("Failed to delete playlist:", err);
+      logger.error("Failed to delete playlist:", err);
       alert("Failed to delete playlist");
     }
   }

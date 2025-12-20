@@ -8,6 +8,7 @@
 import type { DiscoveryTrack } from './types';
 import type { TrackRecord } from '@/db/schema';
 import type { PlaylistRequest, LLMConfig, LLMProvider } from '@/types/playlist';
+import { logger } from '@/lib/logger';
 
 /**
  * Call LLM API (reuse pattern from validation.ts)
@@ -267,7 +268,7 @@ export async function generateExplanation(
     );
     return enhancedExplanation;
   } catch (error) {
-    console.warn('LLM explanation generation failed, using template:', error);
+    logger.warn('LLM explanation generation failed, using template:', error);
     return templateExplanation;
   }
 }

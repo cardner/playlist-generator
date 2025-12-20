@@ -1,3 +1,42 @@
+/**
+ * CollectionManager Component
+ * 
+ * Component for managing multiple music library collections. Provides UI for
+ * viewing, creating, editing, deleting, and switching between collections.
+ * Each collection represents a separate library root (music folder).
+ * 
+ * Features:
+ * - List all collections with statistics (track count, last scan date)
+ * - Switch between collections
+ * - Inline collection name editing
+ * - Delete collections with confirmation
+ * - Collection statistics display
+ * - Collection configuration editor integration
+ * 
+ * State Management:
+ * - Loads collections and statistics on mount
+ * - Manages editing state (inline and modal)
+ * - Tracks deletion state
+ * - Handles collection switching
+ * 
+ * Props:
+ * - `onCollectionChange`: Callback when collection is switched
+ * - `refreshTrigger`: Number to trigger refresh (increment to refresh)
+ * 
+ * @module components/CollectionManager
+ * 
+ * @example
+ * ```tsx
+ * <CollectionManager
+ *   onCollectionChange={(collectionId) => {
+ *     // Handle collection switch
+ *     loadCollection(collectionId);
+ *   }}
+ *   refreshTrigger={refreshCount}
+ * />
+ * ```
+ */
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -23,6 +62,7 @@ import {
   updateCollection,
 } from "@/db/storage";
 import { CollectionConfigEditor } from "./CollectionConfigEditor";
+import { logger } from "@/lib/logger";
 
 interface CollectionManagerProps {
   onCollectionChange?: (collectionId: string | null) => void;
@@ -70,7 +110,7 @@ export function CollectionManager({ onCollectionChange, refreshTrigger }: Collec
       }
       setCollectionStats(statsMap);
     } catch (error) {
-      console.error("Failed to load collections:", error);
+      logger.error("Failed to load collections:", error);
     } finally {
       setIsLoading(false);
     }
@@ -137,7 +177,7 @@ export function CollectionManager({ onCollectionChange, refreshTrigger }: Collec
         onCollectionChange?.(collectionId);
       }
     } catch (error) {
-      console.error("Failed to update collection name:", error);
+      logger.error("Failed to update collection name:", error);
       setInlineEditingError(error instanceof Error ? error.message : "Failed to save collection name");
     }
   };
@@ -160,7 +200,7 @@ export function CollectionManager({ onCollectionChange, refreshTrigger }: Collec
       // Reload collections after successful delete
       await loadCollections();
     } catch (error) {
-      console.error("Failed to delete collection:", error);
+      logger.error("Failed to delete collection:", error);
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       alert(`Failed to delete collection: ${errorMessage}. Please try again.`);
     } finally {

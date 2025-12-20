@@ -1,7 +1,31 @@
 /**
- * Playlist ordering agent
+ * Playlist Ordering Agent
  * 
- * Creates delightful sequencing with arc and transitions
+ * This module handles the sequencing and ordering of tracks in a playlist to create
+ * a delightful listening experience. It implements flow arc concepts (warmup, build,
+ * peak, cooldown) and calculates transition scores between tracks.
+ * 
+ * Key Features:
+ * - Flow arc segmentation (warmup → build → peak → cooldown)
+ * - Transition scoring between consecutive tracks
+ * - Genre continuity and artist diversity
+ * - Tempo progression throughout the playlist
+ * 
+ * Ordering Strategy:
+ * 1. Segments tracks into flow arc sections
+ * 2. Calculates transition scores between tracks
+ * 3. Optimizes track order for smooth transitions
+ * 4. Balances genre continuity with variety
+ * 
+ * @module features/playlists/ordering
+ * 
+ * @example
+ * ```typescript
+ * import { orderTracks } from '@/features/playlists/ordering';
+ * 
+ * const ordered = orderTracks(selections, strategy, request, index);
+ * // Returns: { tracks: [...], arc: { warmup: 3, build: 5, peak: 4, cooldown: 3 } }
+ * ```
  */
 
 import type { TrackSelection, TrackReason } from "./matching-engine";

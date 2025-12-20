@@ -1,9 +1,46 @@
+/**
+ * Navigation Component
+ * 
+ * Main navigation bar component for the application. Provides consistent navigation
+ * across all pages with active state highlighting and theme toggle integration.
+ * 
+ * Features:
+ * - Responsive navigation menu
+ * - Active route highlighting
+ * - Theme toggle integration
+ * - Clean, minimal design
+ * 
+ * Navigation Items:
+ * - Home (/)
+ * - Library (/library)
+ * - New Playlist (/playlists/new)
+ * - Saved Playlists (/playlists/saved)
+ * 
+ * State Management:
+ * - Uses Next.js `usePathname` hook for active route detection
+ * - No internal state - purely presentational
+ * 
+ * @module components/Navigation
+ * 
+ * @example
+ * ```tsx
+ * // Used in root layout
+ * <Navigation />
+ * ```
+ */
+
 "use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ThemeToggle } from "./ThemeToggle";
 
+/**
+ * Main navigation component
+ * 
+ * Renders the top navigation bar with links to main application pages.
+ * Automatically highlights the active route based on current pathname.
+ */
 export function Navigation() {
   const pathname = usePathname();
 

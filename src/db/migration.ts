@@ -7,6 +7,8 @@
  * attempts to open them, preventing "UpgradeError Not yet support for changing primary key" errors.
  */
 
+import { logger } from "@/lib/logger";
+
 /**
  * Clear old database if it exists with incompatible schema
  * This is called before Dexie initialization to prevent primary key errors
@@ -32,8 +34,6 @@ export async function clearOldDatabaseIfNeeded(): Promise<void> {
       // No database exists, nothing to migrate
       return;
     }
-
-    console.log(`Found existing database (version ${oldDb.version}), checking compatibility...`);
 
     // Try to open the database with Dexie to see if it's compatible
     // We'll use a test Dexie instance to detect upgrade errors
@@ -69,12 +69,10 @@ export async function clearOldDatabaseIfNeeded(): Promise<void> {
           testDb.close();
           // If version is 3 (old raw IndexedDB) or if we detect incompatible primary keys, delete
           if (oldDb.version === 3) {
-            console.log("Old database detected (version 3 from raw IndexedDB), deleting to allow migration...");
             await deleteDatabase();
             return;
           }
           // Database seems compatible, keep it
-          console.log("Database is compatible, keeping existing data");
           return;
         }
       } catch (openError: any) {
@@ -85,12 +83,12 @@ export async function clearOldDatabaseIfNeeded(): Promise<void> {
           openError?.message?.includes("Not yet support for changing primary key") ||
           openError?.inner?.name === "UpgradeError"
         ) {
-          console.log("Incompatible database detected (upgrade error), deleting to allow fresh migration...", openError);
+          logger.warn("Incompatible database detected (upgrade error), deleting to allow fresh migration", openError);
           await deleteDatabase();
           return;
         }
         // Other errors - still delete to be safe (better to lose data than break the app)
-        console.warn("Error opening database, deleting to ensure clean state:", openError);
+        logger.warn("Error opening database, deleting to ensure clean state", openError);
         await deleteDatabase();
         return;
       }
@@ -102,24 +100,23 @@ export async function clearOldDatabaseIfNeeded(): Promise<void> {
         dexieError?.message?.includes("Not yet support for changing primary key") ||
         dexieError?.inner?.name === "UpgradeError"
       ) {
-        console.log("Dexie detected incompatible database, deleting to allow fresh migration...", dexieError);
+        logger.warn("Dexie detected incompatible database, deleting to allow fresh migration", dexieError);
         await deleteDatabase();
         return;
       }
       // For any other error, delete to be safe
-      console.warn("Error checking database with Dexie, deleting to ensure clean state:", dexieError);
+      logger.warn("Error checking database with Dexie, deleting to ensure clean state", dexieError);
       await deleteDatabase();
       return;
     }
   } catch (error) {
-    console.error("Error checking for old database:", error);
+    logger.error("Error checking for old database:", error);
     // If we can't check, delete anyway to be safe
     // Better to lose data than have a broken app
-    console.log("Deleting database due to check error to ensure clean state...");
     try {
       await deleteDatabase();
     } catch (deleteError) {
-      console.error("Failed to delete database:", deleteError);
+      logger.error("Failed to delete database:", deleteError);
       // Continue anyway - we'll try again on next load
     }
   }
@@ -140,18 +137,17 @@ async function deleteDatabase(): Promise<void> {
         const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
         
         deleteRequest.onsuccess = () => {
-          console.log(`Database "${DB_NAME}" deleted successfully (attempt ${attempt})`);
           // Small delay to ensure deletion is complete
           setTimeout(resolve, 100);
         };
         
         deleteRequest.onerror = () => {
-          console.error(`Failed to delete database (attempt ${attempt}):`, deleteRequest.error);
+          logger.error(`Failed to delete database (attempt ${attempt}):`, deleteRequest.error);
           reject(deleteRequest.error);
         };
         
         deleteRequest.onblocked = () => {
-          console.warn(`Database deletion blocked (attempt ${attempt}) - may need to close other tabs`);
+          logger.warn(`Database deletion blocked (attempt ${attempt}) - may need to close other tabs`);
           // Wait longer if blocked
           setTimeout(() => {
             // Try to resolve anyway - the database might be deleted
@@ -167,15 +163,13 @@ async function deleteDatabase(): Promise<void> {
         throw new Error("Database still exists after deletion");
       }
       
-      console.log("Database deletion verified");
       return; // Success
     } catch (error) {
       if (attempt === MAX_RETRIES) {
-        console.error(`Failed to delete database after ${MAX_RETRIES} attempts:`, error);
+        logger.error(`Failed to delete database after ${MAX_RETRIES} attempts:`, error);
         // Don't throw - let Dexie handle the migration
         return;
       }
-      console.log(`Retrying database deletion (attempt ${attempt + 1}/${MAX_RETRIES})...`);
       await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * attempt));
     }
   }

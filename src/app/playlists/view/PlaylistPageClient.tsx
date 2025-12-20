@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { PlaylistDisplay } from "@/components/PlaylistDisplay";
 import type { GeneratedPlaylist } from "@/features/playlists";
 import { Loader2, AlertCircle } from "lucide-react";
+import { logger } from "@/lib/logger";
 
 interface PlaylistPageClientProps {
   playlistId: string;
@@ -40,7 +41,7 @@ export function PlaylistPageClient({ playlistId }: PlaylistPageClientProps) {
           setError("Playlist ID mismatch");
         }
       } catch (err) {
-        console.error("Failed to parse playlist:", err);
+        logger.error("Failed to parse playlist:", err);
         setError("Failed to load playlist");
       }
     } else {

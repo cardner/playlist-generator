@@ -1,19 +1,59 @@
 /**
  * API Key Storage Utilities
  * 
- * Stores API keys securely using encryption (AES-GCM) and SHA-256 hashing for verification.
- * Keys are encrypted before storage and decrypted when needed.
+ * This module provides secure storage for API keys using client-side encryption.
+ * Keys are encrypted using AES-GCM before being stored in localStorage, and decrypted
+ * when needed. SHA-256 hashing is used for verification.
  * 
- * Note: This provides basic client-side encryption. For production use, consider
- * server-side key management or more sophisticated encryption schemes.
+ * Security Features:
+ * - AES-GCM encryption with 256-bit keys
+ * - PBKDF2 key derivation (100,000 iterations)
+ * - Random salt and IV for each encryption
+ * - SHA-256 hashing for verification
+ * 
+ * Storage:
+ * - Keys are stored in localStorage with prefix "api_key_"
+ * - Each key is encrypted separately with its own salt/IV
+ * 
+ * Limitations:
+ * - This provides basic client-side encryption only
+ * - For production use, consider server-side key management
+ * - Keys are still vulnerable to XSS attacks if the app is compromised
+ * 
+ * @module lib/api-key-storage
+ * 
+ * @example
+ * ```typescript
+ * // Store an API key
+ * await storeApiKey('openai', 'sk-...');
+ * 
+ * // Retrieve an API key
+ * const key = await getApiKey('openai');
+ * 
+ * // Check if a key exists
+ * const exists = await hasApiKey('openai');
+ * 
+ * // Delete a key
+ * await deleteApiKey('openai');
+ * ```
  */
+
+import { logger } from "./logger";
 
 const STORAGE_KEY_PREFIX = "api_key_";
 const IV_LENGTH = 12; // 96 bits for GCM
 const SALT_LENGTH = 16; // 128 bits
 
 /**
- * Generate a key from a password using PBKDF2
+ * Derive an encryption key from a password using PBKDF2
+ * 
+ * Uses PBKDF2 with SHA-256 and 100,000 iterations to derive a 256-bit AES-GCM key.
+ * This provides strong key derivation resistant to brute-force attacks.
+ * 
+ * @param password - Password to derive key from
+ * @param salt - Random salt for key derivation
+ * @returns Derived encryption key
+ * @internal
  */
 async function deriveKey(password: string, salt: BufferSource): Promise<CryptoKey> {
   const encoder = new TextEncoder();
@@ -40,7 +80,14 @@ async function deriveKey(password: string, salt: BufferSource): Promise<CryptoKe
 }
 
 /**
- * Generate a hash of the API key for verification
+ * Generate a SHA-256 hash of the API key for verification
+ * 
+ * Creates a hexadecimal hash string that can be used to verify the key
+ * without storing the plaintext key.
+ * 
+ * @param apiKey - API key to hash
+ * @returns Hexadecimal hash string
+ * @internal
  */
 async function hashApiKey(apiKey: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -51,7 +98,15 @@ async function hashApiKey(apiKey: string): Promise<string> {
 }
 
 /**
- * Encrypt API key
+ * Encrypt an API key using AES-GCM
+ * 
+ * Encrypts the API key with a random salt and IV. The encrypted data,
+ * salt, and IV are combined into a single base64-encoded string.
+ * 
+ * @param apiKey - Plaintext API key to encrypt
+ * @param password - Password for encryption
+ * @returns Base64-encoded encrypted key (salt + IV + encrypted data)
+ * @internal
  */
 async function encryptApiKey(apiKey: string, password: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -85,7 +140,16 @@ async function encryptApiKey(apiKey: string, password: string): Promise<string> 
 }
 
 /**
- * Decrypt API key
+ * Decrypt an API key using AES-GCM
+ * 
+ * Extracts the salt and IV from the encrypted string, derives the key,
+ * and decrypts the API key.
+ * 
+ * @param encrypted - Base64-encoded encrypted key (salt + IV + encrypted data)
+ * @param password - Password for decryption
+ * @returns Plaintext API key
+ * @throws Error if decryption fails (corrupted data or wrong password)
+ * @internal
  */
 async function decryptApiKey(encrypted: string, password: string): Promise<string> {
   try {
@@ -119,7 +183,15 @@ async function decryptApiKey(encrypted: string, password: string): Promise<strin
 
 /**
  * Get a device-specific password for encryption
- * Uses a combination of user agent and other browser properties
+ * 
+ * Generates a password based on browser properties (user agent, language, etc.)
+ * This ensures keys are encrypted with a device-specific key, making them
+ * harder to extract if localStorage is accessed directly.
+ * 
+ * Note: This is not cryptographically secure but provides basic obfuscation.
+ * 
+ * @returns Device-specific password string
+ * @internal
  */
 function getDevicePassword(): string {
   // Use a combination of browser properties to create a device-specific key
@@ -164,7 +236,7 @@ export async function getApiKey(provider: string): Promise<string | null> {
     const decrypted = await decryptApiKey(encrypted, password);
     return decrypted;
   } catch (error) {
-    console.error(`Failed to decrypt API key for ${provider}:`, error);
+    logger.error(`Failed to decrypt API key for ${provider}:`, error);
     return null;
   }
 }

@@ -6,6 +6,7 @@ import type { PlaylistRequest } from "@/types/playlist";
 import type { GeneratedPlaylist } from "./matching-engine";
 import type { PlaylistValidation, PlaylistExplanation } from "@/types/playlist";
 import type { LLMProvider } from "@/types/playlist";
+import { logger } from "@/lib/logger";
 
 /**
  * Call LLM API (reuse pattern from strategy.ts)
@@ -226,7 +227,7 @@ export async function validatePlaylistWithLLM(
       suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
     };
   } catch (error) {
-    console.warn("LLM validation failed:", error);
+    logger.warn("LLM validation failed:", error);
     return null; // Return null on failure - playlist is still valid, just unvalidated
   }
 }
@@ -262,7 +263,7 @@ export async function generatePlaylistExplanation(
       flowDescription: parsed.flowDescription || "",
     };
   } catch (error) {
-    console.warn("LLM explanation generation failed:", error);
+    logger.warn("LLM explanation generation failed:", error);
     return null;
   }
 }

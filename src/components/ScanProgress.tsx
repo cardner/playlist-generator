@@ -1,3 +1,32 @@
+/**
+ * ScanProgress Component
+ * 
+ * Displays progress during library file scanning. Shows files found, files scanned,
+ * percentage complete, and current file being processed.
+ * 
+ * Features:
+ * - Progress bar with percentage
+ * - File count display (scanned/total)
+ * - Current file name display
+ * - Loading spinner animation
+ * 
+ * Props:
+ * - `found`: Total number of files found
+ * - `scanned`: Number of files scanned so far
+ * - `currentFile`: Optional name of current file being scanned
+ * 
+ * @module components/ScanProgress
+ * 
+ * @example
+ * ```tsx
+ * <ScanProgress
+ *   found={1000}
+ *   scanned={450}
+ *   currentFile="Music/Album/Track.mp3"
+ * />
+ * ```
+ */
+
 "use client";
 
 import { Loader2 } from "lucide-react";

@@ -1,3 +1,48 @@
+/**
+ * PlaylistBuilder Component
+ * 
+ * Comprehensive form component for creating playlist generation requests.
+ * Handles user input for genres, moods, activities, tempo, duration, and other
+ * playlist parameters. Supports both standard and discovery mode playlist creation.
+ * 
+ * Features:
+ * - Genre selection with autocomplete from library
+ * - Mood and activity input with suggestions
+ * - Tempo selection (bucket or BPM range)
+ * - Duration specification (minutes or track count)
+ * - Surprise/variety slider
+ * - Suggested artists, albums, and tracks
+ * - LLM agent configuration
+ * - Collection selection for multi-library support
+ * - Draft auto-save to localStorage
+ * - Form validation with inline error display
+ * 
+ * State Management:
+ * - Uses `usePlaylistForm` hook for form state and validation
+ * - Loads library data (genres, artists, albums, tracks) on mount
+ * - Manages collection selection and switching
+ * - Auto-saves draft to localStorage on changes
+ * 
+ * Form Validation:
+ * - Validates required fields (genres, length)
+ * - Validates ranges (tempo BPM, duration)
+ * - Validates discovery mode requirements (suggested tracks/albums)
+ * - Shows inline errors for invalid inputs
+ * 
+ * @module components/PlaylistBuilder
+ * 
+ * @example
+ * ```tsx
+ * <PlaylistBuilder
+ *   onGenerate={(request) => {
+ *     // Handle playlist generation
+ *     generatePlaylist(request);
+ *   }}
+ *   discoveryMode={false}
+ * />
+ * ```
+ */
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -6,15 +51,7 @@ import type { PlaylistRequest, PlaylistRequestErrors } from "@/types/playlist";
 import { getAllGenres, getAllGenresWithStats, getAllArtists, getAllAlbums, getAllTrackTitles, getCurrentLibraryRoot, getAllCollections, getCurrentCollectionId } from "@/db/storage";
 import type { LibraryRootRecord } from "@/db/schema";
 import type { GenreWithStats } from "@/features/library/genre-normalization";
-import {
-  savePlaylistDraft,
-  loadPlaylistDraft,
-  clearPlaylistDraft,
-} from "@/lib/playlist-storage";
-import {
-  validatePlaylistRequest,
-  hasErrors,
-} from "@/lib/playlist-validation";
+// Form state and validation are now handled by usePlaylistForm hook
 import {
   Music,
   Clock,
@@ -32,130 +69,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgentSelector } from "./AgentSelector";
+import { ChipInput } from "./ChipInput";
 import type { AgentType, LLMConfig } from "@/types/playlist";
-
-interface ChipInputProps {
-  values: string[];
-  onChange: (values: string[]) => void;
-  placeholder?: string;
-  suggestions?: string[];
-  error?: string;
-  icon?: React.ReactNode;
-  showCounts?: boolean;
-  genreStats?: GenreWithStats[];
-}
-
-function ChipInput({
-  values,
-  onChange,
-  placeholder = "Add item...",
-  suggestions = [],
-  error,
-  icon,
-  showCounts = false,
-  genreStats = [],
-}: ChipInputProps) {
-  const [inputValue, setInputValue] = useState("");
-  const [showSuggestions, setShowSuggestions] = useState(false);
-
-  const handleAdd = (value: string) => {
-    const trimmed = value.trim();
-    if (trimmed && !values.includes(trimmed)) {
-      onChange([...values, trimmed]);
-    }
-    setInputValue("");
-    setShowSuggestions(false);
-  };
-
-  const handleRemove = (value: string) => {
-    onChange(values.filter((v) => v !== value));
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && inputValue.trim()) {
-      e.preventDefault();
-      handleAdd(inputValue);
-    } else if (e.key === "Escape") {
-      setShowSuggestions(false);
-    }
-  };
-
-  const filteredSuggestions = suggestions.filter(
-    (s) => !values.includes(s) && s.toLowerCase().includes(inputValue.toLowerCase())
-  );
-
-  // Get track count for a genre if showing counts
-  const getTrackCount = (genre: string): number | undefined => {
-    if (!showCounts || genreStats.length === 0) return undefined;
-    const stat = genreStats.find((g) => g.normalized === genre);
-    return stat?.trackCount;
-  };
-
-  return (
-    <div className="space-y-2">
-      <div className="relative">
-        <div className="flex flex-wrap gap-2 p-3 bg-app-hover rounded-sm border border-app-border min-h-[48px] focus-within:border-accent-primary">
-          {values.map((value) => (
-            <span
-              key={value}
-              className="inline-flex items-center gap-1.5 px-3 py-1 bg-app-surface text-app-primary rounded-sm text-sm border border-app-border"
-            >
-              {value}
-              <button
-                type="button"
-                onClick={() => handleRemove(value)}
-                className="hover:text-red-500 transition-colors"
-              >
-                <X className="size-3" />
-              </button>
-            </span>
-          ))}
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => {
-              setInputValue(e.target.value);
-              setShowSuggestions(true);
-            }}
-            onKeyDown={handleKeyDown}
-            onFocus={() => setShowSuggestions(true)}
-            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-            placeholder={values.length === 0 ? placeholder : ""}
-            className="flex-1 min-w-[120px] bg-transparent text-app-primary placeholder-app-tertiary outline-none"
-          />
-        </div>
-        {showSuggestions && filteredSuggestions.length > 0 && (
-          <div className="absolute z-10 w-full mt-1 bg-app-surface border border-app-border rounded-sm shadow-lg max-h-48 overflow-y-auto">
-            {filteredSuggestions.map((suggestion) => {
-              const trackCount = getTrackCount(suggestion);
-              return (
-                <button
-                  key={suggestion}
-                  type="button"
-                  onClick={() => handleAdd(suggestion)}
-                  className="w-full px-4 py-2 text-left text-app-primary hover:bg-app-hover transition-colors flex items-center justify-between"
-                >
-                  <span>{suggestion}</span>
-                  {trackCount !== undefined && (
-                    <span className="text-app-tertiary text-xs ml-2">
-                      ({trackCount} {trackCount === 1 ? 'track' : 'tracks'})
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-      {error && (
-        <p className="text-red-500 text-sm flex items-center gap-1">
-          <AlertCircle className="size-4" />
-          {error}
-        </p>
-      )}
-    </div>
-  );
-}
+import { logger } from "@/lib/logger";
+import { usePlaylistForm } from "@/hooks/usePlaylistForm";
 
 interface PlaylistBuilderProps {
   onGenerate?: (request: PlaylistRequest) => void;
@@ -202,27 +119,18 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
   const [isLoadingAlbums, setIsLoadingAlbums] = useState(true);
   const [isLoadingTracks, setIsLoadingTracks] = useState(true);
   const [showCollectionSelector, setShowCollectionSelector] = useState(false);
-
-  const [formData, setFormData] = useState<Partial<PlaylistRequest>>({
-    genres: [],
-    length: { type: "minutes", value: 30 },
-    mood: [],
-    activity: [],
-    tempo: { bucket: "medium" },
-    surprise: discoveryMode ? 0.7 : 0.5,
-    minArtists: undefined,
-    disallowedArtists: [],
-    suggestedArtists: [],
-    suggestedAlbums: [],
-    suggestedTracks: [],
-    agentType: "built-in",
-    llmConfig: undefined,
-    enableDiscovery: discoveryMode,
-    discoveryFrequency: "every_other",
-  });
-
-  const [errors, setErrors] = useState<PlaylistRequestErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Use the form hook for state and validation management
+  const {
+    formData,
+    errors,
+    setFormData,
+    validate,
+    isValid,
+    clearDraft,
+    validateDiscoveryMode,
+  } = usePlaylistForm({ discoveryMode });
 
   // Load collections and set current collection
   useEffect(() => {
@@ -233,30 +141,13 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
         const currentId = await getCurrentCollectionId();
         setSelectedCollectionId(currentId || null);
       } catch (error) {
-        console.error("Failed to load collections:", error);
+        logger.error("Failed to load collections:", error);
       }
     }
     loadCollections();
   }, []);
 
-  // Load draft from localStorage
-  useEffect(() => {
-    const draft = loadPlaylistDraft();
-    if (draft) {
-      setFormData((prev) => ({ ...prev, ...draft }));
-    }
-  }, []);
-
-  // Ensure discovery is always enabled in discovery mode
-  useEffect(() => {
-    if (discoveryMode && !formData.enableDiscovery) {
-      setFormData((prev) => ({
-        ...prev,
-        enableDiscovery: true,
-        discoveryFrequency: prev.discoveryFrequency || "every_other",
-      }));
-    }
-  }, [discoveryMode, formData.enableDiscovery]);
+  // Form state and validation are now handled by usePlaylistForm hook
 
   // Load genres from library
   useEffect(() => {
@@ -267,7 +158,7 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
         setGenresWithStats(genresStats);
         setGenres(genresStats.map((g) => g.normalized));
       } catch (error) {
-        console.error("Failed to load genres:", error);
+        logger.error("Failed to load genres:", error);
       } finally {
         setIsLoadingGenres(false);
       }
@@ -285,7 +176,7 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
         const libraryArtists = await getAllArtists(selectedCollectionId || undefined);
         setArtists(libraryArtists);
       } catch (error) {
-        console.error("Failed to load artists:", error);
+        logger.error("Failed to load artists:", error);
       } finally {
         setIsLoadingArtists(false);
       }
@@ -303,7 +194,7 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
         const libraryAlbums = await getAllAlbums(selectedCollectionId || undefined);
         setAlbums(libraryAlbums);
       } catch (error) {
-        console.error("Failed to load albums:", error);
+        logger.error("Failed to load albums:", error);
       } finally {
         setIsLoadingAlbums(false);
       }
@@ -321,7 +212,7 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
         const libraryTracks = await getAllTrackTitles(selectedCollectionId || undefined);
         setTrackTitles(libraryTracks);
       } catch (error) {
-        console.error("Failed to load track titles:", error);
+        logger.error("Failed to load track titles:", error);
       } finally {
         setIsLoadingTracks(false);
       }
@@ -331,14 +222,7 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
     }
   }, [selectedCollectionId]);
 
-  // Auto-save draft to localStorage
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      savePlaylistDraft(formData);
-    }, 500);
-
-    return () => clearTimeout(timeoutId);
-  }, [formData]);
+  // Auto-save draft is now handled by usePlaylistForm hook
 
   // Close collection selector when clicking outside
   useEffect(() => {
@@ -359,33 +243,21 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
     e.preventDefault();
     setIsSubmitting(true);
 
-    // In discovery mode, require at least one selection (genres, artists, albums, or tracks)
-    if (discoveryMode) {
-      const hasGenres = (formData.genres || []).length > 0;
-      const hasArtists = (formData.suggestedArtists || []).length > 0;
-      const hasAlbums = (formData.suggestedAlbums || []).length > 0;
-      const hasTracks = (formData.suggestedTracks || []).length > 0;
-      
-      if (!hasGenres && !hasArtists && !hasAlbums && !hasTracks) {
-        setErrors({
-          ...errors,
-          genres: discoveryMode ? "Please select at least one genre, artist, album, or track from your collection to discover new music" : errors.genres,
-        });
-        setIsSubmitting(false);
-        return;
-      }
+    // Validate discovery mode requirements
+    if (!validateDiscoveryMode()) {
+      setIsSubmitting(false);
+      return;
     }
 
-    const validationErrors = validatePlaylistRequest(formData);
-    setErrors(validationErrors);
-
-    if (hasErrors(validationErrors)) {
+    // Validate form
+    const validationErrors = validate();
+    if (!isValid()) {
       setIsSubmitting(false);
       return;
     }
 
     // Clear draft
-    clearPlaylistDraft();
+    clearDraft();
 
     // Call onGenerate callback if provided
     if (onGenerate) {

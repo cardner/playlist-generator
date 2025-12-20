@@ -1,3 +1,44 @@
+/**
+ * Modal Component
+ * 
+ * Reusable modal dialog component with backdrop, close button, and keyboard
+ * navigation support. Used throughout the application for displaying content
+ * in an overlay.
+ * 
+ * Features:
+ * - Backdrop with blur effect
+ * - Close button in header
+ * - Escape key to close
+ * - Prevents body scroll when open
+ * - Click outside to close (optional)
+ * - Responsive sizing
+ * - Optional title header
+ * 
+ * Accessibility:
+ * - Keyboard navigation (Escape to close)
+ * - ARIA labels for close button
+ * - Focus management
+ * 
+ * Props:
+ * - `isOpen`: Whether modal is visible
+ * - `onClose`: Callback when modal should close
+ * - `title`: Optional title text for header
+ * - `children`: Modal content
+ * 
+ * @module components/Modal
+ * 
+ * @example
+ * ```tsx
+ * <Modal
+ *   isOpen={showModal}
+ *   onClose={() => setShowModal(false)}
+ *   title="Edit Collection"
+ * >
+ *   <CollectionEditor />
+ * </Modal>
+ * ```
+ */
+
 "use client";
 
 import { useEffect } from "react";

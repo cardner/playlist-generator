@@ -3,6 +3,7 @@
  */
 
 import type { PlaylistRequest } from "@/types/playlist";
+import { logger } from "./logger";
 
 const DRAFT_STORAGE_KEY = "playlist-draft";
 
@@ -10,7 +11,7 @@ export function savePlaylistDraft(request: Partial<PlaylistRequest>): void {
   try {
     localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(request));
   } catch (error) {
-    console.error("Failed to save playlist draft:", error);
+    logger.error("Failed to save playlist draft:", error);
   }
 }
 
@@ -20,7 +21,7 @@ export function loadPlaylistDraft(): Partial<PlaylistRequest> | null {
     if (!stored) return null;
     return JSON.parse(stored) as Partial<PlaylistRequest>;
   } catch (error) {
-    console.error("Failed to load playlist draft:", error);
+    logger.error("Failed to load playlist draft:", error);
     return null;
   }
 }
@@ -29,7 +30,7 @@ export function clearPlaylistDraft(): void {
   try {
     localStorage.removeItem(DRAFT_STORAGE_KEY);
   } catch (error) {
-    console.error("Failed to clear playlist draft:", error);
+    logger.error("Failed to clear playlist draft:", error);
   }
 }
 

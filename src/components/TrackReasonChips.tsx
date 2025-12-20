@@ -1,3 +1,40 @@
+/**
+ * TrackReasonChips Component
+ * 
+ * Displays track selection reasons as visual chips with icons and color coding.
+ * Used in PlaylistDisplay to show why each track was selected for the playlist.
+ * 
+ * Features:
+ * - Color-coded reason types (genre, tempo, duration, diversity, surprise)
+ * - Icon indicators for each reason type
+ * - Score-based sorting (highest scores first)
+ * - Compact mode for space-constrained layouts
+ * - Tooltip support for full explanations
+ * 
+ * Reason Types:
+ * - **genre_match**: Genre matching (blue)
+ * - **tempo_match**: Tempo matching (purple)
+ * - **duration_fit**: Duration fit (green)
+ * - **diversity**: Artist/genre diversity (orange)
+ * - **surprise**: Unexpected/variety tracks (pink)
+ * - **constraint**: Constraint satisfaction (yellow)
+ * - **ordering**: Flow arc ordering (indigo)
+ * 
+ * Props:
+ * - `reasons`: Array of track selection reasons
+ * - `compact`: Whether to show compact version (fewer chips)
+ * 
+ * @module components/TrackReasonChips
+ * 
+ * @example
+ * ```tsx
+ * <TrackReasonChips
+ *   reasons={track.reasons}
+ *   compact={false}
+ * />
+ * ```
+ */
+
 "use client";
 
 import type { TrackReason } from "@/features/playlists";

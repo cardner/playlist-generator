@@ -6,6 +6,7 @@ import { PlaylistDisplay } from "@/components/PlaylistDisplay";
 import type { GeneratedPlaylist } from "@/features/playlists";
 import { Loader2, AlertCircle } from "lucide-react";
 import { getPlaylistCollectionId } from "@/db/playlist-storage";
+import { logger } from "@/lib/logger";
 
 export function PlaylistViewContent() {
   const searchParams = useSearchParams();
@@ -49,7 +50,7 @@ export function PlaylistViewContent() {
                 const collectionId = await getPlaylistCollectionId(playlistId);
                 setPlaylistCollectionId(collectionId);
               } catch (err) {
-                console.error("Failed to load playlist collection ID:", err);
+                logger.error("Failed to load playlist collection ID:", err);
                 // Not a critical error, continue without collection ID
               }
             }
@@ -57,7 +58,7 @@ export function PlaylistViewContent() {
             setError("Playlist ID mismatch");
           }
         } catch (err) {
-          console.error("Failed to parse playlist:", err);
+          logger.error("Failed to parse playlist:", err);
           setError("Failed to load playlist");
         }
       } else {

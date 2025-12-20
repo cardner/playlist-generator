@@ -1,9 +1,55 @@
+/**
+ * AgentSelector Component
+ * 
+ * Component for selecting the playlist generation agent type (heuristic or LLM)
+ * and configuring LLM provider settings. Handles secure API key storage and
+ * provider selection.
+ * 
+ * Features:
+ * - Agent type selection (heuristic or LLM)
+ * - LLM provider selection (OpenAI, Gemini, Claude, Local)
+ * - Secure API key input with show/hide toggle
+ * - API key storage in encrypted localStorage
+ * - API key validation and error display
+ * - Provider-specific configuration
+ * 
+ * State Management:
+ * - Manages selected provider and API key state
+ * - Loads stored API keys on mount
+ * - Handles API key saving and deletion
+ * - Tracks loading and error states
+ * 
+ * Security:
+ * - API keys are encrypted using AES-GCM before storage
+ * - Keys are hashed using SHA-256
+ * - Never transmitted except to selected provider
+ * 
+ * Props:
+ * - `agentType`: Current agent type selection
+ * - `llmConfig`: Current LLM configuration (if LLM selected)
+ * - `onAgentTypeChange`: Callback when agent type changes
+ * - `onLLMConfigChange`: Callback when LLM config changes
+ * 
+ * @module components/AgentSelector
+ * 
+ * @example
+ * ```tsx
+ * <AgentSelector
+ *   agentType="llm"
+ *   llmConfig={{ provider: "openai", apiKey: "..." }}
+ *   onAgentTypeChange={(type) => setAgentType(type)}
+ *   onLLMConfigChange={(config) => setLLMConfig(config)}
+ * />
+ * ```
+ */
+
 "use client";
 
 import { useState, useEffect, useRef } from "react";
 import { Eye, EyeOff, Bot, Sparkles, Key, AlertCircle } from "lucide-react";
 import type { AgentType, LLMProvider, LLMConfig } from "@/types/playlist";
 import { getApiKey, storeApiKey, hasApiKey, deleteApiKey } from "@/lib/api-key-storage";
+import { logger } from "@/lib/logger";
 
 interface AgentSelectorProps {
   agentType: AgentType;
@@ -44,7 +90,7 @@ export function AgentSelector({
             setApiKey(stored);
           }
         } catch (err) {
-          console.error("Failed to load API key:", err);
+          logger.error("Failed to load API key:", err);
         } finally {
           setIsLoading(false);
         }
@@ -92,7 +138,7 @@ export function AgentSelector({
       try {
         await storeApiKey(selectedProvider, value.trim());
       } catch (err) {
-        console.error("Failed to save API key:", err);
+        logger.error("Failed to save API key:", err);
         setError("Failed to save API key");
       }
     } else {

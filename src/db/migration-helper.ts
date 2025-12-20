@@ -6,6 +6,7 @@
  */
 
 import { clearOldDatabaseIfNeeded } from "./migration";
+import { logger } from "@/lib/logger";
 
 // Singleton promise that ensures migration completes
 let dbMigrationPromise: Promise<void> | null = null;
@@ -24,7 +25,7 @@ export function ensureMigrationComplete(): Promise<void> {
   if (!dbMigrationPromise) {
     dbMigrationPromise = clearOldDatabaseIfNeeded()
       .catch((error) => {
-        console.error("Database migration error:", error);
+        logger.error("Database migration error:", error);
         // Even if migration fails, we continue - Dexie will handle it
         // But we log the error for debugging
       })

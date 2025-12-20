@@ -6,6 +6,7 @@
 
 import type { TrackInfo, SampleResult, SearchOptions } from './types';
 import { searchiTunes } from './itunes-searcher';
+import { logger } from '@/lib/logger';
 
 /**
  * Search for track sample using iTunes API
@@ -18,8 +19,6 @@ export async function searchTrackSample(
   trackInfo: TrackInfo,
   options?: SearchOptions & { trackFileId?: string; libraryRootId?: string }
 ): Promise<SampleResult | null> {
-  console.log(`[Audio Preview] Searching iTunes for: "${trackInfo.artist}" - "${trackInfo.title}"`);
-
   try {
     const result = await searchiTunes(
       trackInfo.title,
@@ -27,15 +26,9 @@ export async function searchTrackSample(
       trackInfo.album
     );
 
-    if (result) {
-      console.log(`[Audio Preview] Found iTunes preview:`, result.url);
-      return result;
-    } else {
-      console.log(`[Audio Preview] No iTunes preview available for: "${trackInfo.artist}" - "${trackInfo.title}"`);
-      return null;
-    }
+    return result;
   } catch (error) {
-    console.warn(`[Audio Preview] iTunes search failed:`, error);
+    logger.warn(`[Audio Preview] iTunes search failed:`, error);
     return null;
   }
 }

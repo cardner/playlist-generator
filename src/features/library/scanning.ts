@@ -9,6 +9,7 @@ import {
   getLibraryFiles,
   getLibraryFilesFromFileList,
 } from "@/lib/library-selection";
+import { logger } from "@/lib/logger";
 
 /**
  * Supported audio file extensions
@@ -219,7 +220,7 @@ export async function buildFileIndex(
 
     return index;
   } catch (error) {
-    console.error("Error building file index:", error);
+    logger.error("Error building file index:", error);
     throw error;
   }
 }
@@ -297,7 +298,7 @@ export async function buildFileIndexFromFileList(
 
     return index;
   } catch (error) {
-    console.error("Error building file index from file list:", error);
+    logger.error("Error building file index from file list:", error);
     throw error;
   }
 }
@@ -469,6 +470,6 @@ async function saveFileIndex(index: FileIndex): Promise<void> {
   // This function is deprecated - file index is now stored per libraryRootId
   // Do nothing for backwards compatibility
   // The actual file index saving is handled by scanning-persist.ts
-  console.warn("saveFileIndex called - this is deprecated. Use saveFileIndexEntries instead.");
+  logger.warn("saveFileIndex called - this is deprecated. Use saveFileIndexEntries instead.");
 }
 

@@ -1,8 +1,37 @@
 /**
- * Genre normalization and mapping
+ * Genre Normalization and Mapping
  * 
- * Normalizes genre names to canonical forms while preserving subgenres.
- * Uses a mapping layer approach to preserve original genres in the database.
+ * This module normalizes genre names to canonical forms while preserving subgenres.
+ * It uses a mapping layer approach to preserve original genres in the database while
+ * providing consistent genre names for matching and display.
+ * 
+ * Key Features:
+ * - Normalizes capitalization (e.g., "rock" → "Rock", "R&B" stays "R&B")
+ * - Handles special characters (dashes, ampersands, slashes)
+ * - Maps similar genres to canonical forms (e.g., "RnB" → "R&B")
+ * - Preserves subgenres (e.g., "Progressive Rock" stays separate from "Rock")
+ * - Provides genre statistics with track counts
+ * 
+ * Normalization Strategy:
+ * 1. Split comma-separated genres
+ * 2. Normalize special characters
+ * 3. Apply capitalization rules (with special cases)
+ * 4. Map to canonical forms
+ * 5. Preserve original genres for display
+ * 
+ * @module features/library/genre-normalization
+ * 
+ * @example
+ * ```typescript
+ * import { normalizeGenre, getNormalizedGenresWithStats } from '@/features/library/genre-normalization';
+ * 
+ * // Normalize a single genre
+ * const normalized = normalizeGenre("progressive rock"); // Returns: "Progressive Rock"
+ * 
+ * // Get all genres with statistics
+ * const genres = await getNormalizedGenresWithStats(tracks);
+ * // Returns: [{ normalized: 'Rock', original: ['Rock', 'rock'], trackCount: 150 }, ...]
+ * ```
  */
 
 /**

@@ -39,6 +39,8 @@ Generate intelligent playlists from your local music collection while maintainin
 - ✅ Relative path storage
 - ✅ All export formats (M3U8, PLS, XSPF, CSV, JSON)
 - ✅ Library relinking support
+- ✅ Local file audio preview (no API keys required)
+- ✅ Multiple collection management
 
 ### ⚠️ Fallback Mode: Safari & Firefox
 
@@ -105,18 +107,46 @@ src/
 │   ├── page.tsx           # Landing page
 │   ├── library/           # Library scanning page
 │   └── playlists/         # Playlist pages
+│       ├── new/          # Playlist builder
+│       ├── generating/   # Generation progress
+│       ├── saved/        # Saved playlists list
+│       └── view/         # Playlist viewer
 ├── components/            # React components
-│   └── Navigation.tsx    # Main navigation
+│   ├── Navigation.tsx    # Main navigation
+│   ├── LibrarySelector.tsx  # Library selection UI
+│   ├── CollectionManager.tsx  # Collection management
+│   ├── PlaylistBuilder.tsx  # Playlist creation form
+│   ├── PlaylistDisplay.tsx  # Playlist viewer
+│   ├── FlowArcEditor.tsx  # Flow arc editing
+│   ├── AgentSelector.tsx  # LLM provider selection
+│   └── TrackSamplePlayer.tsx  # Audio preview player
 ├── lib/                   # Utilities
 │   ├── feature-detection.ts  # Browser capability detection
-│   └── settings.ts        # Privacy settings management
+│   ├── settings.ts        # Privacy settings management
+│   ├── library-selection.ts  # File System Access API
+│   └── api-key-storage.ts  # Secure API key storage
 ├── db/                    # IndexedDB layer
-│   └── index.ts          # Database interface
+│   ├── schema.ts         # Database schema (Dexie)
+│   ├── storage.ts        # Storage operations
+│   └── playlist-storage.ts  # Playlist persistence
 ├── features/              # Feature modules
 │   ├── library/          # Library scanning & indexing
-│   └── playlists/        # Playlist generation
+│   │   ├── scanning.ts   # File scanning
+│   │   ├── metadata.ts   # Metadata extraction
+│   │   ├── summarization.ts  # Library summaries
+│   │   └── tempo-detection.ts  # BPM detection
+│   ├── playlists/        # Playlist generation
+│   │   ├── strategy.ts   # Strategy generation
+│   │   ├── matching-engine.ts  # Track selection
+│   │   ├── generation.ts  # Playlist orchestration
+│   │   ├── validation.ts  # LLM validation
+│   │   └── ordering.ts   # Track ordering
+│   ├── discovery/        # Music discovery
+│   └── audio-preview/    # Audio preview
+│       ├── platform-searcher.ts  # Multi-platform search
+│       └── types.ts      # Preview types
 └── workers/               # Web Workers
-    └── index.ts          # Worker scaffolding
+    └── metadataWorker.ts  # Background metadata parsing
 ```
 
 ## Getting Started
@@ -157,17 +187,34 @@ Even when LLM is enabled, track names are never sent unless explicitly allowed. 
 
 ## LLM Provider Configuration
 
-The app supports connecting to any LLM provider for playlist strategy generation. By default, the app uses a heuristic fallback strategy generator, but you can enable LLM integration for more sophisticated playlist curation.
+The app includes built-in support for multiple LLM providers. By default, the app uses a heuristic fallback strategy generator, but you can enable LLM integration for more sophisticated playlist curation directly from the UI.
 
-### How to Connect Your LLM Provider
+### Built-in LLM Providers
 
-1. **Choose Your Provider**: The app can work with any LLM API that accepts text prompts and returns JSON. Popular options include:
-   - OpenAI (GPT-4, GPT-3.5)
-   - Anthropic (Claude)
-   - Google (Gemini)
-   - Local models via API (Ollama, etc.)
+The app supports the following providers out of the box:
 
-2. **Update the LLM Function**: Edit `src/features/playlists/strategy.ts` and locate the `callLLM` function (around line 140). Replace the placeholder implementation with your provider's API call.
+- **OpenAI**: GPT-4, GPT-3.5 (via `gpt-4o-mini`)
+- **Google Gemini**: Gemini Pro
+- **Anthropic Claude**: Claude 3 Haiku
+- **Local Models**: Ollama and other local LLM APIs
+
+### Using LLM Providers
+
+1. **Configure in UI**: No code changes needed! Simply:
+   - Go to the playlist builder
+   - Select "LLM" as the agent type
+   - Choose your provider from the dropdown
+   - Enter your API key (securely stored)
+
+2. **API Key Storage**: API keys are:
+   - Encrypted using AES-GCM encryption
+   - Hashed using SHA-256
+   - Stored locally in your browser
+   - Never transmitted except to the selected provider
+
+### Custom LLM Provider
+
+To add support for a custom LLM provider, edit `src/features/playlists/strategy.ts`:
 
 #### Example: OpenAI
 
@@ -277,24 +324,12 @@ async function callLLM(prompt: string): Promise<string> {
 }
 ```
 
-3. **Set Environment Variables**: Create a `.env.local` file in the project root:
+3. **Add Provider to UI**: Update `src/components/AgentSelector.tsx` to add your provider to the dropdown.
 
-```bash
-# For OpenAI
-NEXT_PUBLIC_OPENAI_API_KEY=your_api_key_here
-
-# For Anthropic
-NEXT_PUBLIC_ANTHROPIC_API_KEY=your_api_key_here
-
-# Or use any other provider-specific variables
-```
-
-**Important**: Since this is a client-side app, API keys will be exposed in the browser. Consider:
-- Using a proxy/backend API route to hide keys
-- Using provider-specific client-side SDKs with key management
-- Implementing rate limiting and usage monitoring
-
-4. **Enable LLM in Settings**: Once configured, users can enable LLM integration in the app settings (stored locally in their browser).
+**Note**: API keys are stored securely in the browser using encryption. For production deployments, consider:
+- Using Next.js API routes as a proxy to hide keys
+- Implementing a backend service to manage API keys
+- Using provider SDKs with secure key management
 
 ### Privacy & Security Notes
 
@@ -312,11 +347,12 @@ NEXT_PUBLIC_ANTHROPIC_API_KEY=your_api_key_here
 
 ### Testing Your LLM Integration
 
-1. Set up your API key in `.env.local`
-2. Update the `callLLM` function with your provider's implementation
-3. Enable LLM in app settings (or modify `src/lib/settings.ts` default)
+1. Configure your API key in the playlist builder UI
+2. Select "LLM" as the agent type
+3. Choose your provider
 4. Create a playlist request and verify the strategy is generated from your LLM
 5. Check browser console for any API errors
+6. Review playlist validation and explanation (if enabled)
 
 ### Strategy Schema
 
@@ -372,6 +408,107 @@ The LLM must return JSON matching this schema (validated with Zod):
 
 If the LLM returns invalid JSON or doesn't match the schema, the app automatically falls back to the heuristic strategy generator.
 
+## Key Features
+
+### 🎵 Library Management
+
+- **Multiple Collections**: Scan and manage multiple music library collections
+- **Collection Switching**: Switch between saved collections seamlessly
+- **Persistent Storage**: Collections persist across browser refreshes and cache clears
+- **Customizable Names**: Edit collection names inline
+- **Directory Relinking**: Relink directory handles if folders are moved
+- **Collection Deletion**: Remove collections and all associated data
+
+### 🎼 Playlist Generation
+
+- **Intelligent Matching**: Deterministic algorithm for track selection based on user preferences
+- **LLM-Enhanced Generation**: Optional LLM integration for sophisticated playlist strategies
+- **Track Refinement**: LLM-based semantic re-scoring of candidate tracks
+- **Playlist Validation**: Post-generation validation to verify playlists meet requirements
+- **Human-Readable Explanations**: Natural language explanations for playlist choices
+- **Flow Arc Editing**: Customize playlist energy flow (warmup, build, peak, cooldown sections)
+- **Music Discovery**: Discover new tracks similar to your library (optional)
+
+### 🎧 Audio Preview
+
+- **Local File Playback**: Play tracks directly from your library (no API keys required)
+- **YouTube Integration**: Optional YouTube Music previews (requires API key)
+- **Spotify Integration**: Optional Spotify previews (requires Client ID/Secret)
+- **Automatic Fallback**: Falls back to next available platform if one fails
+
+### 📊 Playlist Management
+
+- **Playlist Persistence**: Save playlists to IndexedDB with collection association
+- **Playlist History**: View all saved playlists
+- **Collection Association**: Playlists remember which collection they were generated from
+- **Export Formats**: Export to M3U, PLS, XSPF, CSV, and JSON formats
+- **Collection Mismatch Warnings**: Alerts when exporting playlists from different collections
+
+### 🎯 Advanced Features
+
+- **Tempo Detection**: LLM-based BPM detection for tracks missing metadata
+- **Genre Normalization**: Automatic genre normalization and mapping
+- **Track Reasoning**: See why each track was selected with detailed explanations
+- **Playlist Variants**: Generate variations of existing playlists
+- **Track Reordering**: Drag and drop to reorder tracks in playlists
+
+## Configuration
+
+### LLM Provider Setup
+
+The app supports multiple LLM providers for enhanced playlist generation. Configure your provider in the playlist builder UI:
+
+**Supported Providers:**
+- **OpenAI** (GPT-4, GPT-3.5)
+- **Google Gemini** (Gemini Pro)
+- **Anthropic Claude** (Claude 3 Haiku)
+- **Local Models** (Ollama, etc.)
+
+**Configuration:**
+1. In the playlist builder, select "LLM" as the agent type
+2. Choose your provider from the dropdown
+3. Enter your API key (stored securely using AES-GCM encryption)
+4. API keys are hashed and encrypted before storage
+
+**Note**: API keys are stored locally in your browser using encrypted storage. They are never transmitted except to the selected LLM provider.
+
+### Audio Preview Setup
+
+**Local File Playback (No Configuration Required):**
+- Works automatically for collections scanned using File System Access API
+- No API keys needed
+- Plays files directly from your library
+
+**YouTube Music Preview (Optional):**
+1. Get a YouTube Data API v3 key from [Google Cloud Console](https://console.cloud.google.com/)
+2. Configure in browser console:
+   ```javascript
+   localStorage.setItem('audio-preview-config', JSON.stringify({
+     youtube: { apiKey: 'YOUR_YOUTUBE_API_KEY' }
+   }));
+   ```
+
+**Spotify Preview (Optional):**
+1. Create a Spotify app at [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
+2. Get Client ID and Client Secret
+3. Configure in browser console:
+   ```javascript
+   localStorage.setItem('audio-preview-config', JSON.stringify({
+     spotify: {
+       clientId: 'YOUR_CLIENT_ID',
+       clientSecret: 'YOUR_CLIENT_SECRET'
+     }
+   }));
+   ```
+
+### Music Discovery Setup
+
+Music discovery uses MusicBrainz API (no API key required for basic usage):
+- Automatically finds similar tracks not in your library
+- Uses MusicBrainz for track metadata
+- Can be enabled per playlist generation
+- Configurable frequency (every track, every other track)
+
 ## Current Status
 
 ### ✅ Completed Features
@@ -387,13 +524,76 @@ If the LLM returns invalid JSON or doesn't match the schema, the app automatical
 - ✅ LLM strategy layer with Zod validation
 - ✅ Theme system (light/dark mode)
 - ✅ Library browser with search/filter/sort
+- ✅ Playlist generation engine with deterministic matching
+- ✅ Playlist preview and editing
+- ✅ Playlist export (M3U, PLS, XSPF, CSV, JSON)
+- ✅ Playlist persistence and history
+- ✅ Collections management system
+- ✅ LLM integration (OpenAI, Gemini, Claude, Local)
+- ✅ Audio preview (local files, YouTube, Spotify)
+- ✅ Music discovery feature
+- ✅ Flow arc editor
+- ✅ Playlist validation and explanation
+- ✅ Tempo detection for missing BPM data
+- ✅ Track reasoning and explanations
 
-### ⏳ In Progress / Next Steps
+## Data Storage
 
-- ⏳ Playlist generation engine (track selection using strategy)
-- ⏳ Playlist preview and editing
-- ⏳ Playlist export (JSON, TXT, M3U)
-- ⏳ Playlist persistence and history
+All data is stored locally in your browser:
+
+- **IndexedDB**: Collections, tracks, playlists, file index, scan history
+- **localStorage**: Privacy settings, audio preview config, API keys (encrypted)
+- **Cache Storage**: Temporary file handles (Chromium browsers)
+
+**Data Persistence:**
+- Collections persist across browser refreshes
+- Playlists are saved to IndexedDB
+- Directory handles persist in Chromium browsers
+- Settings and configurations persist locally
+
+**Data Privacy:**
+- No data is transmitted to external servers (except LLM providers when enabled)
+- Music files never leave your device
+- API keys are encrypted before storage
+- All processing happens client-side
+
+## Troubleshooting
+
+### Audio Preview Not Working
+
+**Local Files:**
+- Ensure your collection was scanned using File System Access API (Chromium browsers)
+- Check that files still exist at their original locations
+- Verify collection is in "handle" mode (not "fallback" mode)
+
+**YouTube/Spotify:**
+- Verify API keys are configured correctly
+- Check browser console for API errors
+- Ensure API keys have proper permissions/quota
+
+### Playlist Generation Issues
+
+**LLM Errors:**
+- Verify API key is correct and has sufficient quota
+- Check browser console for detailed error messages
+- Fallback to built-in agents if LLM fails
+
+**Missing Tracks:**
+- Ensure library is fully scanned
+- Check that requested genres exist in your library
+- Verify collection is selected correctly
+
+### Collection Issues
+
+**Collection Not Appearing:**
+- Refresh the page
+- Check browser console for errors
+- Verify IndexedDB is accessible (check browser storage)
+
+**Directory Relinking:**
+- Only works for "handle" mode collections
+- Requires existing tracks or file index entries
+- Files must still exist at new location
 
 ## Constraints
 
@@ -401,6 +601,15 @@ If the LLM returns invalid JSON or doesn't match the schema, the app automatical
 2. **No backend**: All functionality must work client-side
 3. **Privacy by default**: LLM features disabled by default
 4. **Progressive enhancement**: Graceful degradation for unsupported browsers
+5. **File System Access API**: Required for persistent collections and local file playback (Chromium browsers only)
+
+## Contributing
+
+Contributions are welcome! Please ensure:
+- All features maintain privacy-first principles
+- No backend dependencies are introduced
+- Browser compatibility is maintained
+- Tests are added for new features
 
 ## License
 

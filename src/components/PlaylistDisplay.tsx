@@ -1,6 +1,45 @@
+/**
+ * PlaylistDisplay Component
+ * 
+ * Main component for displaying and interacting with generated playlists.
+ * Provides a comprehensive view of playlist tracks, reasons, discovery tracks,
+ * and various playlist manipulation features.
+ * 
+ * Features:
+ * - Displays playlist tracks with inline audio preview
+ * - Shows track selection reasons and explanations
+ * - Supports playlist variants (calmer, faster, more variety, etc.)
+ * - Allows playlist regeneration with seed control
+ * - Provides playlist export functionality
+ * - Supports flow arc editing and reordering
+ * - Integrates discovery tracks with explanations
+ * 
+ * State Management:
+ * - Uses `useAudioPreviewState` hook for managing audio playback across multiple tracks
+ * - Manages track loading and lookup from IndexedDB
+ * - Handles playlist editing state (flow arc, track reordering)
+ * - Tracks variant generation and regeneration state
+ * 
+ * Performance Optimizations:
+ * - Uses `useMemo` to pre-compute track data and avoid redundant lookups
+ * - Memoizes expensive computations (track data maps, filtering)
+ * - Optimized rendering for large playlists (100+ tracks)
+ * 
+ * @module components/PlaylistDisplay
+ * 
+ * @example
+ * ```tsx
+ * <PlaylistDisplay
+ *   playlist={generatedPlaylist}
+ *   libraryRootId="root-123"
+ *   playlistCollectionId="collection-456"
+ * />
+ * ```
+ */
+
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
 import { useRouter } from "next/navigation";
 import type { GeneratedPlaylist } from "@/features/playlists";
 import { getAllTracks, getTracks, getCurrentLibraryRoot } from "@/db/storage";
@@ -10,8 +49,11 @@ import { TrackReasonChips } from "./TrackReasonChips";
 import { PlaylistExport } from "./PlaylistExport";
 import { DiscoveryTrackBadge } from "./DiscoveryTrackBadge";
 import { TrackSamplePlayer } from "./TrackSamplePlayer";
+import { InlineAudioPlayer, type InlineAudioPlayerRef } from "./InlineAudioPlayer";
 import { searchTrackSample } from "@/features/audio-preview/platform-searcher";
 import type { SampleResult } from "@/features/audio-preview/types";
+import { logger } from "@/lib/logger";
+import { useAudioPreviewState } from "@/hooks/useAudioPreviewState";
 import { FlowArcEditor } from "./FlowArcEditor";
 import { generateVariant, type VariantType } from "@/features/playlists/variants";
 import { generatePlaylistTitle } from "@/features/playlists/naming";
@@ -19,6 +61,7 @@ import { orderTracks } from "@/features/playlists/ordering";
 import { buildMatchingIndex } from "@/features/library/summarization";
 import {
   Play,
+  Pause,
   Music,
   RefreshCw,
   Sparkles,
@@ -185,6 +228,23 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   } | null>(null);
   const [searchingSample, setSearchingSample] = useState<string | null>(null); // trackFileId being searched
   const [sampleError, setSampleError] = useState<string | null>(null);
+  
+  // Inline audio preview state - use hook for better state management
+  const audioPreviewState = useAudioPreviewState();
+  const {
+    playingTrackId,
+    searchingTrackId,
+    getSampleResult,
+    getError,
+    hasSampleResult,
+    setSampleResult,
+    setError: setTrackError,
+    setPlayingTrack,
+    clearPlayingTrack,
+    setSearchingTrack,
+    clearAll: clearAllAudioState,
+  } = audioPreviewState;
+  const audioRefs = useRef<Map<string, InlineAudioPlayerRef>>(new Map());
 
   const checkIfSaved = useCallback(async () => {
     const saved = await isPlaylistSaved(playlist.id);
@@ -238,7 +298,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
           setAlbums(libraryAlbums);
           setTrackTitles(libraryTracks);
         } catch (error) {
-          console.error("Failed to load suggestions:", error);
+          logger.error("Failed to load suggestions:", error);
         } finally {
           setIsLoadingSuggestions(false);
         }
@@ -257,7 +317,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       // Load original request from sessionStorage
       const stored = sessionStorage.getItem("playlist-request");
       if (!stored) {
-        console.error("No playlist request found");
+        logger.error("No playlist request found");
         return;
       }
 
@@ -281,7 +341,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       setPlaylist(generated);
       sessionStorage.setItem("generated-playlist", JSON.stringify(generated));
     } catch (error) {
-      console.error("Failed to regenerate:", error);
+      logger.error("Failed to regenerate:", error);
     } finally {
       setIsRegenerating(false);
     }
@@ -293,7 +353,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       // Load original request
       const stored = sessionStorage.getItem("playlist-request");
       if (!stored) {
-        console.error("No playlist request found");
+        logger.error("No playlist request found");
         return;
       }
 
@@ -322,7 +382,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       setPlaylist(generated);
       sessionStorage.setItem("generated-playlist", JSON.stringify(generated));
     } catch (error) {
-      console.error("Failed to generate variant:", error);
+      logger.error("Failed to generate variant:", error);
     } finally {
       setIsRegenerating(false);
     }
@@ -334,7 +394,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       // Load original request
       const stored = sessionStorage.getItem("playlist-request");
       if (!stored) {
-        console.error("No playlist request found");
+        logger.error("No playlist request found");
         return;
       }
 
@@ -374,7 +434,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       setPendingTracks([]);
       setShowInlineEditor(false);
     } catch (error) {
-      console.error("Failed to update playlist:", error);
+      logger.error("Failed to update playlist:", error);
     } finally {
       setIsRegenerating(false);
     }
@@ -424,7 +484,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       try {
         await updatePlaylistMetadata(playlist.id, editedTitle.trim());
       } catch (error) {
-        console.error("Failed to update playlist metadata:", error);
+        logger.error("Failed to update playlist metadata:", error);
       }
     }
   }
@@ -440,7 +500,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       await savePlaylist(playlist, libraryRootId);
       setIsSaved(true);
     } catch (error) {
-      console.error("Failed to save playlist:", error);
+      logger.error("Failed to save playlist:", error);
     } finally {
       setIsSaving(false);
     }
@@ -487,7 +547,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       };
       sessionStorage.setItem("generated-playlist", JSON.stringify(serializable));
     } catch (error) {
-      console.error("Failed to update flow arc:", error);
+      logger.error("Failed to update flow arc:", error);
     } finally {
       setIsRegenerating(false);
     }
@@ -505,13 +565,97 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     handleFlowArcUpdate(updatedStrategy);
   }
 
+  // Handler for inline audio preview play/pause
+  const handleInlinePlayClick = useCallback(async (
+    trackFileId: string,
+    trackInfo: { title: string; artist: string; album?: string }
+  ) => {
+    // If already playing this track, pause it
+    if (playingTrackId === trackFileId) {
+      const audioControls = audioRefs.current.get(trackFileId);
+      if (audioControls) {
+        audioControls.pause();
+      }
+      clearPlayingTrack();
+      return;
+    }
+
+    // If playing different track, stop it first
+    if (playingTrackId) {
+      const prevAudioControls = audioRefs.current.get(playingTrackId);
+      if (prevAudioControls) {
+        prevAudioControls.stop();
+      }
+      clearPlayingTrack();
+    }
+
+    // Check if we already have sample result cached
+    if (hasSampleResult(trackFileId)) {
+      const sampleResult = getSampleResult(trackFileId)!;
+      // Start playing immediately
+      setPlayingTrack(trackFileId);
+      // Use setTimeout to ensure audio element is ready
+      setTimeout(() => {
+        const audioControls = audioRefs.current.get(trackFileId);
+        if (audioControls) {
+          audioControls.play();
+        }
+      }, 100);
+      return;
+    }
+
+    // Search for preview
+    setSearchingTrack(trackFileId);
+    try {
+      const sampleResult = await searchTrackSample(trackInfo);
+      if (sampleResult) {
+        // Clear searching state BEFORE setting sample result to ensure autoPlay works
+        // This ensures that when the audio element loads, autoPlay prop will be true
+        setSearchingTrack(null);
+        setSampleResult(trackFileId, sampleResult);
+        setPlayingTrack(trackFileId);
+        // Audio will auto-play via InlineAudioPlayer with autoPlay prop
+        // If audio already loaded, trigger play programmatically as fallback
+        setTimeout(async () => {
+          const audioControls = audioRefs.current.get(trackFileId);
+          if (audioControls && playingTrackId === trackFileId) {
+            try {
+              await audioControls.play();
+            } catch {
+              // Ignore play errors - user may have paused or switched tracks
+            }
+          }
+        }, 50);
+      } else {
+        setTrackError(trackFileId, "Preview not available for this track");
+        setSearchingTrack(null);
+      }
+    } catch (error) {
+      logger.error("[PlaylistDisplay] Failed to search for preview:", error);
+      setTrackError(trackFileId, "Failed to find preview for this track");
+      setSearchingTrack(null);
+    }
+  }, [playingTrackId, hasSampleResult, getSampleResult, setSampleResult, setTrackError, setPlayingTrack, clearPlayingTrack, setSearchingTrack]);
+
+  // Cleanup when playlist changes
+  useEffect(() => {
+    const currentRefs = audioRefs.current;
+    return () => {
+      // Stop all audio when component unmounts or playlist changes
+      currentRefs.forEach(controls => controls.stop());
+      currentRefs.clear();
+      // Clear all audio preview state
+      clearAllAudioState();
+    };
+  }, [playlist.id, clearAllAudioState]);
+
   async function handleRemoveTrack(trackFileId: string) {
     setIsRegenerating(true);
     try {
       // Load original request from sessionStorage
       const stored = sessionStorage.getItem("playlist-request");
       if (!stored) {
-        console.error("No playlist request found");
+        logger.error("No playlist request found");
         return;
       }
 
@@ -609,7 +753,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
         );
       }
     } catch (error) {
-      console.error("Failed to remove track:", error);
+      logger.error("Failed to remove track:", error);
     } finally {
       setIsRegenerating(false);
     }
@@ -996,27 +1140,52 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       {/* Track List */}
       <div className="bg-app-surface rounded-sm border border-app-border overflow-hidden">
         <div className="divide-y divide-app-border">
-          {playlist.trackFileIds.map((trackFileId, index) => {
-            // Check if this is a discovery track
-            const isDiscoveryTrack = trackFileId.startsWith("discovery:");
-            const discoveryTrack = isDiscoveryTrack
-              ? playlist.discoveryTracks?.find(
-                  dt => `discovery:${dt.discoveryTrack.mbid}` === trackFileId
-                )
-              : null;
-
-            const track = isDiscoveryTrack ? null : tracks.get(trackFileId);
-            const selection = playlist.trackSelections.find(
-              (s) => s.trackFileId === trackFileId
-            );
-            const orderedTrack = playlist.orderedTracks?.find(
-              (t) => t.trackFileId === trackFileId
-            );
-
-            // Skip if neither track nor discovery track found
-            if (!track && !discoveryTrack) return null;
-
-            const reasons = orderedTrack?.reasons || selection?.reasons || [];
+          {useMemo(() => {
+            // Pre-compute track data for all tracks to avoid repeated lookups
+            const discoveryTracksMap = new Map();
+            
+            // Build discovery tracks map
+            if (playlist.discoveryTracks) {
+              for (const dt of playlist.discoveryTracks) {
+                discoveryTracksMap.set(`discovery:${dt.discoveryTrack.mbid}`, dt);
+              }
+            }
+            
+            // Build selections map
+            const selectionsMap = new Map();
+            for (const selection of playlist.trackSelections) {
+              selectionsMap.set(selection.trackFileId, selection);
+            }
+            
+            // Build ordered tracks map
+            const orderedTracksMap = new Map();
+            if (playlist.orderedTracks) {
+              for (const orderedTrack of playlist.orderedTracks) {
+                orderedTracksMap.set(orderedTrack.trackFileId, orderedTrack);
+              }
+            }
+            
+            return playlist.trackFileIds.map((trackFileId, index) => {
+              const isDiscoveryTrack = trackFileId.startsWith("discovery:");
+              const discoveryTrack = isDiscoveryTrack ? discoveryTracksMap.get(trackFileId) : null;
+              const track = isDiscoveryTrack ? null : tracks.get(trackFileId);
+              const selection = selectionsMap.get(trackFileId);
+              const orderedTrack = orderedTracksMap.get(trackFileId);
+              
+              if (!track && !discoveryTrack) return null;
+              
+              return {
+                trackFileId,
+                index,
+                isDiscoveryTrack,
+                discoveryTrack,
+                track,
+                selection,
+                orderedTrack,
+                reasons: orderedTrack?.reasons || selection?.reasons || [],
+              };
+            }).filter((item): item is NonNullable<typeof item> => item !== null);
+          }, [playlist.trackFileIds, playlist.discoveryTracks, playlist.trackSelections, playlist.orderedTracks, tracks]).map(({ trackFileId, index, isDiscoveryTrack, discoveryTrack, track, reasons }) => {
 
             // Render discovery track
             if (isDiscoveryTrack && discoveryTrack) {
@@ -1028,49 +1197,18 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                 >
                   <div className="flex items-start gap-4">
                     <button
-                      onClick={async () => {
-                        console.log(`[PlaylistDisplay] Play button clicked for discovery track: ${dtrack.title} by ${dtrack.artist}`);
-                        if (searchingSample === trackFileId) {
-                          console.log(`[PlaylistDisplay] Already searching, skipping`);
-                          return;
-                        }
-                        setSearchingSample(trackFileId);
-                        try {
-                          console.log(`[PlaylistDisplay] Starting search for discovery track: ${dtrack.title} by ${dtrack.artist}`);
-                          const sampleResult = await searchTrackSample({
-                            title: dtrack.title,
-                            artist: dtrack.artist,
-                            album: dtrack.album,
-                        });
-                        console.log(`[PlaylistDisplay] Discovery track search result:`, sampleResult);
-                        if (sampleResult) {
-                          setPlayingSample({
-                            trackFileId,
-                            sampleResult,
-                            trackInfo: {
-                              title: dtrack.title,
-                              artist: dtrack.artist,
-                              album: dtrack.album,
-                            },
-                          });
-                          setSampleError(null);
-                        } else {
-                          setSampleError("Preview not available for this track");
-                          setTimeout(() => setSampleError(null), 8000);
-                        }
-                      } catch (error) {
-                        console.error("Failed to search for preview:", error);
-                        setSampleError("Failed to find preview for this track");
-                        setTimeout(() => setSampleError(null), 5000);
-                      } finally {
-                        setSearchingSample(null);
-                      }
-                      }}
-                      disabled={searchingSample === trackFileId}
+                      onClick={() => handleInlinePlayClick(trackFileId, {
+                        title: dtrack.title,
+                        artist: dtrack.artist,
+                        album: dtrack.album,
+                      })}
+                      disabled={searchingTrackId === trackFileId}
                       className="flex items-center justify-center size-8 text-app-tertiary group-hover:text-accent-primary transition-colors shrink-0 mt-1 cursor-pointer disabled:opacity-50"
                     >
-                      {searchingSample === trackFileId ? (
+                      {searchingTrackId === trackFileId ? (
                         <Loader2 className="size-4 animate-spin" />
+                      ) : playingTrackId === trackFileId ? (
+                        <Pause className="size-4" />
                       ) : (
                         <>
                           <span className="text-sm group-hover:hidden">
@@ -1138,6 +1276,14 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                         </div>
                       )}
 
+                      {/* Inline Error Display */}
+                      {getError(trackFileId) && (
+                        <div className="mt-2 flex items-center gap-2 text-red-500 text-xs">
+                          <AlertCircle className="size-3" />
+                          <span>{getError(trackFileId)}</span>
+                        </div>
+                      )}
+
                       {/* Why This Track Chips */}
                       {reasons.length > 0 && (
                         <div className="mt-2">
@@ -1146,6 +1292,46 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                       )}
                     </div>
                   </div>
+                  
+                  {/* Inline Audio Player */}
+                  <InlineAudioPlayer
+                    ref={(ref) => {
+                      if (ref) {
+                        audioRefs.current.set(trackFileId, ref);
+                      } else {
+                        audioRefs.current.delete(trackFileId);
+                      }
+                    }}
+                    trackFileId={trackFileId}
+                    sampleResult={getSampleResult(trackFileId) || null}
+                    autoPlay={playingTrackId === trackFileId && !searchingTrackId && hasSampleResult(trackFileId)}
+                    onPlay={() => setPlayingTrack(trackFileId)}
+                    onPause={() => clearPlayingTrack()}
+                    onEnded={() => clearPlayingTrack()}
+                    onError={(error) => {
+                      setTrackError(trackFileId, error);
+                      clearPlayingTrack();
+                    }}
+                    onLoaded={async () => {
+                      // Audio loaded successfully - trigger play if needed
+                      // Check if this track should be playing (even if searchingTrackId is temporarily set)
+                      // The searchingTrackId will be cleared before sampleResult is set, but
+                      // if loadeddata fires before that, we still want to play
+                      if (playingTrackId === trackFileId) {
+                        // Use a small delay to allow state updates to propagate
+                        setTimeout(async () => {
+                          const audioControls = audioRefs.current.get(trackFileId);
+                          if (audioControls && playingTrackId === trackFileId && !searchingTrackId) {
+                            try {
+                              await audioControls.play();
+                            } catch {
+                              // Ignore play errors - user may have paused or switched tracks
+                            }
+                          }
+                        }, 10);
+                      }
+                    }}
+                  />
                 </div>
               );
             }
@@ -1160,53 +1346,18 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
               >
                 <div className="flex items-start gap-4">
                   <button
-                    onClick={async () => {
-                      console.log(`[PlaylistDisplay] Play button clicked for track: ${track.tags.title} by ${track.tags.artist}`);
-                      if (searchingSample === trackFileId) {
-                        console.log(`[PlaylistDisplay] Already searching, skipping`);
-                        return;
-                      }
-                      setSearchingSample(trackFileId);
-                      try {
-                        console.log(`[PlaylistDisplay] Starting search for: ${track.tags.title} by ${track.tags.artist}`);
-                        const sampleResult = await searchTrackSample({
-                          title: track.tags.title || "Unknown Title",
-                          artist: track.tags.artist || "Unknown Artist",
-                          album: track.tags.album,
-                          year: track.tags.year,
-                        }, {
-                          trackFileId: track.trackFileId,
-                          libraryRootId: playlistCollectionId || libraryRootId || undefined,
-                        });
-                        console.log(`[PlaylistDisplay] Search result:`, sampleResult);
-                        if (sampleResult) {
-                          setPlayingSample({
-                            trackFileId,
-                            sampleResult,
-                            trackInfo: {
-                              title: track.tags.title || "Unknown Title",
-                              artist: track.tags.artist || "Unknown Artist",
-                              album: track.tags.album,
-                            },
-                          });
-                          setSampleError(null);
-                        } else {
-                          setSampleError("Preview not available for this track");
-                          setTimeout(() => setSampleError(null), 8000);
-                        }
-                      } catch (error) {
-                        console.error("Failed to search for preview:", error);
-                        setSampleError("Failed to find preview for this track");
-                        setTimeout(() => setSampleError(null), 5000);
-                      } finally {
-                        setSearchingSample(null);
-                      }
-                    }}
-                    disabled={searchingSample === trackFileId}
+                    onClick={() => handleInlinePlayClick(trackFileId, {
+                      title: track.tags.title || "Unknown Title",
+                      artist: track.tags.artist || "Unknown Artist",
+                      album: track.tags.album,
+                    })}
+                    disabled={searchingTrackId === trackFileId}
                     className="flex items-center justify-center size-8 text-app-tertiary group-hover:text-accent-primary transition-colors shrink-0 mt-1 cursor-pointer disabled:opacity-50"
                   >
-                    {searchingSample === trackFileId ? (
+                    {searchingTrackId === trackFileId ? (
                       <Loader2 className="size-4 animate-spin" />
+                    ) : playingTrackId === trackFileId ? (
+                      <Pause className="size-4" />
                     ) : (
                       <>
                         <span className="text-sm group-hover:hidden">
@@ -1247,6 +1398,14 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                       </div>
                     </div>
 
+                    {/* Inline Error Display */}
+                    {getError(trackFileId) && (
+                      <div className="mt-2 flex items-center gap-2 text-red-500 text-xs">
+                        <AlertCircle className="size-3" />
+                        <span>{getError(trackFileId)}</span>
+                      </div>
+                    )}
+
                     {/* Why This Track Chips */}
                     {reasons.length > 0 && (
                       <div className="mt-2">
@@ -1254,6 +1413,46 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                       </div>
                     )}
                   </div>
+                  
+                  {/* Inline Audio Player */}
+                  <InlineAudioPlayer
+                    ref={(ref) => {
+                      if (ref) {
+                        audioRefs.current.set(trackFileId, ref);
+                      } else {
+                        audioRefs.current.delete(trackFileId);
+                      }
+                    }}
+                    trackFileId={trackFileId}
+                    sampleResult={getSampleResult(trackFileId) || null}
+                    autoPlay={playingTrackId === trackFileId && !searchingTrackId && hasSampleResult(trackFileId)}
+                    onPlay={() => setPlayingTrack(trackFileId)}
+                    onPause={() => clearPlayingTrack()}
+                    onEnded={() => clearPlayingTrack()}
+                    onError={(error) => {
+                      setTrackError(trackFileId, error);
+                      clearPlayingTrack();
+                    }}
+                    onLoaded={async () => {
+                      // Audio loaded successfully - trigger play if needed
+                      // Check if this track should be playing (even if searchingTrackId is temporarily set)
+                      // The searchingTrackId will be cleared before sampleResult is set, but
+                      // if loadeddata fires before that, we still want to play
+                      if (playingTrackId === trackFileId) {
+                        // Use a small delay to allow state updates to propagate
+                        setTimeout(async () => {
+                          const audioControls = audioRefs.current.get(trackFileId);
+                          if (audioControls && playingTrackId === trackFileId && !searchingTrackId) {
+                            try {
+                              await audioControls.play();
+                            } catch {
+                              // Ignore play errors - user may have paused or switched tracks
+                            }
+                          }
+                        }, 10);
+                      }
+                    }}
+                  />
                 </div>
               </div>
             );

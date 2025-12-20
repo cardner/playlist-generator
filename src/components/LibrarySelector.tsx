@@ -1,22 +1,74 @@
+/**
+ * LibrarySelector Component
+ * 
+ * Main component for selecting and managing music library folders.
+ * Handles library root selection, permission management, collection switching,
+ * and provides UI for library management operations.
+ * 
+ * Features:
+ * - Library folder selection (File System Access API or fallback)
+ * - Permission status checking and display
+ * - Collection management (create, switch, rename, delete)
+ * - Library relinking for moved folders
+ * - Library root status display (scanned, needs relink, etc.)
+ * - Support for multiple collections (library roots)
+ * 
+ * State Management:
+ * - Uses `useLibraryRoot` hook for library root management
+ * - Uses `useLibraryPermissions` hook for permission checking
+ * - Uses `useCollectionSelection` hook for collection management
+ * - Manages modal states (relink, collection manager)
+ * 
+ * User Flow:
+ * 1. User clicks "Select Music Folder"
+ * 2. System dialog opens (File System Access API or file input)
+ * 3. User selects folder
+ * 4. Permission is requested/checked
+ * 5. Library root is saved to IndexedDB
+ * 6. Component displays library status
+ * 7. User can switch collections or relink if needed
+ * 
+ * Props:
+ * - `onLibrarySelected`: Callback when library is selected
+ * - `onPermissionStatus`: Callback when permission status changes
+ * - `onCollectionChange`: Callback when collection is switched
+ * - `onStartScan`: Callback to trigger scanning
+ * - `refreshTrigger`: Number to trigger refresh (for external updates)
+ * 
+ * @module components/LibrarySelector
+ * 
+ * @example
+ * ```tsx
+ * <LibrarySelector
+ *   onLibrarySelected={(root) => {
+ *     // Handle library selection
+ *     setLibraryRoot(root);
+ *   }}
+ *   onPermissionStatus={(status) => {
+ *     // Handle permission status
+ *     setPermissionStatus(status);
+ *   }}
+ *   onStartScan={() => {
+ *     // Trigger scanning
+ *     startScan();
+ *   }}
+ * />
+ * ```
+ */
+
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { FolderOpen, Music, CheckCircle2, AlertCircle, RefreshCw, Database, ChevronDown, ChevronUp, Edit, X, Check, Settings } from "lucide-react";
-import {
-  pickLibraryRoot,
-  getSavedLibraryRoot,
-  requestLibraryPermission,
-  needsReimport,
-  type LibraryRoot,
-  type PermissionStatus,
-} from "@/lib/library-selection";
+import { needsReimport, type LibraryRoot, type PermissionStatus } from "@/lib/library-selection";
 import { supportsFileSystemAccess } from "@/lib/feature-detection";
 import { RelinkLibraryRoot } from "./RelinkLibraryRoot";
 import { hasRelativePaths } from "@/features/library/relink";
-import { getCurrentLibraryRoot, getCurrentCollectionId, getCollection, getAllCollections, setCurrentCollectionId, updateCollection, getScanRuns, getFileIndexEntries, getTracks } from "@/db/storage";
-import type { LibraryRootRecord } from "@/db/schema";
 import { Modal } from "./Modal";
 import { CollectionManager } from "./CollectionManager";
+import { useLibraryRoot } from "@/hooks/useLibraryRoot";
+import { useLibraryPermissions } from "@/hooks/useLibraryPermissions";
+import { useCollectionSelection } from "@/hooks/useCollectionSelection";
 
 interface LibrarySelectorProps {
   onLibrarySelected?: (root: LibraryRoot) => void;
@@ -33,268 +85,69 @@ export function LibrarySelector({
   onStartScan,
   refreshTrigger,
 }: LibrarySelectorProps) {
-  const [currentRoot, setCurrentRoot] = useState<LibraryRoot | null>(null);
-  const [currentRootId, setCurrentRootId] = useState<string | null>(null);
-  const [permissionStatus, setPermissionStatus] =
-    useState<PermissionStatus | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [showRelink, setShowRelink] = useState(false);
-  const [hasRelativePathsCheck, setHasRelativePathsCheck] = useState<boolean | null>(null);
-  const [currentCollectionName, setCurrentCollectionName] = useState<string | null>(null);
-  const [currentCollectionId, setCurrentCollectionId] = useState<string | null>(null);
-  const [collections, setCollections] = useState<LibraryRootRecord[]>([]);
-  const [showCollectionDropdown, setShowCollectionDropdown] = useState(false);
-  const [isEditingCollectionName, setIsEditingCollectionName] = useState(false);
-  const [editingCollectionName, setEditingCollectionName] = useState<string>("");
-  const [editingCollectionError, setEditingCollectionError] = useState<string | null>(null);
   const [showCollectionManagerModal, setShowCollectionManagerModal] = useState(false);
-  const [hasCompletedScan, setHasCompletedScan] = useState<boolean>(false);
-  const [canRelink, setCanRelink] = useState<boolean>(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Load saved library root on mount
-  // But don't trigger onLibrarySelected to prevent auto-scanning
-  useEffect(() => {
-    loadSavedLibrary();
-    loadCurrentCollection();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Use hooks for library root, permissions, and collection management
+  const {
+    currentRoot,
+    currentRootId,
+    isLoading,
+    error,
+    canRelink,
+    hasCompletedScan,
+    hasRelativePathsCheck,
+    handleChooseFolder,
+    loadSavedLibrary,
+  } = useLibraryRoot({
+    onLibrarySelected,
+    loadOnMount: true,
+  });
 
-  // Load collections list
-  useEffect(() => {
-    loadCollections();
-  }, [refreshTrigger]);
+  const { permissionStatus, checkPermission } = useLibraryPermissions({
+    libraryRoot: currentRoot,
+    onPermissionStatus,
+    autoCheck: true,
+  });
 
-  // Reload current collection name when root changes or periodically to catch collection switches
-  useEffect(() => {
-    loadCurrentCollection();
-    
-    // Set up interval to check for collection changes (e.g., when switched from CollectionManager)
-    const interval = setInterval(() => {
-      loadCurrentCollection();
-    }, 2000); // Check every 2 seconds
-    
-    return () => clearInterval(interval);
-  }, [currentRootId, refreshTrigger]);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setShowCollectionDropdown(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  async function loadCollections() {
-    try {
-      const allCollections = await getAllCollections();
-      setCollections(allCollections);
-    } catch (err) {
-      console.error("Failed to load collections:", err);
-    }
-  }
-
-  async function loadCurrentCollection() {
-    try {
-      const collectionId = await getCurrentCollectionId();
-      setCurrentCollectionId(collectionId || null);
+  const {
+    currentCollectionId,
+    currentCollectionName,
+    collections,
+    isEditingCollectionName,
+    editingCollectionName,
+    setEditingCollectionName,
+    editingCollectionError,
+    clearEditingCollectionError,
+    showCollectionDropdown,
+    handleSwitchCollection,
+    handleStartEditCollectionName,
+    handleSaveCollectionName,
+    handleCancelEditCollectionName,
+    setShowCollectionDropdown,
+    loadCurrentCollection,
+    dropdownRef,
+  } = useCollectionSelection({
+    refreshTrigger,
+    onCollectionChange: async (collectionId) => {
       if (collectionId) {
-        const collection = await getCollection(collectionId);
-        if (collection) {
-          setCurrentCollectionName(collection.name);
-        } else {
-          setCurrentCollectionName(null);
-        }
-      } else {
-        setCurrentCollectionName(null);
-      }
-    } catch (err) {
-      console.error("Failed to load current collection:", err);
-      setCurrentCollectionName(null);
-      setCurrentCollectionId(null);
-    }
-  }
-
-  async function handleSwitchCollection(collectionId: string) {
-    await setCurrentCollectionId(collectionId);
-    setShowCollectionDropdown(false);
-    await loadCurrentCollection();
-    // Load the saved library root for the selected collection
-    await loadSavedLibrary();
-    onCollectionChange?.(collectionId);
-  }
-
-  async function handleStartEditCollectionName() {
-    if (currentCollectionId) {
-      const collection = await getCollection(currentCollectionId);
-      if (collection) {
-        setIsEditingCollectionName(true);
-        setEditingCollectionName(collection.name);
-        setEditingCollectionError(null);
-      }
-    }
-  }
-
-  async function handleSaveCollectionName() {
-    if (!currentCollectionId) return;
-
-    const trimmedName = editingCollectionName.trim();
-    
-    if (!trimmedName) {
-      setEditingCollectionError("Collection name cannot be empty");
-      return;
-    }
-
-    // Check for duplicate names
-    const allCollections = await getAllCollections();
-    const duplicate = allCollections.find(
-      (c) => c.id !== currentCollectionId && c.name.toLowerCase() === trimmedName.toLowerCase()
-    );
-    if (duplicate) {
-      setEditingCollectionError("A collection with this name already exists");
-      return;
-    }
-
-    try {
-      await updateCollection(currentCollectionId, { name: trimmedName });
-      setIsEditingCollectionName(false);
-      setEditingCollectionName("");
-      setEditingCollectionError(null);
-      await loadCurrentCollection();
-      onCollectionChange?.(currentCollectionId);
-    } catch (error) {
-      console.error("Failed to update collection name:", error);
-      setEditingCollectionError(error instanceof Error ? error.message : "Failed to save collection name");
-    }
-  }
-
-  function handleCancelEditCollectionName() {
-    setIsEditingCollectionName(false);
-    setEditingCollectionName("");
-    setEditingCollectionError(null);
-  }
-
-  // Only call onLibrarySelected when user explicitly selects a folder
-  // Not when loading a saved library
-
-  // Check permission when root changes
-  useEffect(() => {
-    if (currentRoot) {
-      checkPermission();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRoot]);
-
-  async function loadSavedLibrary() {
-    try {
-      const saved = await getSavedLibraryRoot();
-      if (saved) {
-        setCurrentRoot(saved);
-        // Don't call onLibrarySelected here - let LibraryPage handle it
-        // This prevents triggering a new scan when loading existing library
-        
-        // Get root ID from database
-        const rootRecord = await getCurrentLibraryRoot();
-        if (rootRecord) {
-          setCurrentRootId(rootRecord.id);
-          
-          // Check if there's data to relink (tracks or fileIndex)
-          const tracks = await getTracks(rootRecord.id);
-          const fileIndex = await getFileIndexEntries(rootRecord.id);
-          setCanRelink(tracks.length > 0 || fileIndex.length > 0);
-          
-          // Check if scan has completed
-          const scanRuns = await getScanRuns(rootRecord.id);
-          const completedScan = scanRuns.some(run => run.finishedAt && run.total > 0);
-          setHasCompletedScan(completedScan);
-          
-          // Only check relative paths if scan has completed
-          if (completedScan) {
-            const hasPaths = await hasRelativePaths(rootRecord.id);
-            setHasRelativePathsCheck(hasPaths);
-          } else {
-            setHasRelativePathsCheck(null); // Don't show warning yet
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Failed to load saved library:", err);
-    }
-  }
-
-  async function checkPermission() {
-    if (!currentRoot) return;
-
-    try {
-      const status = await requestLibraryPermission(currentRoot);
-      setPermissionStatus(status);
-      onPermissionStatus?.(status);
-    } catch (err) {
-      console.error("Failed to check permission:", err);
-      setPermissionStatus("denied");
-    }
-  }
-
-  async function handleChooseFolder() {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const root = await pickLibraryRoot();
-      console.log("Folder selected:", root);
-      
-      // Update local state first
-      setCurrentRoot(root);
-      
-      // Notify parent immediately so UI updates
-      onLibrarySelected?.(root);
-      
-      // Get root ID from database after saving (with small delay to ensure save completes)
-      await new Promise(resolve => setTimeout(resolve, 50));
-      const rootRecord = await getCurrentLibraryRoot();
-      if (rootRecord) {
-        setCurrentRootId(rootRecord.id);
-        
-        // Check if there's data to relink
-        const tracks = await getTracks(rootRecord.id);
-        const fileIndex = await getFileIndexEntries(rootRecord.id);
-        setCanRelink(tracks.length > 0 || fileIndex.length > 0);
-        
-        // Check if scan has completed
-        const scanRuns = await getScanRuns(rootRecord.id);
-        const completedScan = scanRuns.some(run => run.finishedAt && run.total > 0);
-        setHasCompletedScan(completedScan);
-        
-        if (completedScan) {
-          const hasPaths = await hasRelativePaths(rootRecord.id);
-          setHasRelativePathsCheck(hasPaths);
-        } else {
-          setHasRelativePathsCheck(null);
-        }
-        
-        // Reload current collection name since a new collection was just created
         await loadCurrentCollection();
+        await loadSavedLibrary();
+        onCollectionChange?.(collectionId);
+      } else {
+        await loadCurrentCollection();
+        await loadSavedLibrary();
+        onCollectionChange?.(null);
       }
-      
-      // Check permission immediately after notifying parent
-      const status = await requestLibraryPermission(root);
-      console.log("Permission status:", status);
-      setPermissionStatus(status);
-      onPermissionStatus?.(status);
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to select folder";
-      if (errorMessage !== "Folder selection cancelled") {
-        setError(errorMessage);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }
+    },
+    loadOnMount: true,
+  });
+
+  // Handle collection switching - also reload library root
+  const handleSwitchCollectionWithReload = async (collectionId: string) => {
+    await handleSwitchCollection(collectionId);
+    await loadSavedLibrary();
+  };
 
   const fileSystemSupported = supportsFileSystemAccess();
   const isHandleMode = currentRoot?.mode === "handle";
@@ -342,7 +195,7 @@ export function LibrarySelector({
                           value={editingCollectionName}
                           onChange={(e) => {
                             setEditingCollectionName(e.target.value);
-                            setEditingCollectionError(null);
+                            clearEditingCollectionError();
                           }}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") {
@@ -402,7 +255,7 @@ export function LibrarySelector({
                                 {collections.map((collection) => (
                                   <button
                                     key={collection.id}
-                                    onClick={() => handleSwitchCollection(collection.id)}
+                                    onClick={() => handleSwitchCollectionWithReload(collection.id)}
                                     className={`w-full text-left px-3 py-2 text-sm hover:bg-app-hover transition-colors ${
                                       collection.id === currentCollectionId
                                         ? "bg-accent-primary/10 text-accent-primary"
@@ -502,11 +355,8 @@ export function LibrarySelector({
                         <RelinkLibraryRoot
                           libraryRootId={currentRootId}
                           onRelinkComplete={async (newRootId) => {
-                            setCurrentRootId(newRootId);
-                            const hasPaths = await hasRelativePaths(newRootId);
-                            setHasRelativePathsCheck(hasPaths);
                             setShowRelink(false);
-                            // Reload saved library to update state
+                            // Reload saved library to update state (including rootId and relative paths check)
                             await loadSavedLibrary();
                           }}
                           onError={() => {
