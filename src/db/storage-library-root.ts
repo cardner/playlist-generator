@@ -199,6 +199,10 @@ export async function deleteCollection(id: string): Promise<void> {
       await db.scanRuns.bulkDelete(scanRunIds);
     }
 
+    // Delete all scan checkpoints for this collection
+    const { deleteCheckpointsForLibrary } = await import("./storage-scan-checkpoints");
+    await deleteCheckpointsForLibrary(id);
+
     // Delete saved playlists for this collection
     const playlists = await db.savedPlaylists.where("libraryRootId").equals(id).toArray();
     const playlistIds = playlists.map(p => p.id);

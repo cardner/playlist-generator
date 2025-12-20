@@ -87,21 +87,25 @@ export async function pickLibraryRoot(): Promise<LibraryRoot> {
  * FileList when mode='fallback'.
  * 
  * @param root Library root to get files from
+ * @param onDisconnection Optional callback when network drive disconnection is detected
  * @yields LibraryFile objects
  * @throws Error if directory handle not found (handle mode) or files unavailable (fallback mode)
  * 
  * @example
  * ```typescript
- * for await (const file of getLibraryFiles(root)) {
+ * for await (const file of getLibraryFiles(root, (error) => {
+ *   // Handle disconnection
+ * })) {
  *   console.log(`Found: ${file.relativePath}`);
  * }
  * ```
  */
 export async function* getLibraryFiles(
-  root: LibraryRoot
+  root: LibraryRoot,
+  onDisconnection?: (error: Error) => void
 ): AsyncGenerator<LibraryFile> {
   if (root.mode === "handle") {
-    yield* getLibraryFilesWithFSAPI(root);
+    yield* getLibraryFilesWithFSAPI(root, onDisconnection);
   } else {
     // Fallback mode: files were selected via input
     // We need to get them from the stored snapshot

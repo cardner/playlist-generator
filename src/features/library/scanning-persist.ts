@@ -11,6 +11,7 @@ import {
   type FileIndex,
   type ScanResult,
   type ScanProgressCallback,
+  type ScanCheckpoint,
 } from "./scanning";
 import {
   saveLibraryRoot,
@@ -21,6 +22,13 @@ import {
   getFileIndexEntries,
   type LibraryRootRecord,
 } from "@/db/storage";
+import {
+  saveCheckpoint,
+  loadCheckpoint,
+  deleteCheckpoint,
+} from "@/db/storage-scan-checkpoints";
+import { NetworkDriveDisconnectedError } from "./network-drive-errors";
+import { logger } from "@/lib/logger";
 
 /**
  * Scan library with full persistence
@@ -31,15 +39,49 @@ import {
  */
 export async function scanLibraryWithPersistence(
   root: LibraryRoot,
-  onProgress?: ScanProgressCallback
+  onProgress?: ScanProgressCallback,
+  scanRunId?: string // Optional: resume from existing scan run
 ): Promise<{ result: ScanResult; libraryRoot: LibraryRootRecord }> {
   const startTime = Date.now();
 
   // Save or get library root
   const libraryRoot = await saveLibraryRoot(root, root.handleId);
 
-  // Create scan run
-  const scanRun = await createScanRun(libraryRoot.id, 0, 0, 0, 0);
+  // Create or get scan run
+  let scanRun;
+  let checkpoint: ScanCheckpoint | undefined;
+  let scannedFileIds = new Set<string>();
+  let lastScannedIndex = -1;
+  let lastScannedPath: string | undefined;
+
+  if (scanRunId) {
+    // Resume from existing scan run
+    const checkpointRecord = await loadCheckpoint(scanRunId);
+    if (checkpointRecord) {
+      scannedFileIds = new Set(checkpointRecord.scannedFileIds);
+      lastScannedIndex = checkpointRecord.lastScannedIndex;
+      lastScannedPath = checkpointRecord.lastScannedPath;
+      checkpoint = {
+        scannedFileIds,
+        lastScannedIndex,
+        lastScannedPath,
+      };
+      // Get existing scan run
+      const { getScanRuns } = await import("@/db/storage");
+      const runs = await getScanRuns(libraryRoot.id);
+      scanRun = runs.find((r) => r.id === scanRunId);
+      if (!scanRun) {
+        // Create new scan run if not found
+        scanRun = await createScanRun(libraryRoot.id, 0, 0, 0, 0);
+      }
+    } else {
+      // No checkpoint found, start fresh
+      scanRun = await createScanRun(libraryRoot.id, 0, 0, 0, 0);
+    }
+  } else {
+    // Start new scan
+    scanRun = await createScanRun(libraryRoot.id, 0, 0, 0, 0);
+  }
 
   try {
     // Load previous index
@@ -49,8 +91,81 @@ export async function scanLibraryWithPersistence(
       prevIndex.set(entry.trackFileId, entry);
     }
 
-    // Build new index
-    const nextIndex = await buildFileIndex(root, onProgress);
+    // Track checkpoint saving
+    let filesSinceLastCheckpoint = 0;
+    const CHECKPOINT_INTERVAL = 50;
+
+    // Handle disconnection callback
+    const handleDisconnection = async (error: Error) => {
+      // Save checkpoint with interrupted flag
+      // Note: scannedFileIds, lastScannedIndex, and lastScannedPath are updated
+      // in buildFileIndex, so we use the checkpoint values
+      await saveCheckpoint(
+        scanRun.id,
+        libraryRoot.id,
+        Array.from(checkpoint?.scannedFileIds ?? scannedFileIds),
+        checkpoint?.lastScannedPath ?? lastScannedPath,
+        checkpoint?.lastScannedIndex ?? lastScannedIndex,
+        prevIndex.size + (checkpoint?.scannedFileIds.size ?? scannedFileIds.size),
+        true // interrupted
+      );
+      logger.warn("Scan interrupted due to network drive disconnection", error);
+      throw new NetworkDriveDisconnectedError(
+        error.message,
+        scanRun.id,
+        checkpoint?.scannedFileIds.size ?? scannedFileIds.size,
+        checkpoint?.lastScannedPath ?? lastScannedPath
+      );
+    };
+
+    // Enhanced progress callback that saves checkpoints
+    // Note: We need to update scannedFileIds, lastScannedIndex, and lastScannedPath
+    // from the checkpoint as buildFileIndex updates them
+    const enhancedProgress: ScanProgressCallback = (progress) => {
+      onProgress?.(progress);
+      filesSinceLastCheckpoint++;
+      
+      // Update tracking variables from checkpoint if it exists
+      if (checkpoint) {
+        scannedFileIds = checkpoint.scannedFileIds;
+        lastScannedIndex = checkpoint.lastScannedIndex;
+        lastScannedPath = checkpoint.lastScannedPath;
+      }
+      
+      // Save checkpoint every 50 files
+      if (filesSinceLastCheckpoint >= CHECKPOINT_INTERVAL) {
+        saveCheckpoint(
+          scanRun.id,
+          libraryRoot.id,
+          Array.from(checkpoint?.scannedFileIds ?? scannedFileIds),
+          checkpoint?.lastScannedPath ?? lastScannedPath,
+          checkpoint?.lastScannedIndex ?? lastScannedIndex,
+          progress.found,
+          false // not interrupted
+        ).catch((err) => {
+          logger.error("Failed to save checkpoint:", err);
+          // Don't throw - checkpoint failure shouldn't stop scanning
+        });
+        filesSinceLastCheckpoint = 0;
+      }
+    };
+
+    // Build new index with checkpoint support
+    // Note: buildFileIndex will update checkpoint.scannedFileIds, lastScannedIndex,
+    // and lastScannedPath as it scans
+    const nextIndex = await buildFileIndex(
+      root,
+      enhancedProgress,
+      checkpoint,
+      handleDisconnection
+    );
+    
+    // Update tracking variables from checkpoint after scanning completes
+    if (checkpoint) {
+      scannedFileIds = checkpoint.scannedFileIds;
+      lastScannedIndex = checkpoint.lastScannedIndex;
+      lastScannedPath = checkpoint.lastScannedPath;
+    }
 
     // Calculate diff
     const diff = diffFileIndex(prevIndex, nextIndex);

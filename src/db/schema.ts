@@ -274,6 +274,59 @@ export interface ScanRunRecord {
 }
 
 /**
+ * Scan checkpoint record stored in database
+ * 
+ * Tracks scan progress to enable resuming interrupted scans, particularly useful
+ * for network drives that may disconnect during scanning. Checkpoints are saved
+ * periodically (every 50 files) and when a scan is interrupted.
+ * 
+ * Relationships:
+ * - One-to-one with ScanRunRecord (via scanRunId)
+ * - Many-to-one with LibraryRootRecord (via libraryRootId)
+ * 
+ * Indexes:
+ * - Primary key: id (same as scanRunId)
+ * - Index: scanRunId (for lookups by scan run)
+ * - Index: libraryRootId (for finding interrupted scans for a library)
+ * - Index: checkpointAt (for sorting by checkpoint time)
+ * 
+ * @example
+ * ```typescript
+ * const checkpoint: ScanCheckpointRecord = {
+ *   id: "scan-123",
+ *   scanRunId: "scan-123",
+ *   libraryRootId: "root-456",
+ *   scannedFileIds: ["file1", "file2", "file3"],
+ *   lastScannedPath: "Music/Album/Track.mp3",
+ *   lastScannedIndex: 150,
+ *   totalFound: 1000,
+ *   checkpointAt: Date.now(),
+ *   interrupted: true
+ * };
+ * ```
+ */
+export interface ScanCheckpointRecord {
+  /** Unique identifier (same as scanRunId) */
+  id: string;
+  /** ID of the scan run this checkpoint belongs to */
+  scanRunId: string;
+  /** ID of the library root being scanned */
+  libraryRootId: string;
+  /** Array of trackFileIds that have already been scanned */
+  scannedFileIds: string[];
+  /** Last file path that was scanned (for resume context) */
+  lastScannedPath?: string;
+  /** Position in scan order (0-indexed) */
+  lastScannedIndex: number;
+  /** Total number of files found so far */
+  totalFound: number;
+  /** Timestamp when checkpoint was created (Unix epoch milliseconds) */
+  checkpointAt: number;
+  /** Whether the scan was interrupted (true) or is in progress (false) */
+  interrupted: boolean;
+}
+
+/**
  * Settings record stored in database
  * 
  * Key-value store for application settings. Used to persist user preferences
@@ -473,6 +526,8 @@ export class AppDatabase extends Dexie {
   directoryHandles!: Table<DirectoryHandleRecord, string>;
   /** Saved playlists table (user-saved playlists) */
   savedPlaylists!: Table<SavedPlaylistRecord, string>;
+  /** Scan checkpoints table (for resuming interrupted scans) */
+  scanCheckpoints!: Table<ScanCheckpointRecord, string>;
 
   constructor() {
     super("ai-playlist-generator");
@@ -632,6 +687,19 @@ export class AppDatabase extends Dexie {
       settings: "key",
       directoryHandles: "id",
       savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
+    });
+
+    // Version 6: Add scanCheckpoints table for resuming interrupted scans
+    // This enables checkpoint-based scanning for network drives that may disconnect
+    this.version(6).stores({
+      libraryRoots: "id, createdAt",
+      fileIndex: "id, trackFileId, libraryRootId, name, extension, updatedAt",
+      tracks: "id, trackFileId, libraryRootId, updatedAt",
+      scanRuns: "id, libraryRootId, startedAt",
+      settings: "key",
+      directoryHandles: "id",
+      savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
+      scanCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
     });
   }
 }

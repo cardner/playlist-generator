@@ -59,8 +59,10 @@ import type { LibraryRoot } from "@/lib/library-selection";
 import { ScanProgress } from "./ScanProgress";
 import { ScanResults } from "./ScanResults";
 import { MetadataProgress } from "./MetadataProgress";
+import { InterruptedScanBanner } from "./InterruptedScanBanner";
 import { useLibraryScanning } from "@/hooks/useLibraryScanning";
 import { useMetadataParsing } from "@/hooks/useMetadataParsing";
+import { getInterruptedScans } from "@/db/storage-scan-checkpoints";
 import { logger } from "@/lib/logger";
 
 interface LibraryScannerProps {
@@ -83,6 +85,7 @@ export function LibraryScanner({
   const [currentRootId, setCurrentRootId] = useState<string | null>(null);
   const [isNewSelection, setIsNewSelection] = useState(false);
   const [isInitialMount, setIsInitialMount] = useState(true);
+  const [detectedInterruptedScanRunId, setDetectedInterruptedScanRunId] = useState<string | null>(null);
 
   // Use hooks for scanning and metadata parsing logic
   const {
@@ -92,10 +95,14 @@ export function LibraryScanner({
     error: scanError,
     libraryRootId,
     scanRunId,
+    isMonitoringReconnection,
+    interruptedScanRunId,
     handleScan: handleScanInternal,
+    handleResumeScan,
     handleRescan,
     clearError: clearScanError,
     clearScanResult,
+    cancelReconnectionMonitoring,
   } = useLibraryScanning({
     libraryRoot,
     permissionStatus,
@@ -161,6 +168,49 @@ export function LibraryScanner({
   useEffect(() => {
     setIsInitialMount(false);
   }, []);
+
+  // Check for interrupted scans on mount and when library root changes
+  useEffect(() => {
+    const checkInterruptedScans = async () => {
+      if (!libraryRoot || permissionStatus !== "granted") {
+        setDetectedInterruptedScanRunId(null);
+        return;
+      }
+
+      try {
+        // Get library root ID from the root object
+        // We need to check if there's a stored library root with this handleId
+        const { getAllLibraryRoots } = await import("@/db/storage");
+        const roots = await getAllLibraryRoots();
+        
+        // Find matching root by handleRef or name
+        const matchingRoot = roots.find(
+          (r) =>
+            (libraryRoot.mode === "handle" &&
+              r.handleRef === libraryRoot.handleId) ||
+            r.name === libraryRoot.name
+        );
+
+        if (matchingRoot) {
+          const interrupted = await getInterruptedScans(matchingRoot.id);
+          // Use the most recent interrupted scan (last in sorted array)
+          if (interrupted.length > 0) {
+            const mostRecent = interrupted[interrupted.length - 1];
+            setDetectedInterruptedScanRunId(mostRecent.scanRunId);
+          } else {
+            setDetectedInterruptedScanRunId(null);
+          }
+        } else {
+          setDetectedInterruptedScanRunId(null);
+        }
+      } catch (error) {
+        logger.error("Failed to check for interrupted scans:", error);
+        setDetectedInterruptedScanRunId(null);
+      }
+    };
+
+    checkInterruptedScans();
+  }, [libraryRoot, permissionStatus]);
 
   // Clear scan result when library root changes
   useEffect(() => {
@@ -312,6 +362,16 @@ export function LibraryScanner({
     
     return (
       <div className="space-y-4 max-w-4xl">
+        {/* Show interrupted scan banner if applicable */}
+        {(isMonitoringReconnection || interruptedScanRunId) && (
+          <InterruptedScanBanner
+            isMonitoringReconnection={isMonitoringReconnection}
+            interruptedScanRunId={interruptedScanRunId}
+            onCancelAutoResume={cancelReconnectionMonitoring}
+            onManualResume={handleResumeScan}
+          />
+        )}
+
         {/* Show folder info */}
         <div className="bg-app-surface rounded-sm border border-app-border p-6">
           <div className="flex items-start justify-between mb-4">
@@ -414,29 +474,41 @@ export function LibraryScanner({
     // Show manual rescan option for existing library
     return (
       <div className="max-w-4xl">
-        <div className="bg-app-surface rounded-sm border border-app-border p-6">
-          <div className="mb-4">
-            <p className="text-app-secondary text-xs uppercase tracking-wider mb-1">
-              Selected Folder
-            </p>
-            <p className="text-app-primary text-lg font-medium">{libraryRoot.name}</p>
-          </div>
-          
-          <div className="pt-4 border-t border-app-border">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-app-primary mb-1 uppercase tracking-wider text-xs">Library Already Scanned</h2>
-                <p className="text-app-secondary text-sm">
-                  Your library has been previously scanned. You can browse your tracks below or rescan to update the index.
-                </p>
+        <div className="space-y-4">
+          {/* Show interrupted scan banner if applicable */}
+          {(isMonitoringReconnection || interruptedScanRunId || detectedInterruptedScanRunId) && (
+            <InterruptedScanBanner
+              isMonitoringReconnection={isMonitoringReconnection}
+              interruptedScanRunId={interruptedScanRunId || detectedInterruptedScanRunId}
+              onCancelAutoResume={cancelReconnectionMonitoring}
+              onManualResume={handleResumeScan}
+            />
+          )}
+
+          <div className="bg-app-surface rounded-sm border border-app-border p-6">
+            <div className="mb-4">
+              <p className="text-app-secondary text-xs uppercase tracking-wider mb-1">
+                Selected Folder
+              </p>
+              <p className="text-app-primary text-lg font-medium">{libraryRoot.name}</p>
+            </div>
+            
+            <div className="pt-4 border-t border-app-border">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-app-primary mb-1 uppercase tracking-wider text-xs">Library Already Scanned</h2>
+                  <p className="text-app-secondary text-sm">
+                    Your library has been previously scanned. You can browse your tracks below or rescan to update the index.
+                  </p>
+                </div>
+                <button
+                  onClick={handleScan}
+                  disabled={isScanning || hasExistingScans === null}
+                  className="px-6 py-3 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
+                >
+                  Rescan Library
+                </button>
               </div>
-              <button
-                onClick={handleScan}
-                disabled={isScanning || hasExistingScans === null}
-                className="px-6 py-3 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
-              >
-                Rescan Library
-              </button>
             </div>
           </div>
         </div>
@@ -462,29 +534,41 @@ export function LibraryScanner({
   if (libraryRoot) {
     return (
       <div className="max-w-4xl">
-        <div className="bg-app-surface rounded-sm border border-app-border p-6">
-          <div className="mb-4">
-            <p className="text-app-secondary text-xs uppercase tracking-wider mb-1">
-              Selected Folder
-            </p>
-            <p className="text-app-primary text-lg font-medium">{libraryRoot.name}</p>
-          </div>
-          
-          <div className="pt-4 border-t border-app-border">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-app-primary mb-1 uppercase tracking-wider text-xs">Ready to Scan</h2>
-                <p className="text-app-secondary text-sm">
-                  Click the button below to scan your music library for audio files.
-                </p>
+        <div className="space-y-4">
+          {/* Show interrupted scan banner if applicable */}
+          {(isMonitoringReconnection || interruptedScanRunId || detectedInterruptedScanRunId) && (
+            <InterruptedScanBanner
+              isMonitoringReconnection={isMonitoringReconnection}
+              interruptedScanRunId={interruptedScanRunId || detectedInterruptedScanRunId}
+              onCancelAutoResume={cancelReconnectionMonitoring}
+              onManualResume={handleResumeScan}
+            />
+          )}
+
+          <div className="bg-app-surface rounded-sm border border-app-border p-6">
+            <div className="mb-4">
+              <p className="text-app-secondary text-xs uppercase tracking-wider mb-1">
+                Selected Folder
+              </p>
+              <p className="text-app-primary text-lg font-medium">{libraryRoot.name}</p>
+            </div>
+            
+            <div className="pt-4 border-t border-app-border">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-app-primary mb-1 uppercase tracking-wider text-xs">Ready to Scan</h2>
+                  <p className="text-app-secondary text-sm">
+                    Click the button below to scan your music library for audio files.
+                  </p>
+                </div>
+                <button
+                  onClick={handleScan}
+                  disabled={isScanning || hasExistingScans === null}
+                  className="px-6 py-3 bg-accent-primary text-white rounded-sm hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
+                >
+                  {hasExistingScans === null ? "Checking..." : "Start Scan"}
+                </button>
               </div>
-              <button
-                onClick={handleScan}
-                disabled={isScanning || hasExistingScans === null}
-                className="px-6 py-3 bg-accent-primary text-white rounded-sm hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
-              >
-                {hasExistingScans === null ? "Checking..." : "Start Scan"}
-              </button>
             </div>
           </div>
         </div>

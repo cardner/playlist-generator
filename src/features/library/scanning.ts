@@ -143,50 +143,93 @@ export function isSupportedExtension(extension: string): boolean {
 }
 
 /**
+ * Checkpoint data for resuming scans
+ */
+export interface ScanCheckpoint {
+  /** Set of trackFileIds that have already been scanned */
+  scannedFileIds: Set<string>;
+  /** Last scanned index (position in scan order) */
+  lastScannedIndex: number;
+  /** Last scanned file path */
+  lastScannedPath?: string;
+}
+
+/**
  * Build file index from library root
  * Non-blocking: yields control periodically to avoid UI freeze
+ * Supports resuming from a checkpoint for interrupted scans.
  * 
  * @param root Library root to scan
  * @param onProgress Optional progress callback
+ * @param checkpoint Optional checkpoint to resume from
+ * @param onDisconnection Optional callback when network drive disconnects
  * @returns Promise resolving to file index map
  */
 export async function buildFileIndex(
   root: LibraryRoot,
-  onProgress?: ScanProgressCallback
+  onProgress?: ScanProgressCallback,
+  checkpoint?: ScanCheckpoint,
+  onDisconnection?: (error: Error) => void
 ): Promise<FileIndex> {
   const index = new Map<string, FileIndexEntry>();
   let found = 0;
   let scanned = 0;
+  let currentIndex = checkpoint ? checkpoint.lastScannedIndex : -1;
+
+  // Create set of already-scanned file IDs for fast lookup
+  const scannedFileIdsSet = checkpoint?.scannedFileIds ?? new Set<string>();
+  let lastScannedPath = checkpoint?.lastScannedPath;
 
   try {
     if (root.mode === "handle") {
       // Handle mode: recursive directory traversal
-      for await (const libraryFile of getLibraryFiles(root)) {
-        found++;
+      try {
+        for await (const libraryFile of getLibraryFiles(root, onDisconnection)) {
+          found++;
+          currentIndex++;
 
-        // Check if file extension is supported
-        if (isSupportedExtension(libraryFile.extension)) {
-          // Normalize relative path before storing
-          const normalizedRelativePath = libraryFile.relativePath 
-            ? normalizeRelativePath(libraryFile.relativePath)
-            : undefined;
-          
-          // Use the trackFileId from libraryFile (already generated correctly)
-          const entry: FileIndexEntry = {
-            trackFileId: libraryFile.trackFileId,
-            relativePath: normalizedRelativePath,
-            name: libraryFile.file.name,
-            extension: libraryFile.extension,
-            size: libraryFile.size,
-            mtime: libraryFile.mtime,
-          };
+          // Skip files that were already scanned (from checkpoint)
+          if (scannedFileIdsSet.has(libraryFile.trackFileId)) {
+            continue;
+          }
 
-          index.set(entry.trackFileId, entry);
-          scanned++;
+          // Check if file extension is supported
+          if (isSupportedExtension(libraryFile.extension)) {
+            // Normalize relative path before storing
+            const normalizedRelativePath = libraryFile.relativePath 
+              ? normalizeRelativePath(libraryFile.relativePath)
+              : undefined;
+            
+            // Update last scanned path
+            lastScannedPath = normalizedRelativePath || libraryFile.file.name;
+            
+            // Use the trackFileId from libraryFile (already generated correctly)
+            const entry: FileIndexEntry = {
+              trackFileId: libraryFile.trackFileId,
+              relativePath: normalizedRelativePath,
+              name: libraryFile.file.name,
+              extension: libraryFile.extension,
+              size: libraryFile.size,
+              mtime: libraryFile.mtime,
+            };
 
-          // Yield control every 50 files to avoid blocking UI
-          if (scanned % 50 === 0) {
-            await new Promise((resolve) => setTimeout(resolve, 0));
+            index.set(entry.trackFileId, entry);
+            scannedFileIdsSet.add(libraryFile.trackFileId);
+            scanned++;
+
+            // Yield control every 50 files to avoid blocking UI
+            if (scanned % 50 === 0) {
+              await new Promise((resolve) => setTimeout(resolve, 0));
+              onProgress?.({
+                found,
+                scanned,
+                currentFile: libraryFile.file.name,
+              });
+            }
+          }
+
+          // Report progress periodically
+          if (found % 100 === 0) {
             onProgress?.({
               found,
               scanned,
@@ -194,14 +237,18 @@ export async function buildFileIndex(
             });
           }
         }
-
-        // Report progress periodically
-        if (found % 100 === 0) {
-          onProgress?.({
-            found,
-            scanned,
-            currentFile: libraryFile.file.name,
-          });
+      } catch (scanError) {
+        // Handle network drive errors gracefully
+        if (scanError instanceof DOMException && scanError.name === "NotFoundError") {
+          logger.warn(
+            "Some files or directories could not be accessed during scanning. " +
+            "This is common with network drives. Scanned files have been indexed.",
+            scanError
+          );
+          // Continue with partial results - don't fail the entire scan
+        } else {
+          // Re-throw other errors
+          throw scanError;
         }
       }
     } else {
@@ -220,6 +267,18 @@ export async function buildFileIndex(
 
     return index;
   } catch (error) {
+    // Check if it's a network drive related error
+    if (error instanceof DOMException && error.name === "NotFoundError") {
+      const networkDriveError = new Error(
+        "Some files or directories on the network drive could not be accessed. " +
+        "Please ensure the network drive is connected and accessible. " +
+        "The scan will continue with accessible files."
+      );
+      logger.error("Error building file index (network drive):", networkDriveError);
+      // Return partial results instead of failing completely
+      return index;
+    }
+    
     logger.error("Error building file index:", error);
     throw error;
   }

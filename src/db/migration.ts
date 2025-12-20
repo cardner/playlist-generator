@@ -45,14 +45,16 @@ export async function clearOldDatabaseIfNeeded(): Promise<void> {
       class TestDB extends Dexie {
         constructor() {
           super(DB_NAME);
-          // Try to open with current schema version (3)
-          this.version(3).stores({
+          // Try to open with current schema version (6)
+          this.version(6).stores({
             libraryRoots: "id, createdAt",
             fileIndex: "id, trackFileId, libraryRootId, name, extension, updatedAt",
             tracks: "id, trackFileId, libraryRootId, updatedAt",
             scanRuns: "id, libraryRootId, startedAt",
             settings: "key",
             directoryHandles: "id",
+            savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
+            scanCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
           });
         }
       }

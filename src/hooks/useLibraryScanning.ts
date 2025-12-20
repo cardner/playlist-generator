@@ -26,6 +26,9 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import type { LibraryRoot } from "@/lib/library-selection";
 import type { ScanResult, ScanProgressCallback } from "@/features/library";
 import { scanLibraryWithPersistence } from "@/features/library/scanning-persist";
+import { NetworkDriveDisconnectedError, isNetworkDriveDisconnectedError } from "@/features/library/network-drive-errors";
+import { ReconnectionMonitor } from "@/features/library/reconnection-monitor";
+import { getDirectoryHandle } from "@/lib/library-selection-fs-api";
 import { logger } from "@/lib/logger";
 
 export interface UseLibraryScanningOptions {
@@ -56,14 +59,22 @@ export interface UseLibraryScanningReturn {
   libraryRootId: string | null;
   /** Scan run ID from the scan result */
   scanRunId: string | null;
+  /** Whether reconnection monitoring is active */
+  isMonitoringReconnection: boolean;
+  /** ID of the interrupted scan run (if any) */
+  interruptedScanRunId: string | null;
   /** Start a new scan */
   handleScan: () => Promise<void>;
+  /** Resume an interrupted scan */
+  handleResumeScan: (scanRunId: string) => Promise<void>;
   /** Rescan the library (clears previous result first) */
   handleRescan: () => Promise<void>;
   /** Clear the current error */
   clearError: () => void;
   /** Clear the scan result */
   clearScanResult: () => void;
+  /** Cancel reconnection monitoring */
+  cancelReconnectionMonitoring: () => void;
 }
 
 /**
@@ -80,12 +91,20 @@ export function useLibraryScanning(
   const [error, setError] = useState<string | null>(null);
   const [libraryRootId, setLibraryRootId] = useState<string | null>(null);
   const [scanRunId, setScanRunId] = useState<string | null>(null);
+  const [isMonitoringReconnection, setIsMonitoringReconnection] = useState(false);
+  const [interruptedScanRunId, setInterruptedScanRunId] = useState<string | null>(null);
 
   // Use ref for callback to avoid recreating handleScan when callback changes
   const onScanCompleteRef = useRef(onScanComplete);
   useEffect(() => {
     onScanCompleteRef.current = onScanComplete;
   }, [onScanComplete]);
+
+  // Store reconnection monitor instance
+  const reconnectionMonitorRef = useRef<ReconnectionMonitor | null>(null);
+  
+  // Store handleResumeScan ref to avoid circular dependency
+  const handleResumeScanRef = useRef<((scanRunId: string) => Promise<void>) | null>(null);
 
   /**
    * Start scanning the library
@@ -127,17 +146,196 @@ export function useLibraryScanning(
       }
 
       setScanResult(result);
+      setIsMonitoringReconnection(false);
+      setInterruptedScanRunId(null);
       onScanCompleteRef.current?.();
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to scan library";
-      setError(errorMessage);
-      logger.error("Scan error:", err);
+      // Handle network drive disconnection
+      if (isNetworkDriveDisconnectedError(err)) {
+        logger.warn("Network drive disconnected during scan", err);
+        setInterruptedScanRunId(err.scanRunId);
+        setIsMonitoringReconnection(true);
+        
+        // Start reconnection monitoring if we have a directory handle
+        if (libraryRoot?.mode === "handle" && libraryRoot.handleId) {
+          try {
+            const directoryHandle = await getDirectoryHandle(libraryRoot.handleId);
+            if (directoryHandle) {
+              const monitor = new ReconnectionMonitor({
+                directoryHandle,
+                onReconnected: async () => {
+                  // Auto-resume scan when reconnected
+                  logger.info("Network drive reconnected, resuming scan");
+                  setIsMonitoringReconnection(false);
+                  if (handleResumeScanRef.current) {
+                    await handleResumeScanRef.current(err.scanRunId);
+                  }
+                },
+              });
+              
+              reconnectionMonitorRef.current = monitor;
+              monitor.startMonitoring();
+            }
+          } catch (monitorError) {
+            logger.error("Failed to start reconnection monitoring:", monitorError);
+            setError(
+              "Network drive disconnected. Please reconnect and manually resume the scan."
+            );
+            setIsMonitoringReconnection(false);
+          }
+        } else {
+          setError(
+            "Network drive disconnected. Please reconnect and manually resume the scan."
+          );
+          setIsMonitoringReconnection(false);
+        }
+      } else {
+        // Handle other errors
+        let errorMessage: string;
+        
+        if (err instanceof DOMException && err.name === "NotFoundError") {
+          errorMessage =
+            "Some files or directories on the network drive could not be accessed. " +
+            "This is common with network drives. Please ensure the network drive is connected " +
+            "and accessible. The scan will continue with accessible files.";
+        } else if (err instanceof Error) {
+          // Check if error message mentions network drive or NotFoundError
+          if (
+            err.message.includes("NotFoundError") ||
+            err.message.includes("network drive") ||
+            err.message.includes("could not be found")
+          ) {
+            errorMessage =
+              "Some files or directories could not be accessed during scanning. " +
+              "This may occur with network drives. Please ensure the network drive is connected " +
+              "and accessible. The scan will continue with accessible files.";
+          } else {
+            errorMessage = err.message;
+          }
+        } else {
+          errorMessage = "Failed to scan library";
+        }
+        
+        setError(errorMessage);
+        logger.error("Scan error:", err);
+      }
     } finally {
       setIsScanning(false);
       setScanProgress(null);
     }
   }, [libraryRoot, permissionStatus]); // Removed onScanComplete dependency - using ref instead
+
+  /**
+   * Resume an interrupted scan from a checkpoint
+   */
+  const handleResumeScan = useCallback(async (resumeScanRunId: string) => {
+    if (!libraryRoot || permissionStatus !== "granted") {
+      return;
+    }
+
+    // Validate directory handle before attempting resume
+    if (libraryRoot.mode === "handle" && libraryRoot.handleId) {
+      try {
+        const directoryHandle = await getDirectoryHandle(libraryRoot.handleId);
+        if (!directoryHandle) {
+          setError(
+            "Cannot resume scan: Directory handle is no longer valid. " +
+            "Please re-select your library folder and start a new scan."
+          );
+          setIsScanning(false);
+          setScanProgress(null);
+          return;
+        }
+        
+        // Test access to the directory handle
+        try {
+          await directoryHandle.getDirectoryHandle(".", { create: false });
+        } catch (accessError) {
+          if (accessError instanceof DOMException && accessError.name === "NotFoundError") {
+            setError(
+              "Cannot resume scan: Directory is no longer accessible. " +
+              "This may occur if the network drive disconnected or the folder was moved. " +
+              "Please re-select your library folder and start a new scan."
+            );
+            setIsScanning(false);
+            setScanProgress(null);
+            return;
+          }
+          throw accessError;
+        }
+      } catch (handleError) {
+        logger.error("Failed to validate directory handle for resume:", handleError);
+        setError(
+          "Cannot resume scan: Directory handle is invalid. " +
+          "Please re-select your library folder and start a new scan."
+        );
+        setIsScanning(false);
+        setScanProgress(null);
+        return;
+      }
+    }
+
+    setIsScanning(true);
+    setError(null);
+    setScanProgress({ found: 0, scanned: 0 });
+    setInterruptedScanRunId(null);
+
+    const onProgress: ScanProgressCallback = (progress) => {
+      setScanProgress(progress);
+    };
+
+    try {
+      const scanResult = await scanLibraryWithPersistence(
+        libraryRoot,
+        onProgress,
+        resumeScanRunId
+      );
+      const result = scanResult.result;
+      const rootId = scanResult.libraryRoot.id;
+      
+      setScanResult(result);
+      setLibraryRootId(rootId);
+      setIsMonitoringReconnection(false);
+      setInterruptedScanRunId(null);
+      
+      // Get scan run ID
+      const { getScanRuns } = await import("@/db/storage");
+      const runs = await getScanRuns(rootId);
+      if (runs.length > 0) {
+        setScanRunId(runs[runs.length - 1].id);
+      }
+      
+      onScanCompleteRef.current?.();
+    } catch (err) {
+      // Re-throw disconnection errors to trigger monitoring again
+      if (isNetworkDriveDisconnectedError(err)) {
+        throw err;
+      }
+      
+      // Handle directory handle errors
+      if (err instanceof DOMException && err.name === "NotFoundError") {
+        setError(
+          "Cannot resume scan: Directory is no longer accessible. " +
+          "This may occur if the network drive disconnected or the folder was moved. " +
+          "Please re-select your library folder and start a new scan."
+        );
+      } else {
+        let errorMessage: string;
+        if (err instanceof Error) {
+          errorMessage = err.message;
+        } else {
+          errorMessage = "Failed to resume scan";
+        }
+        
+        setError(errorMessage);
+      }
+      
+      logger.error("Resume scan error:", err);
+    } finally {
+      setIsScanning(false);
+      setScanProgress(null);
+    }
+  }, [libraryRoot, permissionStatus]);
 
   /**
    * Rescan the library (clears previous result first)
@@ -147,6 +345,17 @@ export function useLibraryScanning(
     setError(null);
     await handleScan();
   }, [handleScan]);
+
+  /**
+   * Cancel reconnection monitoring
+   */
+  const cancelReconnectionMonitoring = useCallback(() => {
+    if (reconnectionMonitorRef.current) {
+      reconnectionMonitorRef.current.stopMonitoring();
+      reconnectionMonitorRef.current = null;
+    }
+    setIsMonitoringReconnection(false);
+  }, []);
 
   /**
    * Clear the current error
@@ -163,6 +372,15 @@ export function useLibraryScanning(
     setError(null);
   }, []);
 
+  // Cleanup reconnection monitor on unmount
+  useEffect(() => {
+    return () => {
+      if (reconnectionMonitorRef.current) {
+        reconnectionMonitorRef.current.stopMonitoring();
+      }
+    };
+  }, []);
+
   return {
     isScanning,
     scanResult,
@@ -170,10 +388,14 @@ export function useLibraryScanning(
     error,
     libraryRootId,
     scanRunId,
+    isMonitoringReconnection,
+    interruptedScanRunId,
     handleScan,
+    handleResumeScan,
     handleRescan,
     clearError,
     clearScanResult,
+    cancelReconnectionMonitoring,
   };
 }
 
