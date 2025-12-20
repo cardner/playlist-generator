@@ -104,7 +104,7 @@ export function LibrarySelector({
     loadOnMount: true,
   });
 
-  const { permissionStatus, checkPermission } = useLibraryPermissions({
+  const { permissionStatus, checkPermission, requestPermission } = useLibraryPermissions({
     libraryRoot: currentRoot,
     onPermissionStatus,
     autoCheck: true,
@@ -329,7 +329,7 @@ export function LibrarySelector({
 
               {permissionStatus === "prompt" && isHandleMode && (
                 <button
-                  onClick={checkPermission}
+                  onClick={requestPermission}
                   className="px-3 py-1.5 bg-app-hover text-app-primary rounded-sm hover:bg-app-surface-hover transition-colors border border-app-border uppercase tracking-wider text-xs"
                 >
                   Re-request permission

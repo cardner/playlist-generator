@@ -12,6 +12,9 @@ import { logger } from "./logger";
 import type { LibraryRoot, LibraryFile } from "./library-selection-types";
 import { normalizeRelativePath, generateFileId, getFileExtension } from "./library-selection-utils";
 
+// Guard to prevent multiple simultaneous directory picker calls
+let isPickerOpen = false;
+
 /**
  * Pick a library root using File System Access API
  * 
@@ -37,6 +40,12 @@ export async function pickLibraryRootWithFSAPI(): Promise<LibraryRoot> {
     throw new Error("File System Access API not supported");
   }
 
+  // Prevent multiple simultaneous picker calls
+  if (isPickerOpen) {
+    throw new Error("File picker already active");
+  }
+
+  isPickerOpen = true;
   try {
     const handle = await window.showDirectoryPicker({
       mode: "read",
@@ -60,7 +69,16 @@ export async function pickLibraryRootWithFSAPI(): Promise<LibraryRoot> {
     if ((error as Error).name === "AbortError") {
       throw new Error("Folder selection cancelled");
     }
+    // Check if it's the "picker already active" error
+    if ((error as Error).message?.includes("already active")) {
+      throw new Error("File picker already active");
+    }
     throw error;
+  } finally {
+    // Reset flag after a short delay to allow any pending operations to complete
+    setTimeout(() => {
+      isPickerOpen = false;
+    }, 100);
   }
 }
 

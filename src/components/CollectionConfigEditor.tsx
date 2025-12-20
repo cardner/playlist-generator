@@ -44,7 +44,7 @@ import { useState, useEffect } from "react";
 import { X, Save, FolderOpen, AlertCircle, Calendar, HardDrive } from "lucide-react";
 import type { LibraryRootRecord } from "@/db/schema";
 import { updateCollection, relinkCollectionHandle, getAllCollections } from "@/db/storage";
-import { pickLibraryRoot, storeDirectoryHandle } from "@/lib/library-selection";
+import { pickLibraryRoot } from "@/lib/library-selection";
 import { supportsFileSystemAccess } from "@/lib/feature-detection";
 
 interface CollectionConfigEditorProps {
@@ -90,31 +90,44 @@ export function CollectionConfigEditor({
       return;
     }
 
+    if (isRelinking) {
+      // Prevent multiple simultaneous calls
+      return;
+    }
+
     setIsRelinking(true);
     setError(null);
 
     try {
-      const handle = await window.showDirectoryPicker({
-        mode: "read",
-      });
-
-      // Store the new handle
-      const newHandleId = await storeDirectoryHandle(handle);
+      // Use pickLibraryRoot instead of directly calling showDirectoryPicker
+      // This ensures we use the same guard logic
+      const root = await pickLibraryRoot();
+      
+      if (root.mode !== "handle" || !root.handleId) {
+        setError("Failed to get directory handle");
+        return;
+      }
 
       // Update the collection's handleRef
-      await relinkCollectionHandle(collection.id, newHandleId);
+      await relinkCollectionHandle(collection.id, root.handleId);
 
       // Update local state
       const updatedCollection: LibraryRootRecord = {
         ...collection,
-        handleRef: newHandleId,
+        handleRef: root.handleId,
         updatedAt: Date.now(),
       };
 
       onSave?.(updatedCollection);
     } catch (err) {
-      if ((err as Error).name !== "AbortError") {
-        setError(err instanceof Error ? err.message : "Failed to relink directory");
+      if ((err as Error).name !== "AbortError" && (err as Error).message !== "Folder selection cancelled") {
+        const errorMessage = err instanceof Error ? err.message : "Failed to relink directory";
+        // Check for "picker already active" error
+        if (errorMessage.includes("already active")) {
+          setError("Please wait for the current folder selection to complete");
+        } else {
+          setError(errorMessage);
+        }
       }
     } finally {
       setIsRelinking(false);

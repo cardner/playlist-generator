@@ -18,7 +18,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { LibraryRoot, PermissionStatus } from "@/lib/library-selection";
-import { requestLibraryPermission } from "@/lib/library-selection";
+import { checkLibraryPermission, requestLibraryPermission } from "@/lib/library-selection";
 import { logger } from "@/lib/logger";
 
 export interface UseLibraryPermissionsOptions {
@@ -33,8 +33,10 @@ export interface UseLibraryPermissionsOptions {
 export interface UseLibraryPermissionsReturn {
   /** Current permission status */
   permissionStatus: PermissionStatus | null;
-  /** Check permission for the current library root */
+  /** Check permission for the current library root (without requesting) */
   checkPermission: () => Promise<void>;
+  /** Request permission for the current library root (requires user activation) */
+  requestPermission: () => Promise<void>;
 }
 
 /**
@@ -48,13 +50,16 @@ export function useLibraryPermissions(
   const [permissionStatus, setPermissionStatus] = useState<PermissionStatus | null>(null);
 
   /**
-   * Check permission for the current library root
+   * Check permission for the current library root (without requesting)
+   * This is safe to call automatically as it doesn't require user activation.
    */
   const checkPermission = useCallback(async () => {
     if (!libraryRoot) return;
 
     try {
-      const status = await requestLibraryPermission(libraryRoot);
+      // Use checkLibraryPermission instead of requestLibraryPermission
+      // to avoid requiring user activation
+      const status = await checkLibraryPermission(libraryRoot);
       setPermissionStatus(status);
       onPermissionStatus?.(status);
     } catch (err) {
@@ -64,7 +69,25 @@ export function useLibraryPermissions(
     }
   }, [libraryRoot, onPermissionStatus]);
 
-  // Auto-check permission when root changes
+  /**
+   * Request permission for the current library root
+   * This requires user activation and should only be called in response to user action.
+   */
+  const requestPermission = useCallback(async () => {
+    if (!libraryRoot) return;
+
+    try {
+      const status = await requestLibraryPermission(libraryRoot);
+      setPermissionStatus(status);
+      onPermissionStatus?.(status);
+    } catch (err) {
+      logger.error("Failed to request permission:", err);
+      setPermissionStatus("denied");
+      onPermissionStatus?.("denied");
+    }
+  }, [libraryRoot, onPermissionStatus]);
+
+  // Auto-check permission when root changes (without requesting)
   useEffect(() => {
     if (autoCheck && libraryRoot) {
       checkPermission();
@@ -74,6 +97,7 @@ export function useLibraryPermissions(
   return {
     permissionStatus,
     checkPermission,
+    requestPermission,
   };
 }
 

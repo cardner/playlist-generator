@@ -30,6 +30,7 @@ export {
 } from "./library-selection-fallback";
 
 export {
+  checkLibraryPermission,
   requestLibraryPermission,
 } from "./library-selection-permissions";
 

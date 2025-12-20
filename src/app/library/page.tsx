@@ -77,9 +77,9 @@ export default function LibraryPage() {
               
               if (reconstructedRoot) {
                 setLibraryRoot(reconstructedRoot);
-                // Request permission for the reconstructed root
-                const { requestLibraryPermission } = await import("@/lib/library-selection");
-                const permission = await requestLibraryPermission(reconstructedRoot);
+                // Check permission for the reconstructed root (without requesting)
+                const { checkLibraryPermission } = await import("@/lib/library-selection");
+                const permission = await checkLibraryPermission(reconstructedRoot);
                 setPermissionStatus(permission);
               } else {
                 logger.warn("Failed to reconstruct library root - components will work with root ID only");
@@ -116,9 +116,9 @@ export default function LibraryPage() {
           
           if (savedRoot) {
             setLibraryRoot(savedRoot);
-            // Also request permission for the saved root
-            const { requestLibraryPermission } = await import("@/lib/library-selection");
-            const permission = await requestLibraryPermission(savedRoot);
+            // Check permission for the saved root (without requesting)
+            const { checkLibraryPermission } = await import("@/lib/library-selection");
+            const permission = await checkLibraryPermission(savedRoot);
             setPermissionStatus(permission);
           } else {
             logger.warn("getSavedLibraryRoot returned null");
@@ -229,11 +229,11 @@ export default function LibraryPage() {
               // Reload library root for the selected collection
               const root = await getCurrentLibraryRoot();
               if (root) {
-                const { getSavedLibraryRoot, requestLibraryPermission } = await import("@/lib/library-selection");
+                const { getSavedLibraryRoot, checkLibraryPermission } = await import("@/lib/library-selection");
                 const savedRoot = await getSavedLibraryRoot();
                 if (savedRoot) {
                   setLibraryRoot(savedRoot);
-                  const permission = await requestLibraryPermission(savedRoot);
+                  const permission = await checkLibraryPermission(savedRoot);
                   setPermissionStatus(permission);
                 }
                 setCurrentLibraryRootId(root.id);
