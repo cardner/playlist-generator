@@ -17,6 +17,7 @@
     "update-changelog": "node scripts/update-changelog.js"
   },
   "dependencies": {
+    "@tanstack/react-virtual": "^3.13.18",
     "clsx": "^2.1.1",
     "dexie": "^4.2.1",
     "lucide-react": "^0.561.0",

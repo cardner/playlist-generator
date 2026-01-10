@@ -70,6 +70,12 @@ export {
   getAllTrackTitles,
   getAllGenres,
   getAllGenresWithStats,
+  searchArtists,
+  searchAlbums,
+  searchTrackTitles,
+  getTopArtists,
+  getTopAlbums,
+  getTopTrackTitles,
 } from "./storage-queries";
 
 import { db } from "./schema";
