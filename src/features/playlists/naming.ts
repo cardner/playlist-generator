@@ -84,27 +84,35 @@ function selectEmoji(
   strategy: PlaylistStrategy
 ): string | null {
   // Try mood first
-  for (const mood of request.mood) {
-    const emoji = MOOD_EMOJIS[mood.toLowerCase()];
-    if (emoji) return emoji;
+  if (Array.isArray(request.mood)) {
+    for (const mood of request.mood) {
+      const emoji = MOOD_EMOJIS[mood.toLowerCase()];
+      if (emoji) return emoji;
+    }
   }
 
   // Try activity
-  for (const activity of request.activity) {
-    const emoji = ACTIVITY_EMOJIS[activity.toLowerCase()];
-    if (emoji) return emoji;
+  if (Array.isArray(request.activity)) {
+    for (const activity of request.activity) {
+      const emoji = ACTIVITY_EMOJIS[activity.toLowerCase()];
+      if (emoji) return emoji;
+    }
   }
 
   // Try genre
-  for (const genre of request.genres) {
-    const emoji = GENRE_EMOJIS[genre.toLowerCase()];
-    if (emoji) return emoji;
+  if (Array.isArray(request.genres)) {
+    for (const genre of request.genres) {
+      const emoji = GENRE_EMOJIS[genre.toLowerCase()];
+      if (emoji) return emoji;
+    }
   }
 
   // Try vibe tags
-  for (const tag of strategy.vibeTags) {
-    const emoji = MOOD_EMOJIS[tag.toLowerCase()] || ACTIVITY_EMOJIS[tag.toLowerCase()];
-    if (emoji) return emoji;
+  if (Array.isArray(strategy.vibeTags)) {
+    for (const tag of strategy.vibeTags) {
+      const emoji = MOOD_EMOJIS[tag.toLowerCase()] || ACTIVITY_EMOJIS[tag.toLowerCase()];
+      if (emoji) return emoji;
+    }
   }
 
   return null;
@@ -116,7 +124,8 @@ function selectEmoji(
 export function generatePlaylistTitle(
   request: PlaylistRequest,
   strategy: PlaylistStrategy,
-  includeEmoji: boolean = true
+  includeEmoji: boolean = true,
+  customEmoji?: string | null
 ): { title: string; subtitle: string; emoji: string | null } {
   // Use strategy title if available and good
   let title = strategy.title;
@@ -124,9 +133,9 @@ export function generatePlaylistTitle(
 
   // If title is too generic, enhance it
   if (title.length < 10 || title === "Unknown Playlist") {
-    const moodStr = request.mood.length > 0 ? request.mood[0] : "";
-    const activityStr = request.activity.length > 0 ? request.activity[0] : "";
-    const genreStr = request.genres.length > 0 ? request.genres[0] : "";
+    const moodStr = Array.isArray(request.mood) && request.mood.length > 0 ? request.mood[0] : "";
+    const activityStr = Array.isArray(request.activity) && request.activity.length > 0 ? request.activity[0] : "";
+    const genreStr = Array.isArray(request.genres) && request.genres.length > 0 ? request.genres[0] : "";
 
     if (moodStr && activityStr) {
       title = `${moodStr} ${activityStr}`;
@@ -146,21 +155,21 @@ export function generatePlaylistTitle(
   if (!subtitle || subtitle.length < 20) {
     const parts: string[] = [];
     
-    if (request.genres.length > 0) {
+    if (Array.isArray(request.genres) && request.genres.length > 0) {
       parts.push(request.genres.slice(0, 2).join(" & "));
     }
     
-    if (request.mood.length > 0) {
+    if (Array.isArray(request.mood) && request.mood.length > 0) {
       parts.push(request.mood[0] + " vibes");
     }
     
-    if (request.activity.length > 0) {
+    if (Array.isArray(request.activity) && request.activity.length > 0) {
       parts.push(`for ${request.activity[0]}`);
     }
 
     subtitle = parts.length > 0
       ? parts.join(" • ")
-      : `${request.length.value} ${request.length.type === "minutes" ? "minutes" : "tracks"}`;
+      : `${request.length?.value || 0} ${request.length?.type === "minutes" ? "minutes" : "tracks"}`;
   }
 
   // Truncate if too long
@@ -171,7 +180,12 @@ export function generatePlaylistTitle(
     subtitle = subtitle.substring(0, 97) + "...";
   }
 
-  const emoji = includeEmoji ? selectEmoji(request, strategy) : null;
+  // Use custom emoji if provided, otherwise auto-select
+  const emoji = includeEmoji
+    ? customEmoji !== undefined
+      ? customEmoji
+      : selectEmoji(request, strategy)
+    : null;
 
   return { title, subtitle, emoji };
 }

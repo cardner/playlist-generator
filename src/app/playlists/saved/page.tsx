@@ -108,7 +108,7 @@ export default function SavedPlaylistsPage() {
 
   if (selectedPlaylist) {
     return (
-      <div className="max-w-6xl mx-auto">
+      <div>
         <div className="mb-6">
           <button
             onClick={() => {
@@ -129,7 +129,7 @@ export default function SavedPlaylistsPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div>
       <div className="mb-8">
         <div className="flex items-center gap-4 mb-4">
           <div className="size-12 bg-gradient-to-br from-accent-primary to-accent-secondary rounded-sm flex items-center justify-center">

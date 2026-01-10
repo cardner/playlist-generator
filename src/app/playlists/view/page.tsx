@@ -5,7 +5,7 @@ import { PlaylistViewContent } from "./PlaylistViewContent";
 
 export default function PlaylistViewPage() {
   return (
-    <Suspense fallback={<div className="max-w-4xl mx-auto text-center p-8">Loading...</div>}>
+    <Suspense fallback={<div className="text-center p-8">Loading...</div>}>
       <PlaylistViewContent />
     </Suspense>
   );

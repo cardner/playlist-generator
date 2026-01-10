@@ -96,6 +96,8 @@ export interface GeneratedPlaylist {
     inspiringTrackId: string;
     section?: string; // Assigned by ordering engine (warmup/peak/cooldown)
   }>;
+  /** Custom emoji selected by user (overrides auto-selected emoji) */
+  customEmoji?: string | null;
 }
 
 /**

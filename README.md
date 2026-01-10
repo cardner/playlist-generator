@@ -1,4 +1,4 @@
-# AI Playlist Generator
+# mixtape gen
 
 A privacy-first, local-first web application that generates playlists from your local music library.
 

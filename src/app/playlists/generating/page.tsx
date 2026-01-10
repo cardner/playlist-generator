@@ -86,7 +86,7 @@ export default function GeneratingPage() {
 
   if (error) {
     return (
-      <div className="max-w-4xl mx-auto">
+      <div>
         <div className="bg-red-500/10 border border-red-500/20 rounded-sm p-8 text-center">
           <AlertCircle className="size-10 text-red-500 mx-auto mb-4" />
           <h2 className="text-red-500 mb-3 text-xl font-semibold">
@@ -106,7 +106,7 @@ export default function GeneratingPage() {
 
   if (playlist) {
     return (
-      <div className="max-w-4xl mx-auto text-center">
+      <div className="text-center">
         <Loader2 className="size-10 text-accent-primary animate-spin mx-auto mb-6" />
         <p className="text-app-primary">Redirecting to playlist...</p>
       </div>
@@ -115,7 +115,7 @@ export default function GeneratingPage() {
 
   if (!request) {
     return (
-      <div className="max-w-4xl mx-auto text-center">
+      <div className="text-center">
         <Loader2 className="size-10 text-accent-primary animate-spin mx-auto mb-6" />
         <p className="text-app-primary">Loading...</p>
       </div>
@@ -123,7 +123,7 @@ export default function GeneratingPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div>
       <div className="bg-app-surface rounded-sm shadow-2xl p-8 md:p-12 text-center">
         <div className="inline-flex items-center justify-center size-20 bg-gradient-to-br from-accent-primary to-accent-secondary rounded-sm mb-6">
           <Sparkles className="size-10 text-white animate-pulse" />

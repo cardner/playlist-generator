@@ -51,7 +51,7 @@ export function PlaylistPageClient({ playlistId }: PlaylistPageClientProps) {
 
   if (error) {
     return (
-      <div className="max-w-4xl mx-auto">
+      <div>
         <div className="bg-red-500/10 border border-red-500/20 rounded-sm p-8 text-center">
           <AlertCircle className="size-10 text-red-500 mx-auto mb-4" />
           <h2 className="text-red-500 mb-3 text-xl font-semibold">
@@ -71,7 +71,7 @@ export function PlaylistPageClient({ playlistId }: PlaylistPageClientProps) {
 
   if (!playlist) {
     return (
-      <div className="max-w-4xl mx-auto text-center">
+      <div className="text-center">
         <Loader2 className="size-10 text-accent-primary animate-spin mx-auto mb-6" />
         <p className="text-app-primary">Loading playlist...</p>
       </div>

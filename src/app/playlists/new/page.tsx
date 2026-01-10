@@ -26,22 +26,7 @@ export default function NewPlaylistPage() {
   const IconComponent = config.icon;
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <header className="mb-8">
-        <div className="flex items-center gap-4 mb-4">
-          <div className="size-12 bg-gradient-to-br from-accent-primary to-accent-secondary rounded-sm flex items-center justify-center">
-            <IconComponent className="size-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-app-primary tracking-tight text-2xl font-semibold">
-              {config.title}
-            </h1>
-            <p className="text-app-secondary text-sm">
-              {config.description}
-            </p>
-          </div>
-        </div>
-      </header>
+    <div>
 
       <div className="mb-6">
         <LibrarySummary />

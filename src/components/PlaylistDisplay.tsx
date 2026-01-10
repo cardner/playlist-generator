@@ -59,6 +59,7 @@ import { generateVariant, type VariantType } from "@/features/playlists/variants
 import { generatePlaylistTitle } from "@/features/playlists/naming";
 import { orderTracks } from "@/features/playlists/ordering";
 import { buildMatchingIndex } from "@/features/library/summarization";
+import { EmojiPicker } from "./EmojiPicker";
 import {
   Play,
   Pause,
@@ -210,6 +211,13 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   const [editedTitle, setEditedTitle] = useState(playlist.title);
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [customEmoji, setCustomEmoji] = useState<string | null | undefined>(playlist.customEmoji);
+  
+  // Sync customEmoji when playlist prop changes
+  useEffect(() => {
+    setCustomEmoji(playlist.customEmoji);
+  }, [playlist.customEmoji]);
+  
   const [showInlineEditor, setShowInlineEditor] = useState(false);
   const [genres, setGenres] = useState<string[]>([]);
   const [artists, setArtists] = useState<string[]>([]);
@@ -497,7 +505,12 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   async function handleSavePlaylist() {
     setIsSaving(true);
     try {
-      await savePlaylist(playlist, libraryRootId);
+      // Ensure customEmoji is included when saving
+      const playlistToSave: GeneratedPlaylist = { 
+        ...playlist, 
+        customEmoji: customEmoji 
+      };
+      await savePlaylist(playlistToSave, libraryRootId);
       setIsSaved(true);
     } catch (error) {
       logger.error("Failed to save playlist:", error);
@@ -759,10 +772,37 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     }
   }
 
+  // Parse request from sessionStorage with defaults
+  const storedRequest = sessionStorage.getItem("playlist-request");
+  const request = storedRequest 
+    ? JSON.parse(storedRequest)
+    : {
+        genres: [],
+        mood: [],
+        activity: [],
+        length: { type: "tracks" as const, value: 0 },
+        tempo: {},
+        surprise: 0,
+      };
+  
+  // Ensure arrays exist
+  const safeRequest = {
+    ...request,
+    genres: Array.isArray(request.genres) ? request.genres : [],
+    mood: Array.isArray(request.mood) ? request.mood : [],
+    activity: Array.isArray(request.activity) ? request.activity : [],
+    length: request.length || { type: "tracks" as const, value: 0 },
+  };
+
   const { title, subtitle, emoji } = generatePlaylistTitle(
-    JSON.parse(sessionStorage.getItem("playlist-request") || "{}"),
-    playlist.strategy
+    safeRequest,
+    playlist.strategy,
+    true,
+    customEmoji
   );
+  
+  // Use custom emoji if set, otherwise use auto-selected emoji
+  const displayEmoji = customEmoji !== undefined ? customEmoji : emoji;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -771,7 +811,14 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
         <div className="flex items-start justify-between gap-4 mb-4">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
-              {emoji && <span className="text-3xl">{emoji}</span>}
+              <EmojiPicker
+                value={displayEmoji}
+                onChange={(newEmoji) => {
+                  setCustomEmoji(newEmoji);
+                  setPlaylist((prev) => ({ ...prev, customEmoji: newEmoji }));
+                }}
+                className="text-3xl"
+              />
               {isEditingTitle ? (
                 <div className="flex items-center gap-2 flex-1">
                   <input
