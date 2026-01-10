@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [0.7.1] - 2026-01-10
+
+### Fixed
+
+- improve performance of search boxes with large collections
+
+### Other Changes
+
+- Merge pull request #5 from cardner/perf-improvements
+
 ## [0.7.0] - 2026-01-10
 
 ### Added
