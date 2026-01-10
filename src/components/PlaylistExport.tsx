@@ -62,6 +62,7 @@ import {
 import { exportITunesXML } from "@/features/playlists/export-itunes";
 import { exportJellyfinM3U, exportPlexM3U } from "@/features/playlists/export-media-servers";
 import type { ServiceType } from "@/lib/path-normalization";
+import { validatePlaylistPaths } from "@/features/playlists/path-validation";
 import { getAllTracks, getCurrentCollectionId, getCollection } from "@/db/storage";
 import { getFileIndexEntries } from "@/db/storage";
 import { db } from "@/db/schema";
@@ -109,6 +110,8 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
   const [selectedService, setSelectedService] = useState<ServiceType>("generic");
   const [serviceLibraryPath, setServiceLibraryPath] = useState<string>("");
   const [useNetworkPaths, setUseNetworkPaths] = useState<boolean>(false);
+  const [showPathPreview, setShowPathPreview] = useState<boolean>(false);
+  const [pathValidationResult, setPathValidationResult] = useState<Awaited<ReturnType<typeof validatePlaylistPaths>> | null>(null);
 
   // Load export preferences from localStorage
   useEffect(() => {
@@ -255,8 +258,10 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
               libraryRoot: serviceLibraryPath || undefined,
               useNetworkPaths,
             });
+          } else if (selectedService === "mediamonkey") {
+            result = exportM3U(playlist, trackLookups, exportConfig, "mediamonkey" as ServiceType);
           } else {
-            result = exportM3U(playlist, trackLookups, exportConfig);
+            result = exportM3U(playlist, trackLookups, exportConfig, selectedService as ServiceType);
           }
           break;
         case "pls":
@@ -461,9 +466,10 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
                 <option value="itunes">iTunes / Apple Music</option>
                 <option value="jellyfin">Jellyfin</option>
                 <option value="plex">Plex</option>
+                <option value="mediamonkey">MediaMonkey</option>
               </select>
               
-              {(selectedService === "jellyfin" || selectedService === "plex" || selectedService === "itunes") && (
+              {(selectedService === "jellyfin" || selectedService === "plex" || selectedService === "itunes" || selectedService === "mediamonkey") && (
                 <div className="space-y-3 mt-3">
                   <div>
                     <label className="block text-app-primary text-xs font-medium mb-2">
@@ -479,9 +485,67 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
                     <p className="text-app-tertiary text-xs mt-1">
                       {selectedService === "itunes" 
                         ? "Path to your iTunes Media folder"
+                        : selectedService === "mediamonkey"
+                        ? "Path to your MediaMonkey music library root (optional)"
                         : "Path to your media server library root"}
                     </p>
                   </div>
+                  
+                  {/* Path Validation Status */}
+                  {pathValidationResult && (
+                    <div className="mt-3 p-3 bg-app-surface border border-app-border rounded-sm">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-app-primary text-xs font-medium">Path Validation</span>
+                        <span className={`text-xs ${pathValidationResult.invalidPaths === 0 && pathValidationResult.missingPaths === 0 ? 'text-green-500' : 'text-yellow-500'}`}>
+                          {pathValidationResult.validPaths}/{pathValidationResult.totalTracks} valid
+                        </span>
+                      </div>
+                      {pathValidationResult.invalidPaths > 0 && (
+                        <p className="text-yellow-500 text-xs">
+                          {pathValidationResult.invalidPaths} path(s) may have issues
+                        </p>
+                      )}
+                      {pathValidationResult.missingPaths > 0 && (
+                        <p className="text-yellow-500 text-xs">
+                          {pathValidationResult.missingPaths} path(s) missing relative paths
+                        </p>
+                      )}
+                      {pathValidationResult.invalidPaths === 0 && pathValidationResult.missingPaths === 0 && (
+                        <p className="text-green-500 text-xs">
+                          All paths validated successfully
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowPathPreview(!showPathPreview)}
+                        className="mt-2 text-xs text-accent-primary hover:text-accent-hover"
+                      >
+                        {showPathPreview ? "Hide" : "Show"} path preview
+                      </button>
+                      {showPathPreview && pathValidationResult.issues.length > 0 && (
+                        <div className="mt-2 max-h-32 overflow-y-auto">
+                          {pathValidationResult.issues.slice(0, 5).map((issue: { trackFileId: string; path: string; issues: string[] }, idx: number) => (
+                            <div key={idx} className="text-xs text-app-secondary mt-1">
+                              <span className="font-mono">{issue.path}</span>
+                              {issue.issues.length > 0 && (
+                                <ul className="list-disc list-inside ml-2 text-yellow-500">
+                                  {issue.issues.map((i: string, iidx: number) => (
+                                    <li key={iidx}>{i}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          ))}
+                          {pathValidationResult.issues.length > 5 && (
+                            <p className="text-xs text-app-tertiary mt-1">
+                              ... and {pathValidationResult.issues.length - 5} more
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
                   {(selectedService === "jellyfin" || selectedService === "plex") && (
                     <div>
                       <label className="flex items-center gap-2 text-app-primary text-xs">

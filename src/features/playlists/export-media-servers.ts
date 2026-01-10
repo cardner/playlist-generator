@@ -69,11 +69,21 @@ export function exportJellyfinM3U(
         ...jellyfinConfig,
         service: 'jellyfin', // Ensure service is set correctly
       };
-      path = convertToServicePath(path, serviceConfig);
-      path = normalizePathForService(path, 'jellyfin');
+      
+      // If library root is configured, ensure path is relative to it or absolute
+      if (jellyfinConfig.libraryRoot) {
+        // Use convertToServicePath to handle path conversion
+        path = convertToServicePath(path, serviceConfig);
+      } else {
+        // Just normalize for Jellyfin format
+        path = normalizePathForService(path, 'jellyfin');
+      }
     } else {
       path = normalizePathForService(path, 'jellyfin');
     }
+    
+    // Remove trailing slashes for Jellyfin
+    path = path.replace(/\/+$/, '');
     
     if (!hasRelativePath) {
       hasRelativePaths = false;
@@ -148,11 +158,28 @@ export function exportPlexM3U(
         ...plexConfig,
         service: 'plex', // Ensure service is set correctly
       };
-      path = convertToServicePath(path, serviceConfig);
-      path = normalizePathForService(path, 'plex');
+      
+      // Plex requires absolute paths matching its library configuration
+      if (plexConfig.libraryRoot) {
+        // Use convertToServicePath to handle path conversion
+        path = convertToServicePath(path, serviceConfig);
+        
+        // If path is still relative, make it absolute using library root
+        if (!path.startsWith('/') && !path.match(/^[A-Za-z]:/) && !path.startsWith('\\\\')) {
+          const libraryRoot = normalizePathForService(plexConfig.libraryRoot, 'plex');
+          const root = libraryRoot.endsWith('/') ? libraryRoot.slice(0, -1) : libraryRoot;
+          path = `${root}/${path}`;
+        }
+      } else {
+        // Just normalize for Plex format
+        path = normalizePathForService(path, 'plex');
+      }
     } else {
       path = normalizePathForService(path, 'plex');
     }
+    
+    // Remove trailing slashes for Plex
+    path = path.replace(/\/+$/, '');
     
     if (!hasRelativePath) {
       hasRelativePaths = false;

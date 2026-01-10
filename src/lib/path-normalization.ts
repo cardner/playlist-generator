@@ -6,14 +6,15 @@
  * 
  * Features:
  * - Cross-platform path normalization (Windows/Unix)
- * - Service-specific path conversion (iTunes, Jellyfin, Plex)
+ * - Service-specific path conversion (iTunes, Jellyfin, Plex, MediaMonkey)
  * - Network path handling (UNC, SMB)
  * - Path rewriting for different directory structures
+ * - Path validation and testing
  * 
  * @module lib/path-normalization
  */
 
-export type ServiceType = 'itunes' | 'jellyfin' | 'plex' | 'generic';
+export type ServiceType = 'itunes' | 'jellyfin' | 'plex' | 'mediamonkey' | 'generic';
 
 export interface ServiceConfig {
   /** Service type */
@@ -72,6 +73,17 @@ export function normalizePathForService(
     case 'jellyfin':
     case 'plex':
       // Media servers typically use forward slashes (Unix-style)
+      // Remove trailing slashes
+      return normalized.replace(/\/+$/, '');
+    
+    case 'mediamonkey':
+      // MediaMonkey uses platform-specific separators
+      const platform = detectPlatform();
+      if (platform === 'windows') {
+        // Use backslashes on Windows
+        return normalized.replace(/\//g, '\\');
+      }
+      // Use forward slashes on Mac/Linux
       return normalized;
     
     case 'generic':
@@ -106,7 +118,7 @@ export function convertToServicePath(
   
   // If no library root configured, return normalized path
   if (!config.libraryRoot) {
-    return normalized;
+    return normalizePathForService(normalized, config.service);
   }
 
   const libraryRoot = normalizePath(config.libraryRoot);
@@ -115,16 +127,34 @@ export function convertToServicePath(
   if (normalized.startsWith(libraryRoot)) {
     // Path is within library root - return relative path
     const relativePath = normalized.substring(libraryRoot.length);
-    return relativePath.startsWith('/') ? relativePath.substring(1) : relativePath;
+    const cleanRelative = relativePath.startsWith('/') ? relativePath.substring(1) : relativePath;
+    return normalizePathForService(cleanRelative, config.service);
   }
 
-  // Path is outside library root - return absolute path
+  // Check if localPath is already a relative path (doesn't start with / or drive letter)
+  if (!isAbsolutePath(normalized)) {
+    // Already relative, just normalize for service
+    return normalizePathForService(normalized, config.service);
+  }
+
+  // Path is absolute and outside library root
   // For network paths, use UNC format if configured
   if (config.useNetworkPaths && isWindowsPath(normalized)) {
-    return convertToUncPath(normalized);
+    // Extract server and share from library root if it's a UNC path
+    if (isUncPath(libraryRoot)) {
+      const uncMatch = libraryRoot.match(/^\\\\?([^\\]+)\\([^\\]+)/);
+      if (uncMatch) {
+        const uncPath = convertToUncPath(normalized, uncMatch[1], uncMatch[2]);
+        return normalizePathForService(uncPath, config.service);
+      }
+    }
+    // Fallback: use generic server/share
+    const uncPath = convertToUncPath(normalized, 'server', 'share');
+    return normalizePathForService(uncPath, config.service);
   }
 
-  return normalized;
+  // Return absolute path normalized for service
+  return normalizePathForService(normalized, config.service);
 }
 
 /**
@@ -142,15 +172,21 @@ function isWindowsPath(path: string): boolean {
  * Convert Windows path to UNC format
  * 
  * @param path - Windows path (e.g., C:\Music\Track.mp3)
- * @returns UNC path (e.g., \\server\share\Music\Track.mp3)
- * 
- * Note: This is a placeholder - actual conversion would require
- * network drive mapping information
+ * @param server - Network server name (e.g., "server")
+ * @param share - Network share name (e.g., "Music")
+ * @returns UNC path (e.g., \\server\Music\Track.mp3)
  */
-function convertToUncPath(path: string): string {
-  // This is a simplified conversion
-  // In practice, you'd need to know the network share mapping
-  return path.replace(/^([A-Za-z]):/, '\\\\server\\$1$');
+function convertToUncPath(path: string, server: string = 'server', share: string = 'share'): string {
+  const normalized = normalizePath(path);
+  
+  // Remove drive letter if present
+  const withoutDrive = normalized.replace(/^[A-Za-z]:/, '');
+  
+  // Remove leading slash
+  const cleanPath = withoutDrive.startsWith('/') ? withoutDrive.substring(1) : withoutDrive;
+  
+  // Construct UNC path
+  return `\\\\${server}\\${share}\\${cleanPath}`.replace(/\\+/g, '\\');
 }
 
 /**
@@ -226,5 +262,118 @@ export function getRelativePath(from: string, to: string): string {
   relativeParts.push(...downParts);
   
   return relativeParts.join('/') || '.';
+}
+
+/**
+ * Validate path format
+ * 
+ * @param path - Path to validate
+ * @returns True if path appears to be valid
+ */
+export function validatePath(path: string): boolean {
+  if (!path || typeof path !== 'string' || path.trim().length === 0) {
+    return false;
+  }
+  
+  // Check for invalid characters (platform-specific)
+  // Windows: < > : " | ? * and control characters
+  // Unix: null character and forward slash in filename
+  const invalidChars = /[<>:"|?*\x00-\x1f]/;
+  if (invalidChars.test(path)) {
+    return false;
+  }
+  
+  // Check for valid path structure
+  // Allow forward slashes, backslashes, dots, spaces, etc.
+  return true;
+}
+
+/**
+ * Check if path is absolute
+ * 
+ * @param path - Path to check
+ * @returns True if path is absolute
+ */
+export function isAbsolutePath(path: string): boolean {
+  if (!path) return false;
+  
+  const normalized = normalizePath(path);
+  
+  // Unix absolute path (starts with /)
+  if (normalized.startsWith('/')) {
+    return true;
+  }
+  
+  // Windows absolute path (starts with drive letter like C:)
+  if (/^[A-Za-z]:/.test(path)) {
+    return true;
+  }
+  
+  // UNC path (starts with \\)
+  if (path.startsWith('\\\\') || path.startsWith('//')) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Check if path is UNC format
+ * 
+ * @param path - Path to check
+ * @returns True if path is UNC format
+ */
+export function isUncPath(path: string): boolean {
+  if (!path) return false;
+  return path.startsWith('\\\\') || path.startsWith('//');
+}
+
+/**
+ * Ensure path is absolute by prepending library root if needed
+ * 
+ * @param path - Path to ensure is absolute
+ * @param libraryRoot - Library root path
+ * @returns Absolute path
+ */
+export function ensureAbsolutePath(path: string, libraryRoot: string): string {
+  if (isAbsolutePath(path)) {
+    return normalizePath(path);
+  }
+  
+  const normalizedRoot = normalizePath(libraryRoot);
+  const normalizedPathValue = normalizePath(path);
+  
+  // Ensure root doesn't end with slash and path doesn't start with slash
+  const root = normalizedRoot.endsWith('/') ? normalizedRoot.slice(0, -1) : normalizedRoot;
+  const relPath = normalizedPathValue.startsWith('/') ? normalizedPathValue.substring(1) : normalizedPathValue;
+  
+  return `${root}/${relPath}`;
+}
+
+/**
+ * Detect platform (Windows, Mac, Linux)
+ * 
+ * @returns Platform string
+ */
+export function detectPlatform(): 'windows' | 'mac' | 'linux' | 'unknown' {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return 'unknown';
+  }
+  
+  const platform = navigator.platform.toLowerCase();
+  
+  if (platform.includes('win')) {
+    return 'windows';
+  }
+  
+  if (platform.includes('mac')) {
+    return 'mac';
+  }
+  
+  if (platform.includes('linux') || platform.includes('x11')) {
+    return 'linux';
+  }
+  
+  return 'unknown';
 }
 

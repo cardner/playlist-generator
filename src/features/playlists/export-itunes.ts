@@ -81,8 +81,43 @@ export function exportITunesXML(
     }
 
     // Normalize path for iTunes (forward slashes)
-    const normalizedPath = normalizePathForService(path, 'itunes');
-    const fileUrl = 'file://' + normalizedPath;
+    let normalizedPath = normalizePathForService(path, 'itunes');
+    
+    // If libraryPath is provided, ensure path is absolute
+    if (libraryPath) {
+      const libraryRootNormalized = normalizePathForService(libraryPath, 'itunes');
+      
+      // If path is relative, make it absolute using library root
+      if (!normalizedPath.startsWith('/') && !normalizedPath.match(/^[A-Za-z]:/)) {
+        const root = libraryRootNormalized.endsWith('/') 
+          ? libraryRootNormalized.slice(0, -1) 
+          : libraryRootNormalized;
+        normalizedPath = `${root}/${normalizedPath}`;
+      }
+    }
+    
+    // Ensure path starts with / for file:// URL (Mac) or drive letter (Windows)
+    // iTunes expects file:// URLs with absolute paths
+    let fileUrl: string;
+    if (normalizedPath.match(/^[A-Za-z]:/)) {
+      // Windows path: file:///C:/Music/Track.mp3
+      fileUrl = 'file:///' + normalizedPath;
+    } else if (normalizedPath.startsWith('/')) {
+      // Unix/Mac path: file:///Users/me/Music/Track.mp3
+      fileUrl = 'file://' + normalizedPath;
+    } else {
+      // Relative path: make it absolute with library root or use as-is
+      if (libraryPath) {
+        const libraryRootNormalized = normalizePathForService(libraryPath, 'itunes');
+        const root = libraryRootNormalized.endsWith('/') 
+          ? libraryRootNormalized.slice(0, -1) 
+          : libraryRootNormalized;
+        fileUrl = 'file://' + root + '/' + normalizedPath;
+      } else {
+        // Fallback: assume it's relative to current directory
+        fileUrl = 'file:///' + normalizedPath;
+      }
+    }
 
     const title = track.tags.title || "Unknown Title";
     const artist = track.tags.artist || "Unknown Artist";
