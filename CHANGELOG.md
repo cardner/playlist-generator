@@ -17,6 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [0.7.0] - 2026-01-10
+
+### Added
+
+- adding better responsive layout for mobile screens.
+
+### Other Changes
+
+- Merge pull request #4 from cardner/ui-responsive
+
 ## [0.6.3] - 2025-12-20
 
 ### Fixed
