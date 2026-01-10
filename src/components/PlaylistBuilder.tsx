@@ -48,7 +48,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { PlaylistRequest, PlaylistRequestErrors } from "@/types/playlist";
-import { getAllGenres, getAllGenresWithStats, getAllArtists, getAllAlbums, getAllTrackTitles, getCurrentLibraryRoot, getAllCollections, getCurrentCollectionId } from "@/db/storage";
+import { getAllGenres, getAllGenresWithStats, getCurrentLibraryRoot, getAllCollections, getCurrentCollectionId, searchArtists, searchAlbums, searchTrackTitles, getTopArtists, getTopAlbums, getTopTrackTitles } from "@/db/storage";
 import type { LibraryRootRecord } from "@/db/schema";
 import type { GenreWithStats } from "@/features/library/genre-normalization";
 // Form state and validation are now handled by usePlaylistForm hook
@@ -111,13 +111,17 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [genres, setGenres] = useState<string[]>([]);
   const [genresWithStats, setGenresWithStats] = useState<GenreWithStats[]>([]);
-  const [artists, setArtists] = useState<string[]>([]);
-  const [albums, setAlbums] = useState<string[]>([]);
-  const [trackTitles, setTrackTitles] = useState<string[]>([]);
   const [isLoadingGenres, setIsLoadingGenres] = useState(true);
-  const [isLoadingArtists, setIsLoadingArtists] = useState(true);
-  const [isLoadingAlbums, setIsLoadingAlbums] = useState(true);
-  const [isLoadingTracks, setIsLoadingTracks] = useState(true);
+  
+  // Cache for search results (key: query string, value: results array)
+  const [artistsCache, setArtistsCache] = useState<Map<string, string[]>>(new Map());
+  const [albumsCache, setAlbumsCache] = useState<Map<string, string[]>>(new Map());
+  const [tracksCache, setTracksCache] = useState<Map<string, string[]>>(new Map());
+  
+  // Cache for top items (shown when query is empty or too short)
+  const [topArtistsCache, setTopArtistsCache] = useState<string[] | null>(null);
+  const [topAlbumsCache, setTopAlbumsCache] = useState<string[] | null>(null);
+  const [topTracksCache, setTopTracksCache] = useState<string[] | null>(null);
   const [showCollectionSelector, setShowCollectionSelector] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -168,59 +172,117 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
     }
   }, [selectedCollectionId]);
 
-  // Load artists from library
+  // Clear caches when collection changes
   useEffect(() => {
-    async function loadArtists() {
-      try {
-        setIsLoadingArtists(true);
-        const libraryArtists = await getAllArtists(selectedCollectionId || undefined);
-        setArtists(libraryArtists);
-      } catch (error) {
-        logger.error("Failed to load artists:", error);
-      } finally {
-        setIsLoadingArtists(false);
-      }
-    }
-    if (selectedCollectionId !== null) {
-      loadArtists();
-    }
+    setArtistsCache(new Map());
+    setAlbumsCache(new Map());
+    setTracksCache(new Map());
+    setTopArtistsCache(null);
+    setTopAlbumsCache(null);
+    setTopTracksCache(null);
   }, [selectedCollectionId]);
 
-  // Load albums from library
-  useEffect(() => {
-    async function loadAlbums() {
-      try {
-        setIsLoadingAlbums(true);
-        const libraryAlbums = await getAllAlbums(selectedCollectionId || undefined);
-        setAlbums(libraryAlbums);
-      } catch (error) {
-        logger.error("Failed to load albums:", error);
-      } finally {
-        setIsLoadingAlbums(false);
-      }
+  /**
+   * Async search function for artists with caching
+   */
+  const handleSearchArtists = async (query: string): Promise<string[]> => {
+    const cacheKey = query.toLowerCase().trim();
+    
+    // Check cache first
+    if (artistsCache.has(cacheKey)) {
+      return artistsCache.get(cacheKey)!;
     }
-    if (selectedCollectionId !== null) {
-      loadAlbums();
-    }
-  }, [selectedCollectionId]);
 
-  // Load track titles from library
-  useEffect(() => {
-    async function loadTrackTitles() {
-      try {
-        setIsLoadingTracks(true);
-        const libraryTracks = await getAllTrackTitles(selectedCollectionId || undefined);
-        setTrackTitles(libraryTracks);
-      } catch (error) {
-        logger.error("Failed to load track titles:", error);
-      } finally {
-        setIsLoadingTracks(false);
+    // If query is empty or too short, return top artists
+    if (!cacheKey || cacheKey.length < 2) {
+      if (topArtistsCache) {
+        return topArtistsCache;
       }
+      const topArtists = await getTopArtists(20, selectedCollectionId || undefined);
+      setTopArtistsCache(topArtists);
+      return topArtists;
     }
-    if (selectedCollectionId !== null) {
-      loadTrackTitles();
+
+    // Perform search
+    const results = await searchArtists(query, 50, selectedCollectionId || undefined);
+    
+    // Cache results
+    setArtistsCache((prev) => {
+      const newCache = new Map(prev);
+      newCache.set(cacheKey, results);
+      return newCache;
+    });
+
+    return results;
+  };
+
+  /**
+   * Async search function for albums with caching
+   */
+  const handleSearchAlbums = async (query: string): Promise<string[]> => {
+    const cacheKey = query.toLowerCase().trim();
+    
+    // Check cache first
+    if (albumsCache.has(cacheKey)) {
+      return albumsCache.get(cacheKey)!;
     }
-  }, [selectedCollectionId]);
+
+    // If query is empty or too short, return top albums
+    if (!cacheKey || cacheKey.length < 2) {
+      if (topAlbumsCache) {
+        return topAlbumsCache;
+      }
+      const topAlbums = await getTopAlbums(20, selectedCollectionId || undefined);
+      setTopAlbumsCache(topAlbums);
+      return topAlbums;
+    }
+
+    // Perform search
+    const results = await searchAlbums(query, 50, selectedCollectionId || undefined);
+    
+    // Cache results
+    setAlbumsCache((prev) => {
+      const newCache = new Map(prev);
+      newCache.set(cacheKey, results);
+      return newCache;
+    });
+
+    return results;
+  };
+
+  /**
+   * Async search function for track titles with caching
+   */
+  const handleSearchTracks = async (query: string): Promise<string[]> => {
+    const cacheKey = query.toLowerCase().trim();
+    
+    // Check cache first
+    if (tracksCache.has(cacheKey)) {
+      return tracksCache.get(cacheKey)!;
+    }
+
+    // If query is empty or too short, return top tracks
+    if (!cacheKey || cacheKey.length < 2) {
+      if (topTracksCache) {
+        return topTracksCache;
+      }
+      const topTracks = await getTopTrackTitles(20, selectedCollectionId || undefined);
+      setTopTracksCache(topTracks);
+      return topTracks;
+    }
+
+    // Perform search
+    const results = await searchTrackTitles(query, 50, selectedCollectionId || undefined);
+    
+    // Cache results
+    setTracksCache((prev) => {
+      const newCache = new Map(prev);
+      newCache.set(cacheKey, results);
+      return newCache;
+    });
+
+    return results;
+  };
 
   // Auto-save draft is now handled by usePlaylistForm hook
 
@@ -606,7 +668,7 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
             setFormData({ ...formData, disallowedArtists: values })
           }
           placeholder="Add artist to exclude..."
-          suggestions={artists}
+          onSearch={handleSearchArtists}
           icon={<UserX className="size-4" />}
         />
       </div>
@@ -628,7 +690,7 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
             setFormData({ ...formData, suggestedArtists: values })
           }
           placeholder="Add artist to include..."
-          suggestions={artists}
+          onSearch={handleSearchArtists}
           icon={<Music className="size-4" />}
         />
       </div>
@@ -651,7 +713,7 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
               setFormData({ ...formData, suggestedAlbums: values })
             }
             placeholder="Add album to include..."
-            suggestions={albums}
+            onSearch={handleSearchAlbums}
             icon={<Music className="size-4" />}
           />
         </div>
@@ -675,7 +737,7 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
               setFormData({ ...formData, suggestedTracks: values })
             }
             placeholder="Add track name to include..."
-            suggestions={trackTitles}
+            onSearch={handleSearchTracks}
             icon={<Music className="size-4" />}
           />
         </div>
@@ -748,7 +810,7 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
               setFormData({ ...formData, suggestedArtists: values })
             }
             placeholder="Select artists from your collection..."
-            suggestions={artists}
+            onSearch={handleSearchArtists}
             icon={<Users className="size-4" />}
           />
         </div>
@@ -772,7 +834,7 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
               setFormData({ ...formData, suggestedAlbums: values })
             }
             placeholder="Select albums from your collection..."
-            suggestions={albums}
+            onSearch={handleSearchAlbums}
             icon={<Music className="size-4" />}
           />
         </div>
@@ -796,7 +858,7 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
               setFormData({ ...formData, suggestedTracks: values })
             }
             placeholder="Select tracks from your collection..."
-            suggestions={trackTitles}
+            onSearch={handleSearchTracks}
             icon={<Music className="size-4" />}
           />
         </div>

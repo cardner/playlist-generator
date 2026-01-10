@@ -40,9 +40,12 @@
 
 "use client";
 
-import { useState } from "react";
-import { X, AlertCircle } from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { X, AlertCircle, Loader2 } from "lucide-react";
 import type { GenreWithStats } from "@/features/library/genre-normalization";
+import { useDebounce } from "@/lib/hooks/useDebounce";
+import { useVirtualizer } from "@tanstack/react-virtual";
+
 export interface ChipInputProps {
   /** Current array of selected values */
   values: string[];
@@ -50,8 +53,10 @@ export interface ChipInputProps {
   onChange: (values: string[]) => void;
   /** Placeholder text for the input */
   placeholder?: string;
-  /** Array of suggestions for autocomplete */
+  /** Array of suggestions for autocomplete (synchronous mode) */
   suggestions?: string[];
+  /** Async search function (async mode - takes precedence over suggestions) */
+  onSearch?: (query: string) => Promise<string[]>;
   /** Error message to display below the input */
   error?: string;
   /** Icon to display next to the label (optional) */
@@ -60,6 +65,12 @@ export interface ChipInputProps {
   showCounts?: boolean;
   /** Genre statistics for displaying track counts */
   genreStats?: GenreWithStats[];
+  /** Minimum characters before searching (default: 2) */
+  minSearchLength?: number;
+  /** Maximum results to display (default: 50) */
+  maxResults?: number;
+  /** Debounce delay in milliseconds (default: 300) */
+  debounceDelay?: number;
 }
 
 export function ChipInput({
@@ -67,13 +78,63 @@ export function ChipInput({
   onChange,
   placeholder = "Add item...",
   suggestions = [],
+  onSearch,
   error,
   icon,
   showCounts = false,
   genreStats = [],
+  minSearchLength = 2,
+  maxResults = 50,
+  debounceDelay = 300,
 }: ChipInputProps) {
   const [inputValue, setInputValue] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<string[]>([]);
+  const [totalResultsCount, setTotalResultsCount] = useState<number | null>(null);
+  
+  // Ref for virtual scrolling container
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  // Debounce the input value for async search
+  const debouncedInputValue = useDebounce(inputValue, debounceDelay);
+
+  // Determine if we're using async search mode
+  const isAsyncMode = !!onSearch;
+
+  /**
+   * Perform async search when debounced value changes or dropdown opens
+   */
+  useEffect(() => {
+    if (!isAsyncMode || !showSuggestions) {
+      return;
+    }
+
+    const query = debouncedInputValue.trim();
+    const shouldShowTopResults = query.length === 0 || query.length < minSearchLength;
+    
+    // Perform search (empty/short query will return top results)
+    const performSearch = async () => {
+      setIsSearching(true);
+      try {
+        // If query is too short, pass empty string to get top results
+        const searchQuery = shouldShowTopResults ? "" : query;
+        const results = await onSearch(searchQuery);
+        setSearchResults(results);
+        // Note: We don't know the total count from search functions, so we'll show
+        // "Showing top X" if results.length === maxResults
+        setTotalResultsCount(results.length === maxResults ? results.length : null);
+      } catch (error) {
+        console.error("Search error:", error);
+        setSearchResults([]);
+        setTotalResultsCount(null);
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    performSearch();
+  }, [debouncedInputValue, onSearch, isAsyncMode, showSuggestions, minSearchLength, maxResults]);
 
   /**
    * Add a new value to the array
@@ -108,10 +169,22 @@ export function ChipInput({
 
   /**
    * Filter suggestions based on current input and exclude already selected values
+   * Used in synchronous mode (when suggestions prop is provided)
    */
-  const filteredSuggestions = suggestions.filter(
-    (s) => !values.includes(s) && s.toLowerCase().includes(inputValue.toLowerCase())
-  );
+  const filteredSuggestions = useMemo(() => {
+    if (isAsyncMode) {
+      // In async mode, use searchResults
+      return searchResults.filter((s) => !values.includes(s));
+    }
+
+    // Synchronous mode: filter suggestions
+    const filtered = suggestions.filter(
+      (s) => !values.includes(s) && s.toLowerCase().includes(inputValue.toLowerCase())
+    );
+    
+    // Limit results in sync mode too
+    return filtered.slice(0, maxResults);
+  }, [isAsyncMode, searchResults, suggestions, values, inputValue, maxResults]);
 
   /**
    * Get track count for a genre if showing counts
@@ -121,6 +194,21 @@ export function ChipInput({
     const stat = genreStats.find((g) => g.normalized === genre);
     return stat?.trackCount;
   };
+
+  // Determine if we should show suggestions
+  const shouldShowSuggestions = showSuggestions && (
+    filteredSuggestions.length > 0 || 
+    isSearching || 
+    (isAsyncMode && inputValue.trim().length > 0 && inputValue.trim().length < minSearchLength)
+  );
+
+  // Virtual scrolling for suggestion list
+  const virtualizer = useVirtualizer({
+    count: filteredSuggestions.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 40, // Estimated height per item (px)
+    overscan: 5, // Render 5 extra items outside viewport for smooth scrolling
+  });
 
   return (
     <div className="space-y-2">
@@ -155,26 +243,70 @@ export function ChipInput({
             className="flex-1 min-w-[120px] bg-transparent text-app-primary placeholder-app-tertiary outline-none"
           />
         </div>
-        {showSuggestions && filteredSuggestions.length > 0 && (
-          <div className="absolute z-10 w-full mt-1 bg-app-surface border border-app-border rounded-sm shadow-lg max-h-48 overflow-y-auto">
-            {filteredSuggestions.map((suggestion) => {
-              const trackCount = getTrackCount(suggestion);
-              return (
-                <button
-                  key={suggestion}
-                  type="button"
-                  onClick={() => handleAdd(suggestion)}
-                  className="w-full px-4 py-2 text-left text-app-primary hover:bg-app-hover transition-colors flex items-center justify-between"
+        {shouldShowSuggestions && (
+          <div className="absolute z-10 w-full mt-1 bg-app-surface border border-app-border rounded-sm shadow-lg max-h-48 overflow-hidden">
+            {isSearching ? (
+              <div className="px-4 py-3 text-app-secondary text-sm flex items-center gap-2">
+                <Loader2 className="size-4 animate-spin" />
+                <span>Searching...</span>
+              </div>
+            ) : filteredSuggestions.length > 0 ? (
+              <>
+                <div
+                  ref={parentRef}
+                  className="overflow-y-auto max-h-48"
+                  style={{ height: `${Math.min(virtualizer.getTotalSize(), 192)}px` }}
                 >
-                  <span>{suggestion}</span>
-                  {trackCount !== undefined && (
-                    <span className="text-app-tertiary text-xs ml-2">
-                      ({trackCount} {trackCount === 1 ? 'track' : 'tracks'})
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+                  <div
+                    style={{
+                      height: `${virtualizer.getTotalSize()}px`,
+                      width: '100%',
+                      position: 'relative',
+                    }}
+                  >
+                    {virtualizer.getVirtualItems().map((virtualItem) => {
+                      const suggestion = filteredSuggestions[virtualItem.index];
+                      const trackCount = getTrackCount(suggestion);
+                      return (
+                        <div
+                          key={virtualItem.key}
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: `${virtualItem.size}px`,
+                            transform: `translateY(${virtualItem.start}px)`,
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleAdd(suggestion)}
+                            className="w-full h-full px-4 py-2 text-left text-app-primary hover:bg-app-hover transition-colors flex items-center justify-between"
+                          >
+                            <span>{suggestion}</span>
+                            {trackCount !== undefined && (
+                              <span className="text-app-tertiary text-xs ml-2">
+                                ({trackCount} {trackCount === 1 ? 'track' : 'tracks'})
+                              </span>
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                {totalResultsCount !== null && filteredSuggestions.length === maxResults && (
+                  <div className="px-4 py-2 text-app-tertiary text-xs border-t border-app-border">
+                    Showing top {maxResults} results
+                  </div>
+                )}
+              </>
+            ) : inputValue.trim().length >= minSearchLength ? (
+              <div className="px-4 py-3 text-app-tertiary text-sm">
+                No results found
+              </div>
+            ) : null}
           </div>
         )}
       </div>

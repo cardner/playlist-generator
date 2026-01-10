@@ -208,6 +208,338 @@ export async function getAllTrackTitles(libraryRootId?: string): Promise<string[
 }
 
 /**
+ * Search artists by query (case-insensitive prefix matching)
+ * 
+ * Optimized for large collections by:
+ * - Using libraryRootId index for efficient filtering
+ * - Early termination when limit is reached
+ * - Prefix matching for better performance
+ * 
+ * @param query - Search query string (minimum 1 character)
+ * @param limit - Maximum number of results to return (default: 50)
+ * @param libraryRootId - Optional library root ID to limit scope
+ * @returns Sorted array of matching artist names
+ * 
+ * @example
+ * ```typescript
+ * const artists = await searchArtists('beat', 20, libraryRootId);
+ * ```
+ */
+export async function searchArtists(
+  query: string,
+  limit: number = 50,
+  libraryRootId?: string
+): Promise<string[]> {
+  // Empty query returns empty array (caller should use getTopArtists for initial display)
+  if (!query || query.trim().length === 0) {
+    return [];
+  }
+
+  const lowerQuery = query.toLowerCase().trim();
+  let collection = db.tracks.toCollection();
+  
+  if (libraryRootId) {
+    collection = db.tracks.where("libraryRootId").equals(libraryRootId);
+  }
+
+  const artistSet = new Set<string>();
+  const artistLowerMap = new Map<string, string>(); // lower -> original
+  
+  // Process tracks with early termination
+  await collection.each((track) => {
+    if (artistSet.size >= limit) {
+      return false; // Stop iteration
+    }
+
+    const artist = track.tags.artist?.trim();
+    if (!artist || artist === "Unknown Artist") {
+      return; // Continue to next track
+    }
+
+    const lowerArtist = artist.toLowerCase();
+    
+    // Check if already added (case-insensitive)
+    if (artistLowerMap.has(lowerArtist)) {
+      return; // Already added
+    }
+
+    // Prefix match
+    if (lowerArtist.startsWith(lowerQuery)) {
+      artistSet.add(artist);
+      artistLowerMap.set(lowerArtist, artist);
+    }
+  });
+
+  // Sort results: exact matches first, then alphabetical
+  const results = Array.from(artistSet);
+  const exactMatch = results.find(a => a.toLowerCase() === lowerQuery);
+  const otherMatches = results.filter(a => a.toLowerCase() !== lowerQuery).sort();
+  
+  return exactMatch ? [exactMatch, ...otherMatches] : otherMatches;
+}
+
+/**
+ * Search albums by query (case-insensitive prefix matching)
+ * 
+ * Optimized for large collections with early termination and prefix matching.
+ * 
+ * @param query - Search query string (minimum 1 character)
+ * @param limit - Maximum number of results to return (default: 50)
+ * @param libraryRootId - Optional library root ID to limit scope
+ * @returns Sorted array of matching album names
+ * 
+ * @example
+ * ```typescript
+ * const albums = await searchAlbums('abbey', 20, libraryRootId);
+ * ```
+ */
+export async function searchAlbums(
+  query: string,
+  limit: number = 50,
+  libraryRootId?: string
+): Promise<string[]> {
+  if (!query || query.trim().length === 0) {
+    return [];
+  }
+
+  const lowerQuery = query.toLowerCase().trim();
+  let collection = db.tracks.toCollection();
+  
+  if (libraryRootId) {
+    collection = db.tracks.where("libraryRootId").equals(libraryRootId);
+  }
+
+  const albumSet = new Set<string>();
+  const albumLowerMap = new Map<string, string>(); // lower -> original
+  
+  // Process tracks with early termination
+  await collection.each((track) => {
+    if (albumSet.size >= limit) {
+      return false; // Stop iteration
+    }
+
+    const album = track.tags.album?.trim();
+    if (!album || album === "Unknown Album") {
+      return; // Continue to next track
+    }
+
+    const lowerAlbum = album.toLowerCase();
+    
+    // Check if already added (case-insensitive)
+    if (albumLowerMap.has(lowerAlbum)) {
+      return; // Already added
+    }
+
+    // Prefix match
+    if (lowerAlbum.startsWith(lowerQuery)) {
+      albumSet.add(album);
+      albumLowerMap.set(lowerAlbum, album);
+    }
+  });
+
+  // Sort results: exact matches first, then alphabetical
+  const results = Array.from(albumSet);
+  const exactMatch = results.find(a => a.toLowerCase() === lowerQuery);
+  const otherMatches = results.filter(a => a.toLowerCase() !== lowerQuery).sort();
+  
+  return exactMatch ? [exactMatch, ...otherMatches] : otherMatches;
+}
+
+/**
+ * Search track titles by query (case-insensitive prefix matching)
+ * 
+ * Optimized for large collections with early termination and prefix matching.
+ * 
+ * @param query - Search query string (minimum 1 character)
+ * @param limit - Maximum number of results to return (default: 50)
+ * @param libraryRootId - Optional library root ID to limit scope
+ * @returns Sorted array of matching track titles
+ * 
+ * @example
+ * ```typescript
+ * const titles = await searchTrackTitles('hey jude', 20, libraryRootId);
+ * ```
+ */
+export async function searchTrackTitles(
+  query: string,
+  limit: number = 50,
+  libraryRootId?: string
+): Promise<string[]> {
+  if (!query || query.trim().length === 0) {
+    return [];
+  }
+
+  const lowerQuery = query.toLowerCase().trim();
+  let collection = db.tracks.toCollection();
+  
+  if (libraryRootId) {
+    collection = db.tracks.where("libraryRootId").equals(libraryRootId);
+  }
+
+  const titleSet = new Set<string>();
+  const titleLowerMap = new Map<string, string>(); // lower -> original
+  
+  // Process tracks with early termination
+  await collection.each((track) => {
+    if (titleSet.size >= limit) {
+      return false; // Stop iteration
+    }
+
+    const title = track.tags.title?.trim();
+    if (!title || title === "Unknown Title") {
+      return; // Continue to next track
+    }
+
+    const lowerTitle = title.toLowerCase();
+    
+    // Check if already added (case-insensitive)
+    if (titleLowerMap.has(lowerTitle)) {
+      return; // Already added
+    }
+
+    // Prefix match
+    if (lowerTitle.startsWith(lowerQuery)) {
+      titleSet.add(title);
+      titleLowerMap.set(lowerTitle, title);
+    }
+  });
+
+  // Sort results: exact matches first, then alphabetical
+  const results = Array.from(titleSet);
+  const exactMatch = results.find(t => t.toLowerCase() === lowerQuery);
+  const otherMatches = results.filter(t => t.toLowerCase() !== lowerQuery).sort();
+  
+  return exactMatch ? [exactMatch, ...otherMatches] : otherMatches;
+}
+
+/**
+ * Get top N most common artists (for initial display when no query)
+ * 
+ * Counts track occurrences per artist and returns the most common ones.
+ * 
+ * @param limit - Maximum number of results to return (default: 20)
+ * @param libraryRootId - Optional library root ID to limit scope
+ * @returns Sorted array of most common artist names
+ * 
+ * @example
+ * ```typescript
+ * const topArtists = await getTopArtists(20, libraryRootId);
+ * ```
+ */
+export async function getTopArtists(
+  limit: number = 20,
+  libraryRootId?: string
+): Promise<string[]> {
+  let collection = db.tracks.toCollection();
+  
+  if (libraryRootId) {
+    collection = db.tracks.where("libraryRootId").equals(libraryRootId);
+  }
+
+  const artistCounts = new Map<string, number>();
+  
+  await collection.each((track) => {
+    const artist = track.tags.artist?.trim();
+    if (artist && artist !== "Unknown Artist") {
+      artistCounts.set(artist, (artistCounts.get(artist) || 0) + 1);
+    }
+  });
+
+  // Sort by count (descending), then by name (ascending)
+  const sorted = Array.from(artistCounts.entries())
+    .sort((a, b) => {
+      if (b[1] !== a[1]) {
+        return b[1] - a[1]; // Higher count first
+      }
+      return a[0].localeCompare(b[0]); // Alphabetical if same count
+    })
+    .slice(0, limit)
+    .map(([artist]) => artist);
+
+  return sorted;
+}
+
+/**
+ * Get top N most common albums (for initial display when no query)
+ * 
+ * @param limit - Maximum number of results to return (default: 20)
+ * @param libraryRootId - Optional library root ID to limit scope
+ * @returns Sorted array of most common album names
+ */
+export async function getTopAlbums(
+  limit: number = 20,
+  libraryRootId?: string
+): Promise<string[]> {
+  let collection = db.tracks.toCollection();
+  
+  if (libraryRootId) {
+    collection = db.tracks.where("libraryRootId").equals(libraryRootId);
+  }
+
+  const albumCounts = new Map<string, number>();
+  
+  await collection.each((track) => {
+    const album = track.tags.album?.trim();
+    if (album && album !== "Unknown Album") {
+      albumCounts.set(album, (albumCounts.get(album) || 0) + 1);
+    }
+  });
+
+  // Sort by count (descending), then by name (ascending)
+  const sorted = Array.from(albumCounts.entries())
+    .sort((a, b) => {
+      if (b[1] !== a[1]) {
+        return b[1] - a[1]; // Higher count first
+      }
+      return a[0].localeCompare(b[0]); // Alphabetical if same count
+    })
+    .slice(0, limit)
+    .map(([album]) => album);
+
+  return sorted;
+}
+
+/**
+ * Get top N most common track titles (for initial display when no query)
+ * 
+ * @param limit - Maximum number of results to return (default: 20)
+ * @param libraryRootId - Optional library root ID to limit scope
+ * @returns Sorted array of most common track titles
+ */
+export async function getTopTrackTitles(
+  limit: number = 20,
+  libraryRootId?: string
+): Promise<string[]> {
+  let collection = db.tracks.toCollection();
+  
+  if (libraryRootId) {
+    collection = db.tracks.where("libraryRootId").equals(libraryRootId);
+  }
+
+  const titleCounts = new Map<string, number>();
+  
+  await collection.each((track) => {
+    const title = track.tags.title?.trim();
+    if (title && title !== "Unknown Title") {
+      titleCounts.set(title, (titleCounts.get(title) || 0) + 1);
+    }
+  });
+
+  // Sort by count (descending), then by name (ascending)
+  const sorted = Array.from(titleCounts.entries())
+    .sort((a, b) => {
+      if (b[1] !== a[1]) {
+        return b[1] - a[1]; // Higher count first
+      }
+      return a[0].localeCompare(b[0]); // Alphabetical if same count
+    })
+    .slice(0, limit)
+    .map(([title]) => title);
+
+  return sorted;
+}
+
+/**
  * Get all unique genres from library
  * 
  * Returns normalized genre names (without statistics).
