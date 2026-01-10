@@ -622,23 +622,37 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     try {
       const sampleResult = await searchTrackSample(trackInfo);
       if (sampleResult) {
-        // Clear searching state BEFORE setting sample result to ensure autoPlay works
-        // This ensures that when the audio element loads, autoPlay prop will be true
-        setSearchingTrack(null);
+        // Set sample result and playing track state first
         setSampleResult(trackFileId, sampleResult);
         setPlayingTrack(trackFileId);
-        // Audio will auto-play via InlineAudioPlayer with autoPlay prop
-        // If audio already loaded, trigger play programmatically as fallback
-        setTimeout(async () => {
+        // Clear searching state AFTER setting sample result to ensure audio element exists
+        setSearchingTrack(null);
+        
+        // Trigger play after a short delay to ensure React has rendered the audio element
+        // and the audio has started loading. We'll try multiple times to handle timing issues.
+        const attemptPlay = async (attempts = 0) => {
+          if (attempts > 10) return; // Max 10 attempts (1 second total)
+          
           const audioControls = audioRefs.current.get(trackFileId);
-          if (audioControls && playingTrackId === trackFileId) {
+          if (audioControls) {
             try {
               await audioControls.play();
-            } catch {
-              // Ignore play errors - user may have paused or switched tracks
+              // Success - stop retrying
+              return;
+            } catch (err) {
+              // If play fails, try again after a short delay (audio might still be loading)
+              if (attempts < 10) {
+                setTimeout(() => attemptPlay(attempts + 1), 100);
+              }
             }
+          } else if (attempts < 10) {
+            // Audio controls not ready yet, try again
+            setTimeout(() => attemptPlay(attempts + 1), 100);
           }
-        }, 50);
+        };
+        
+        // Start attempting to play after a short initial delay
+        setTimeout(() => attemptPlay(), 50);
       } else {
         setTrackError(trackFileId, "Preview not available for this track");
         setSearchingTrack(null);
@@ -1360,22 +1374,18 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                       clearPlayingTrack();
                     }}
                     onLoaded={async () => {
-                      // Audio loaded successfully - trigger play if needed
-                      // Check if this track should be playing (even if searchingTrackId is temporarily set)
-                      // The searchingTrackId will be cleared before sampleResult is set, but
-                      // if loadeddata fires before that, we still want to play
-                      if (playingTrackId === trackFileId) {
-                        // Use a small delay to allow state updates to propagate
-                        setTimeout(async () => {
-                          const audioControls = audioRefs.current.get(trackFileId);
-                          if (audioControls && playingTrackId === trackFileId && !searchingTrackId) {
-                            try {
-                              await audioControls.play();
-                            } catch {
-                              // Ignore play errors - user may have paused or switched tracks
-                            }
+                      // Audio loaded successfully - trigger play if this track should be playing
+                      // This is a fallback in case autoPlay didn't work due to timing issues
+                      if (playingTrackId === trackFileId && !searchingTrackId) {
+                        const audioControls = audioRefs.current.get(trackFileId);
+                        if (audioControls) {
+                          try {
+                            await audioControls.play();
+                          } catch {
+                            // Ignore play errors - user may have paused or switched tracks
+                            // The useAudioPreview hook should handle auto-play via the autoPlay prop
                           }
-                        }, 10);
+                        }
                       }
                     }}
                   />
@@ -1481,22 +1491,18 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                       clearPlayingTrack();
                     }}
                     onLoaded={async () => {
-                      // Audio loaded successfully - trigger play if needed
-                      // Check if this track should be playing (even if searchingTrackId is temporarily set)
-                      // The searchingTrackId will be cleared before sampleResult is set, but
-                      // if loadeddata fires before that, we still want to play
-                      if (playingTrackId === trackFileId) {
-                        // Use a small delay to allow state updates to propagate
-                        setTimeout(async () => {
-                          const audioControls = audioRefs.current.get(trackFileId);
-                          if (audioControls && playingTrackId === trackFileId && !searchingTrackId) {
-                            try {
-                              await audioControls.play();
-                            } catch {
-                              // Ignore play errors - user may have paused or switched tracks
-                            }
+                      // Audio loaded successfully - trigger play if this track should be playing
+                      // This is a fallback in case autoPlay didn't work due to timing issues
+                      if (playingTrackId === trackFileId && !searchingTrackId) {
+                        const audioControls = audioRefs.current.get(trackFileId);
+                        if (audioControls) {
+                          try {
+                            await audioControls.play();
+                          } catch {
+                            // Ignore play errors - user may have paused or switched tracks
+                            // The useAudioPreview hook should handle auto-play via the autoPlay prop
                           }
-                        }, 10);
+                        }
                       }
                     }}
                   />

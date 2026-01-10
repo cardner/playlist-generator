@@ -36,7 +36,8 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Fragment, useRef, useCallback } from "react";
+import { Edit2, Play, Pause, Loader2 } from "lucide-react";
 import type { TrackRecord } from "@/db/schema";
 import {
   getAllTracks,
@@ -50,6 +51,10 @@ import {
 import { getCurrentLibraryRoot } from "@/db/storage";
 import type { GenreWithStats } from "@/features/library/genre-normalization";
 import { normalizeGenre, buildGenreMappings } from "@/features/library/genre-normalization";
+import { TrackMetadataEditor } from "./TrackMetadataEditor";
+import { InlineAudioPlayer, type InlineAudioPlayerRef } from "./InlineAudioPlayer";
+import { searchTrackSample } from "@/features/audio-preview/platform-searcher";
+import { useAudioPreviewState } from "@/hooks/useAudioPreviewState";
 import { logger } from "@/lib/logger";
 
 type SortField = "title" | "artist" | "duration";
@@ -71,6 +76,23 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
   const [isLoading, setIsLoading] = useState(false); // Start as false - only load when we have a root
   const [libraryRootId, setLibraryRootId] = useState<string | undefined>();
   const [hasLibrary, setHasLibrary] = useState<boolean | null>(null); // null = checking, false = no library, true = has library
+  const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
+
+  // Audio preview state
+  const audioPreviewState = useAudioPreviewState();
+  const {
+    playingTrackId,
+    searchingTrackId,
+    hasSampleResult,
+    getSampleResult,
+    setSampleResult,
+    setError,
+    setPlayingTrack,
+    clearPlayingTrack,
+    setSearchingTrack,
+    clearAll: clearAllAudioState,
+  } = audioPreviewState;
+  const audioRefs = useRef<Map<string, InlineAudioPlayerRef>>(new Map());
 
   // Check if we have a library root before loading
   useEffect(() => {
@@ -237,6 +259,126 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   }
 
+  // Handler for inline audio preview play/pause
+  const handleInlinePlayClick = useCallback(async (
+    trackFileId: string,
+    trackInfo: { title: string; artist: string; album?: string }
+  ) => {
+    // If already playing this track, pause it
+    if (playingTrackId === trackFileId) {
+      const audioControls = audioRefs.current.get(trackFileId);
+      if (audioControls) {
+        audioControls.pause();
+      }
+      clearPlayingTrack();
+      return;
+    }
+
+    // If playing different track, stop it first
+    if (playingTrackId) {
+      const prevAudioControls = audioRefs.current.get(playingTrackId);
+      if (prevAudioControls) {
+        prevAudioControls.stop();
+      }
+      clearPlayingTrack();
+    }
+
+    // Check if we already have sample result cached
+    if (hasSampleResult(trackFileId)) {
+      const sampleResult = getSampleResult(trackFileId)!;
+      // Start playing immediately
+      setPlayingTrack(trackFileId);
+      // Use retry logic to ensure audio element is ready
+      const attemptPlay = async (attempts = 0) => {
+        if (attempts > 10) return; // Max 10 attempts (1 second total)
+        
+        const audioControls = audioRefs.current.get(trackFileId);
+        if (audioControls) {
+          try {
+            await audioControls.play();
+            // Success - stop retrying
+            return;
+          } catch (err) {
+            // If play fails, try again after a short delay
+            if (attempts < 10) {
+              setTimeout(() => attemptPlay(attempts + 1), 100);
+            }
+          }
+        } else if (attempts < 10) {
+          // Audio controls not ready yet, try again
+          setTimeout(() => attemptPlay(attempts + 1), 100);
+        }
+      };
+      
+      // Start attempting to play after a short delay
+      setTimeout(() => attemptPlay(), 50);
+      return;
+    }
+
+    // Search for preview
+    setSearchingTrack(trackFileId);
+    try {
+      const sampleResult = await searchTrackSample(trackInfo);
+      if (sampleResult) {
+        // Set sample result and playing track state first
+        setSampleResult(trackFileId, sampleResult);
+        setPlayingTrack(trackFileId);
+        // Clear searching state AFTER setting sample result to ensure audio element exists
+        setSearchingTrack(null);
+        
+        // Trigger play after a short delay to ensure React has rendered the audio element
+        // and the audio has started loading. We'll try multiple times to handle timing issues.
+        const attemptPlay = async (attempts = 0) => {
+          if (attempts > 15) return; // Max 15 attempts (1.5 seconds total)
+          
+          const audioControls = audioRefs.current.get(trackFileId);
+          if (audioControls) {
+            try {
+              await audioControls.play();
+              // Success - stop retrying
+              return;
+            } catch (err) {
+              // If play fails, try again after a short delay (audio might still be loading)
+              if (attempts < 15) {
+                setTimeout(() => attemptPlay(attempts + 1), 100);
+              }
+            }
+          } else if (attempts < 15) {
+            // Audio controls not ready yet, try again
+            setTimeout(() => attemptPlay(attempts + 1), 100);
+          }
+        };
+        
+        // Use requestAnimationFrame to ensure React has rendered the audio element
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            // Start attempting to play
+            attemptPlay();
+          });
+        });
+      } else {
+        setError(trackFileId, "Preview not available for this track");
+        setSearchingTrack(null);
+      }
+    } catch (error) {
+      logger.error("[LibraryBrowser] Failed to search for preview:", error);
+      setError(trackFileId, "Failed to find preview for this track");
+      setSearchingTrack(null);
+    }
+  }, [playingTrackId, hasSampleResult, getSampleResult, setSampleResult, setError, setPlayingTrack, clearPlayingTrack, setSearchingTrack]);
+
+  // Cleanup when component unmounts
+  useEffect(() => {
+    const currentRefs = audioRefs.current;
+    return () => {
+      // Stop all audio when component unmounts
+      currentRefs.forEach(controls => controls.stop());
+      currentRefs.clear();
+      // Clear all audio preview state
+      clearAllAudioState();
+    };
+  }, [clearAllAudioState]);
+
   // Don't show anything if no library has been selected/scanned yet
   // Wait for library check to complete before deciding
   if (hasLibrary === null) {
@@ -357,6 +499,9 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-app-border">
+                  <th className="text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider w-12">
+                    Play
+                  </th>
                   <th className="text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
                     Title
                   </th>
@@ -372,25 +517,127 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
                   <th className="text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
                     Duration
                   </th>
+                  <th className="text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider w-16">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {filteredTracks.map((track) => (
-                  <tr
-                    key={track.trackFileId}
-                    className="border-b border-app-border hover:bg-app-hover transition-colors"
-                  >
-                    <td className="py-2 px-4 text-app-primary">{track.tags.title}</td>
-                    <td className="py-2 px-4 text-app-primary">{track.tags.artist}</td>
-                    <td className="py-2 px-4 text-app-secondary">{track.tags.album}</td>
-                    <td className="py-2 px-4 text-app-secondary">
-                      {track.tags.genres.join(", ") || "—"}
-                    </td>
-                    <td className="py-2 px-4 text-app-secondary tabular-nums">
-                      {formatDuration(track.tech?.durationSeconds)}
-                    </td>
-                  </tr>
-                ))}
+                {filteredTracks.map((track) => {
+                  const isEditing = editingTrackId === track.id;
+                  const currentGenres = track.enhancedMetadata?.genres || track.tags.genres || [];
+                  
+                  return (
+                    <Fragment key={track.trackFileId}>
+                      <tr
+                        className="border-b border-app-border hover:bg-app-hover transition-colors group"
+                      >
+                        <td className="py-2 px-4">
+                          <button
+                            onClick={() => handleInlinePlayClick(track.trackFileId, {
+                              title: track.tags.title || "Unknown Title",
+                              artist: track.tags.artist || "Unknown Artist",
+                              album: track.tags.album,
+                            })}
+                            disabled={searchingTrackId === track.trackFileId}
+                            className="flex items-center justify-center size-8 text-app-tertiary group-hover:text-accent-primary transition-colors shrink-0 cursor-pointer disabled:opacity-50"
+                            aria-label={playingTrackId === track.trackFileId ? "Pause" : "Play"}
+                            title={playingTrackId === track.trackFileId ? "Pause" : "Play 30-second preview"}
+                          >
+                            {searchingTrackId === track.trackFileId ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : playingTrackId === track.trackFileId ? (
+                              <Pause className="size-4" />
+                            ) : (
+                              <Play className="size-4" />
+                            )}
+                          </button>
+                        </td>
+                        <td className="py-2 px-4 text-app-primary">{track.tags.title}</td>
+                        <td className="py-2 px-4 text-app-primary">{track.tags.artist}</td>
+                        <td className="py-2 px-4 text-app-secondary">{track.tags.album}</td>
+                        <td className="py-2 px-4 text-app-secondary">
+                          {currentGenres.join(", ") || "—"}
+                        </td>
+                        <td className="py-2 px-4 text-app-secondary tabular-nums">
+                          {formatDuration(track.tech?.durationSeconds)}
+                        </td>
+                        <td className="py-2 px-4">
+                          <button
+                            onClick={() => setEditingTrackId(isEditing ? null : track.id)}
+                            className="p-1.5 hover:bg-app-surface rounded-sm transition-colors text-app-secondary hover:text-accent-primary"
+                            aria-label="Edit metadata"
+                            title="Edit metadata"
+                          >
+                            <Edit2 className="size-4" />
+                          </button>
+                        </td>
+                      </tr>
+                      {isEditing && (
+                        <tr key={`${track.id}-editor`}>
+                          <td colSpan={7} className="p-0">
+                            <div className="px-4 py-2">
+                              <TrackMetadataEditor
+                                track={track}
+                                genreSuggestions={genres}
+                                onSave={async (trackId, edits) => {
+                                  setEditingTrackId(null);
+                                  // Reload tracks to show updated metadata
+                                  await loadTracks();
+                                }}
+                                onCancel={() => {
+                                  setEditingTrackId(null);
+                                }}
+                                inline={true}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      {/* Inline Audio Player */}
+                      {hasSampleResult(track.trackFileId) && (
+                        <tr>
+                          <td colSpan={7} className="p-0">
+                            <InlineAudioPlayer
+                              ref={(ref) => {
+                                if (ref) {
+                                  audioRefs.current.set(track.trackFileId, ref);
+                                } else {
+                                  audioRefs.current.delete(track.trackFileId);
+                                }
+                              }}
+                              trackFileId={track.trackFileId}
+                              sampleResult={getSampleResult(track.trackFileId) || null}
+                              autoPlay={playingTrackId === track.trackFileId && !searchingTrackId && hasSampleResult(track.trackFileId)}
+                              onPlay={() => setPlayingTrack(track.trackFileId)}
+                              onPause={() => clearPlayingTrack()}
+                              onEnded={() => clearPlayingTrack()}
+                              onError={(error) => {
+                                setError(track.trackFileId, error);
+                                clearPlayingTrack();
+                              }}
+                              onLoaded={async () => {
+                                // Audio loaded successfully - trigger play if this track should be playing
+                                // This is a fallback in case autoPlay didn't work due to timing issues
+                                if (playingTrackId === track.trackFileId && !searchingTrackId) {
+                                  const audioControls = audioRefs.current.get(track.trackFileId);
+                                  if (audioControls) {
+                                    try {
+                                      await audioControls.play();
+                                    } catch {
+                                      // Ignore play errors - user may have paused or switched tracks
+                                      // The useAudioPreview hook should handle auto-play via the autoPlay prop
+                                    }
+                                  }
+                                }
+                              }}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -37,6 +37,7 @@
 import type { GeneratedPlaylist } from "./matching-engine";
 import type { TrackRecord, FileIndexRecord } from "@/db/schema";
 import { logger } from "@/lib/logger";
+import { normalizePathForService, type ServiceType } from "@/lib/path-normalization";
 
 export interface TrackLookup {
   track: TrackRecord;
@@ -61,7 +62,7 @@ export interface PlaylistLocationConfig {
 /**
  * Escape string for M3U/PLS format
  */
-function escapeM3U(text: string): string {
+export function escapeM3U(text: string): string {
   return text
     .replace(/\\/g, "\\\\")
     .replace(/,/g, "\\,")
@@ -83,7 +84,7 @@ function escapeCSV(text: string): string {
 /**
  * Escape XML text
  */
-function escapeXML(text: string): string {
+export function escapeXML(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -164,7 +165,7 @@ function calculateRelativePath(trackPath: string, playlistLocation: "root" | "su
  * @param config Playlist location and path strategy configuration
  * @returns Path string and whether it's a valid relative path
  */
-function getTrackPath(
+export function getTrackPath(
   trackLookup: TrackLookup,
   config?: PlaylistLocationConfig
 ): {
@@ -178,6 +179,16 @@ function getTrackPath(
   // Prefer relativePath from fileIndex
   if (trackLookup.fileIndex?.relativePath) {
     const relativePath = trackLookup.fileIndex.relativePath;
+    
+    // Validate the relative path
+    if (!relativePath || relativePath.trim().length === 0) {
+      // Invalid relative path, fall through to filename fallback
+      const filename = trackLookup.fileIndex?.name || trackLookup.track.trackFileId;
+      return {
+        path: normalizePath(filename),
+        hasRelativePath: false,
+      };
+    }
     
     switch (strategy) {
       case "relative-to-playlist":
@@ -200,41 +211,72 @@ function getTrackPath(
         const normalizedRelative = normalizePath(relativePath);
         const normalizedPrefix = normalizePath(absolutePathPrefix);
         
-        // Ensure prefix ends with / if it's not empty
-        const prefix = normalizedPrefix && !normalizedPrefix.endsWith("/") 
-          ? normalizedPrefix + "/" 
-          : normalizedPrefix;
-        
-        // Ensure path doesn't start with / if prefix is provided (to avoid double slashes)
-        const pathWithoutLeadingSlash = normalizedRelative.startsWith("/") 
-          ? normalizedRelative.substring(1) 
-          : normalizedRelative;
-        
-        const absolutePath = prefix + pathWithoutLeadingSlash;
-        return {
-          path: normalizePath(absolutePath),
-          hasRelativePath: true,
-        };
+        // If prefix is provided, construct absolute path
+        if (normalizedPrefix) {
+          // Ensure prefix ends with / if it's not empty
+          const prefix = normalizedPrefix.endsWith("/") 
+            ? normalizedPrefix 
+            : normalizedPrefix + "/";
+          
+          // Ensure path doesn't start with / if prefix is provided (to avoid double slashes)
+          const pathWithoutLeadingSlash = normalizedRelative.startsWith("/") 
+            ? normalizedRelative.substring(1) 
+            : normalizedRelative;
+          
+          const absolutePath = prefix + pathWithoutLeadingSlash;
+          return {
+            path: normalizePath(absolutePath),
+            hasRelativePath: true,
+          };
+        } else {
+          // No prefix provided, return relative path as-is (may not work for all services)
+          return {
+            path: normalizePath(normalizedRelative),
+            hasRelativePath: true,
+          };
+        }
         
       default:
         // Default to absolute
         const defaultNormalized = normalizePath(relativePath);
         const defaultPrefix = normalizePath(absolutePathPrefix);
-        const defaultPrefixWithSlash = defaultPrefix && !defaultPrefix.endsWith("/") 
-          ? defaultPrefix + "/" 
-          : defaultPrefix;
-        const defaultPathWithoutSlash = defaultNormalized.startsWith("/") 
-          ? defaultNormalized.substring(1) 
-          : defaultNormalized;
-        return {
-          path: normalizePath(defaultPrefixWithSlash + defaultPathWithoutSlash),
-          hasRelativePath: true,
-        };
+        if (defaultPrefix) {
+          const defaultPrefixWithSlash = defaultPrefix.endsWith("/") 
+            ? defaultPrefix 
+            : defaultPrefix + "/";
+          const defaultPathWithoutSlash = defaultNormalized.startsWith("/") 
+            ? defaultNormalized.substring(1) 
+            : defaultNormalized;
+          return {
+            path: normalizePath(defaultPrefixWithSlash + defaultPathWithoutSlash),
+            hasRelativePath: true,
+          };
+        } else {
+          return {
+            path: normalizePath(defaultNormalized),
+            hasRelativePath: true,
+          };
+        }
     }
   }
 
   // Fallback to filename (no relative path available)
+  // Try to construct a reasonable path from available information
   const filename = trackLookup.fileIndex?.name || trackLookup.track.trackFileId;
+  
+  // If we have track metadata, try to construct a path
+  const track = trackLookup.track;
+  if (track.tags.album && track.tags.artist) {
+    // Construct a path-like structure: Artist/Album/Filename
+    const artist = track.tags.artist.replace(/[<>:"|?*\x00-\x1f]/g, '_');
+    const album = track.tags.album.replace(/[<>:"|?*\x00-\x1f]/g, '_');
+    const constructedPath = `${artist}/${album}/${filename}`;
+    return {
+      path: normalizePath(constructedPath),
+      hasRelativePath: false, // This is a constructed path, not a real relative path
+    };
+  }
+  
   return {
     path: normalizePath(filename),
     hasRelativePath: false,
@@ -243,11 +285,17 @@ function getTrackPath(
 
 /**
  * Export playlist as M3U format
+ * 
+ * @param playlist - Generated playlist to export
+ * @param trackLookups - Track lookup data with file paths
+ * @param config - Playlist location configuration
+ * @param service - Optional service type for service-specific path formatting (default: 'generic')
  */
 export function exportM3U(
   playlist: GeneratedPlaylist,
   trackLookups: TrackLookup[],
-  config?: PlaylistLocationConfig
+  config?: PlaylistLocationConfig,
+  service: ServiceType = 'generic'
 ): ExportResult {
   let hasRelativePaths = true;
   const lines: string[] = [];
@@ -263,7 +311,11 @@ export function exportM3U(
     if (!lookup) continue;
 
     const track = lookup.track;
-    const { path, hasRelativePath } = getTrackPath(lookup, config);
+    let { path, hasRelativePath } = getTrackPath(lookup, config);
+    
+    // Normalize path for the specified service
+    path = normalizePathForService(path, service);
+    
     if (!hasRelativePath) {
       hasRelativePaths = false;
     }
@@ -364,6 +416,8 @@ export function exportXSPF(
     const duration = track.tech?.durationSeconds
       ? Math.round(track.tech.durationSeconds * 1000)
       : undefined;
+    const genres = track.enhancedMetadata?.genres || track.tags.genres || [];
+    const tempo = track.enhancedMetadata?.tempo || track.tech?.bpm;
 
     lines.push("    <track>");
     lines.push("      <location>" + escapeXML(path) + "</location>");
@@ -375,6 +429,14 @@ export function exportXSPF(
     }
     if (track.tags.year) {
       lines.push(`      <date>${track.tags.year}</date>`);
+    }
+    if (genres.length > 0) {
+      genres.forEach(genre => {
+        lines.push(`      <meta rel="genre">${escapeXML(genre)}</meta>`);
+      });
+    }
+    if (tempo) {
+      lines.push(`      <meta rel="bpm">${tempo}</meta>`);
     }
     lines.push("    </track>");
   });

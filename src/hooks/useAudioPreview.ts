@@ -108,6 +108,7 @@ export function useAudioPreview(options: UseAudioPreviewOptions): UseAudioPrevie
   const [error, setError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const previousUrlRef = useRef<string | null>(null);
+  const previousAutoPlayRef = useRef<boolean>(false);
 
   // Use refs for callbacks to avoid re-creating event listeners on every render
   const onPlayRef = useRef(onPlay);
@@ -229,6 +230,27 @@ export function useAudioPreview(options: UseAudioPreviewOptions): UseAudioPrevie
       audio.removeEventListener('error', handleError);
     };
   }, [sampleResult, autoPlay]); // Removed callback dependencies - using refs instead
+
+  // Handle autoPlay prop changes - if audio is already loaded, play immediately
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !sampleResult) {
+      return;
+    }
+
+    // If autoPlay changed from false to true and audio is already loaded, play now
+    if (autoPlay && !previousAutoPlayRef.current && !isLoading && audio.readyState >= 2) {
+      // Audio is already loaded, play immediately
+      audio.play().catch((err) => {
+        const errorMessage = handleAudioPreviewError(err, 'auto-playing');
+        setError(errorMessage);
+        setIsLoading(false);
+        onErrorRef.current?.(errorMessage);
+      });
+    }
+
+    previousAutoPlayRef.current = autoPlay;
+  }, [autoPlay, isLoading, sampleResult]);
 
   /**
    * Play the audio

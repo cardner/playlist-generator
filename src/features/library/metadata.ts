@@ -335,3 +335,40 @@ export function extractCodecInfo(format: any): { codec?: string; container?: str
   };
 }
 
+/**
+ * Enhanced metadata from MusicBrainz API and audio analysis
+ * 
+ * Contains enriched metadata that supplements the basic tags extracted from audio files.
+ * This includes genres from MusicBrainz, similar artists, tempo/BPM from audio analysis,
+ * mood tags, and manual edits made by the user.
+ * 
+ * @example
+ * ```typescript
+ * const enhanced: EnhancedMetadata = {
+ *   genres: ["Rock", "Progressive Rock"],
+ *   similarArtists: ["Led Zeppelin", "Pink Floyd"],
+ *   tempo: 120,
+ *   mood: ["energetic", "uplifting"],
+ *   musicbrainzTags: ["classic rock", "progressive"],
+ *   manualEditDate: Date.now(),
+ *   manualFields: ["genres", "tempo"]
+ * };
+ * ```
+ */
+export interface EnhancedMetadata {
+  /** Enhanced genres from MusicBrainz or manual edits */
+  genres?: string[];
+  /** Related artists from MusicBrainz */
+  similarArtists?: string[];
+  /** BPM detected via audio analysis or manual input (number), or tempo category (string) */
+  tempo?: number | "slow" | "medium" | "fast";
+  /** Mood tags (manual edits or future acoustic analysis) */
+  mood?: string[];
+  /** Additional tags from MusicBrainz */
+  musicbrainzTags?: string[];
+  /** Timestamp when manual edits were last made */
+  manualEditDate?: number;
+  /** Array of field names that were manually edited (e.g., ['genres', 'tempo']) */
+  manualFields?: string[];
+}
+

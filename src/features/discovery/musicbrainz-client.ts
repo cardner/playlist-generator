@@ -8,6 +8,7 @@
  */
 
 import type { MusicBrainzRecordingResult, MusicBrainzRecordingWithDetails } from './musicbrainz-types';
+import type { TrackRecord } from '@/db/schema';
 import { logger } from '@/lib/logger';
 
 const MUSICBRAINZ_API_BASE = 'https://musicbrainz.org/ws/2';
@@ -206,8 +207,9 @@ export async function getRecordingDetails(
   mbid: string
 ): Promise<MusicBrainzRecordingResult | null> {
   try {
-    // Include additional data: releases, tags, artist-credits, relations
-    const url = `${MUSICBRAINZ_API_BASE}/recording/${mbid}?inc=releases+tags+artist-credits+relations&fmt=json`;
+    // Include additional data: releases, tags, artist-credits
+    // Note: 'relations' is not a valid inc parameter for recording resource
+    const url = `${MUSICBRAINZ_API_BASE}/recording/${mbid}?inc=releases+tags+artist-credits&fmt=json`;
     const response = await rateLimitedFetch(url);
 
     if (!response.ok) {
@@ -412,6 +414,110 @@ export async function findRelatedArtists(
   } catch (error) {
     logger.error('Failed to find related artists:', error);
     return [];
+  }
+}
+
+/**
+ * Get enhanced genres for a recording by MBID
+ * 
+ * Fetches tags and genres associated with a specific recording.
+ * 
+ * @param mbid - MusicBrainz recording MBID
+ * @returns Array of genre/tag names
+ * 
+ * @example
+ * ```typescript
+ * const genres = await getRecordingGenres('recording-mbid');
+ * ```
+ */
+export async function getRecordingGenres(mbid: string): Promise<string[]> {
+  try {
+    const recording = await getRecordingDetails(mbid);
+    if (!recording) {
+      return [];
+    }
+    return recording.genres || [];
+  } catch (error) {
+    logger.error('Failed to get recording genres:', error);
+    return [];
+  }
+}
+
+/**
+ * Get similar artists for a recording by MBID
+ * 
+ * Finds artists related to the recording's primary artist through
+ * MusicBrainz relationships (collaborations, member of, etc.).
+ * 
+ * @param mbid - MusicBrainz recording MBID
+ * @param limit - Maximum number of artists to return (default: 10)
+ * @returns Array of related artist names
+ * 
+ * @example
+ * ```typescript
+ * const similarArtists = await getSimilarArtists('recording-mbid', 5);
+ * ```
+ */
+export async function getSimilarArtists(mbid: string, limit: number = 10): Promise<string[]> {
+  try {
+    const recording = await getRecordingDetails(mbid);
+    if (!recording || !recording.artist) {
+      return [];
+    }
+    
+    // Use the existing findRelatedArtists function
+    return await findRelatedArtists(recording.artist, limit);
+  } catch (error) {
+    logger.error('Failed to get similar artists:', error);
+    return [];
+  }
+}
+
+/**
+ * Find best matching MusicBrainz recording for a track
+ * 
+ * Searches MusicBrainz API for a recording that matches the track's
+ * artist and title. Returns the best match or null if not found.
+ * 
+ * @param track - Track record to match
+ * @returns Best matching recording or null
+ * 
+ * @example
+ * ```typescript
+ * const recording = await findRecordingByTrack(trackRecord);
+ * if (recording) {
+ *   console.log(`Found: ${recording.title} by ${recording.artist}`);
+ * }
+ * ```
+ */
+export async function findRecordingByTrack(
+  track: TrackRecord
+): Promise<MusicBrainzRecordingResult | null> {
+  try {
+    const artist = track.tags.artist;
+    const title = track.tags.title;
+    
+    if (!artist || !title) {
+      return null;
+    }
+    
+    // Search for recordings matching artist and title
+    const results = await searchByArtistAndTitle({
+      artist,
+      title,
+      limit: 5, // Get top 5 matches
+    });
+    
+    if (results.length === 0) {
+      return null;
+    }
+    
+    // Return the first result as best match
+    // In the future, could add scoring/ranking logic here
+    return results[0];
+  } catch (error) {
+    logger.error('Failed to find recording by track:', error);
+    return null;
   }
 }
 

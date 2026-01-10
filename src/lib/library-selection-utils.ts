@@ -137,7 +137,11 @@ export function getFileExtension(filename: string): string {
  * }
  * ```
  */
-export function needsReimport(root: { mode: "handle" | "fallback" }): boolean {
+export function needsReimport(root: { mode: "handle" | "fallback" | "spotify" }): boolean {
+  // Spotify collections don't need reimport - they're stored in database
+  if (root.mode === "spotify") {
+    return false;
+  }
   if (root.mode === "fallback") {
     // Fallback files always need re-import after reload
     // We can't reliably detect if files are still available

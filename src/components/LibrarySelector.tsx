@@ -66,6 +66,7 @@ import { RelinkLibraryRoot } from "./RelinkLibraryRoot";
 import { hasRelativePaths } from "@/features/library/relink";
 import { Modal } from "./Modal";
 import { CollectionManager } from "./CollectionManager";
+import { SpotifyImport } from "./SpotifyImport";
 import { useLibraryRoot } from "@/hooks/useLibraryRoot";
 import { useLibraryPermissions } from "@/hooks/useLibraryPermissions";
 import { useCollectionSelection } from "@/hooks/useCollectionSelection";
@@ -87,6 +88,7 @@ export function LibrarySelector({
 }: LibrarySelectorProps) {
   const [showRelink, setShowRelink] = useState(false);
   const [showCollectionManagerModal, setShowCollectionManagerModal] = useState(false);
+  const [showSpotifyImport, setShowSpotifyImport] = useState(false);
 
   // Use hooks for library root, permissions, and collection management
   const {
@@ -407,17 +409,35 @@ export function LibrarySelector({
                     <FolderOpen className="size-4" />
                     <span>Add New Collection</span>
                   </button>
+                  <button
+                    onClick={() => setShowSpotifyImport(true)}
+                    disabled={isLoading}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
+                  >
+                    <Music className="size-4" />
+                    <span>Import from Spotify</span>
+                  </button>
                 </div>
               ) : (
                 <>
-                  <button
-                    onClick={handleChooseFolder}
-                    disabled={isLoading}
-                    className="inline-flex items-center gap-2 px-6 py-3 bg-accent-primary text-white rounded-sm hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
-                  >
-                    <FolderOpen className="size-4" />
-                    <span>Select Music Folder</span>
-                  </button>
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                    <button
+                      onClick={handleChooseFolder}
+                      disabled={isLoading}
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-accent-primary text-white rounded-sm hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
+                    >
+                      <FolderOpen className="size-4" />
+                      <span>Select Music Folder</span>
+                    </button>
+                    <button
+                      onClick={() => setShowSpotifyImport(true)}
+                      disabled={isLoading}
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
+                    >
+                      <Music className="size-4" />
+                      <span>Import from Spotify</span>
+                    </button>
+                  </div>
 
                   <p className="text-app-tertiary mt-3 text-xs">
                     Supported formats: MP3, M4A, FLAC, WAV, OGG, and more
@@ -478,6 +498,24 @@ export function LibrarySelector({
             }
             setShowCollectionManagerModal(false);
           }}
+        />
+      </Modal>
+
+      {/* Spotify Import Modal */}
+      <Modal
+        isOpen={showSpotifyImport}
+        onClose={() => setShowSpotifyImport(false)}
+        title="Import from Spotify"
+      >
+        <SpotifyImport
+          onImportComplete={async (collectionId) => {
+            // Set the new collection as current
+            await loadCurrentCollection();
+            await loadSavedLibrary();
+            onCollectionChange?.(collectionId);
+            setShowSpotifyImport(false);
+          }}
+          onClose={() => setShowSpotifyImport(false)}
         />
       </Modal>
     </>
