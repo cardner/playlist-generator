@@ -268,7 +268,7 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
   }
 
   return (
-    <div className="space-y-4 max-w-4xl">
+    <div className="space-y-4">
       {/* Search and Filters */}
       <div className="bg-app-surface rounded-sm shadow-2xl p-6">
         <div className="space-y-4">

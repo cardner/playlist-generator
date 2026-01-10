@@ -276,13 +276,9 @@ export function LibraryScanner({
 
   if (!libraryRoot) {
     return (
-      <div className="max-w-4xl">
-        <div className="bg-app-surface rounded-sm shadow-2xl p-6">
-          <p className="text-app-secondary">
-            Select a music library folder to begin scanning.
-          </p>
-        </div>
-      </div>
+      <p> 
+        {/* <!-- LibrarySelector will show the prompt -->  */}
+      </p>
     );
   }
 

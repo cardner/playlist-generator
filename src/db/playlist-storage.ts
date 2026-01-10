@@ -35,6 +35,7 @@ function playlistToRecord(playlist: GeneratedPlaylist, libraryRootId?: string): 
     libraryRootId,
     createdAt: playlist.createdAt,
     updatedAt: Date.now(),
+    customEmoji: playlist.customEmoji,
     discoveryTracks: playlist.discoveryTracks?.map(dt => ({
       position: dt.position,
       mbid: dt.discoveryTrack.mbid,
@@ -88,6 +89,7 @@ function recordToPlaylist(record: SavedPlaylistRecord): GeneratedPlaylist {
     createdAt: record.createdAt,
     totalDuration: record.summary.totalDuration,
     trackSelections: [], // Selections not stored, will be empty
+    customEmoji: record.customEmoji,
     discoveryTracks: record.discoveryTracks?.map(dt => ({
       position: dt.position,
       discoveryTrack: {

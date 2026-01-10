@@ -197,10 +197,6 @@ export default function LibraryPage() {
 
   return (
     <>
-      <header className="mb-8 md:mb-12">
-        <h1 className="text-app-primary tracking-tight">Music Library</h1>
-      </header>
-
       <div className="mb-4">
         <LibrarySelector
           key={collectionRefresh}

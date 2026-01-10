@@ -4,7 +4,7 @@ import { Navigation } from "@/components/Navigation";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
 export const metadata: Metadata = {
-  title: "playlist generator",
+  title: "mixtape gen",
   description: "intelligent music curation",
 };
 

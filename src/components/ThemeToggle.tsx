@@ -5,7 +5,7 @@
  * theme state and allows users to toggle themes with a single click.
  * 
  * Features:
- * - Visual theme indicator (sun/moon icon)
+ * - Visual theme indicator (split-circle sun icon)
  * - Smooth transition animation
  * - Accessible (ARIA labels, keyboard support)
  * - Integrated with ThemeProvider
@@ -26,14 +26,13 @@
 "use client";
 
 import { useTheme } from "./ThemeProvider";
-import { Sun, Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
  * Theme toggle button component
  * 
- * Renders a toggle switch that allows users to switch between light and dark themes.
- * The button shows a sun icon in light mode and moon icon in dark mode.
+ * Renders a sun icon with split circle (dark left, light right) with rays.
+ * Clicking toggles between light and dark themes.
  */
 export function ThemeToggle() {
   const { theme, toggleTheme } = useTheme();
@@ -43,25 +42,47 @@ export function ThemeToggle() {
     <button
       onClick={toggleTheme}
       className={cn(
-        "relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent-primary focus:ring-offset-2 focus:ring-offset-app-bg",
-        isDark ? "bg-accent-primary" : "bg-app-border"
+        "relative inline-flex items-center justify-center w-10 h-10 rounded-sm transition-colors focus:outline-none focus:ring-2 focus:ring-accent-primary focus:ring-offset-2 focus:ring-offset-app-bg hover:bg-app-hover",
+        "text-app-primary"
       )}
       aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
       role="switch"
       aria-checked={isDark}
     >
-      <span
-        className={cn(
-          "inline-block h-6 w-6 transform rounded-full bg-white transition-transform shadow-sm flex items-center justify-center",
-          isDark ? "translate-x-7" : "translate-x-1"
-        )}
+      <svg
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className="w-6 h-6"
       >
-        {isDark ? (
-          <Moon className="h-3.5 w-3.5 text-accent-primary" />
-        ) : (
-          <Sun className="h-3.5 w-3.5 text-app-tertiary" />
-        )}
-      </span>
+        {/* Rays */}
+        <path
+          d="M12 2V4M12 20V22M22 12H20M4 12H2M19.07 4.93L17.66 6.34M6.34 17.66L4.93 19.07M19.07 19.07L17.66 17.66M6.34 6.34L4.93 4.93"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+        {/* Split circle - dark left, light right */}
+        <circle cx="12" cy="12" r="5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+        <path
+          d="M12 7C9.24 7 7 9.24 7 12C7 14.76 9.24 17 12 17V7Z"
+          fill="currentColor"
+          className={cn(
+            "transition-colors",
+            isDark ? "opacity-100" : "opacity-30"
+          )}
+        />
+        <path
+          d="M12 7C14.76 7 17 9.24 17 12C17 14.76 14.76 17 12 17V7Z"
+          fill="currentColor"
+          className={cn(
+            "transition-colors",
+            isDark ? "opacity-30" : "opacity-100"
+          )}
+        />
+      </svg>
     </button>
   );
 }

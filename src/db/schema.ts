@@ -422,6 +422,8 @@ export interface DirectoryHandleRecord {
  * ```
  */
 export interface SavedPlaylistRecord {
+  /** Custom emoji selected by user (overrides auto-selected emoji) */
+  customEmoji?: string | null;
   /** Unique identifier for the playlist */
   id: string;
   /** Playlist title */
