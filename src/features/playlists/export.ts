@@ -61,7 +61,7 @@ export interface PlaylistLocationConfig {
 /**
  * Escape string for M3U/PLS format
  */
-function escapeM3U(text: string): string {
+export function escapeM3U(text: string): string {
   return text
     .replace(/\\/g, "\\\\")
     .replace(/,/g, "\\,")
@@ -83,7 +83,7 @@ function escapeCSV(text: string): string {
 /**
  * Escape XML text
  */
-function escapeXML(text: string): string {
+export function escapeXML(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -164,7 +164,7 @@ function calculateRelativePath(trackPath: string, playlistLocation: "root" | "su
  * @param config Playlist location and path strategy configuration
  * @returns Path string and whether it's a valid relative path
  */
-function getTrackPath(
+export function getTrackPath(
   trackLookup: TrackLookup,
   config?: PlaylistLocationConfig
 ): {
@@ -364,6 +364,8 @@ export function exportXSPF(
     const duration = track.tech?.durationSeconds
       ? Math.round(track.tech.durationSeconds * 1000)
       : undefined;
+    const genres = track.enhancedMetadata?.genres || track.tags.genres || [];
+    const tempo = track.enhancedMetadata?.tempo || track.tech?.bpm;
 
     lines.push("    <track>");
     lines.push("      <location>" + escapeXML(path) + "</location>");
@@ -375,6 +377,14 @@ export function exportXSPF(
     }
     if (track.tags.year) {
       lines.push(`      <date>${track.tags.year}</date>`);
+    }
+    if (genres.length > 0) {
+      genres.forEach(genre => {
+        lines.push(`      <meta rel="genre">${escapeXML(genre)}</meta>`);
+      });
+    }
+    if (tempo) {
+      lines.push(`      <meta rel="bpm">${tempo}</meta>`);
     }
     lines.push("    </track>");
   });

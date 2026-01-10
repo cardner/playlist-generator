@@ -9,7 +9,7 @@
 
 import { db, getCompositeId } from "./schema";
 import type { TrackRecord } from "./schema";
-import type { MetadataResult } from "@/features/library/metadata";
+import type { MetadataResult, EnhancedMetadata } from "@/features/library/metadata";
 
 /**
  * Save track metadata
@@ -183,5 +183,125 @@ export async function updateTracksTempo(
   if (updatesToApply.length > 0) {
     await db.tracks.bulkPut(updatesToApply);
   }
+}
+
+/**
+ * Update track metadata with manual edits or enhanced metadata
+ * 
+ * Updates the enhancedMetadata field of a track. Merges new values with existing
+ * enhanced metadata, preserving manual edits and tracking which fields were manually edited.
+ * 
+ * @param trackId - Composite track ID (trackFileId-libraryRootId)
+ * @param updates - Partial EnhancedMetadata object with fields to update
+ * @param isManualEdit - Whether these updates are manual edits (default: false)
+ * 
+ * @example
+ * ```typescript
+ * await updateTrackMetadata('track1-root1', {
+ *   genres: ['Rock', 'Metal'],
+ *   tempo: 120
+ * }, true);
+ * ```
+ */
+export async function updateTrackMetadata(
+  trackId: string,
+  updates: Partial<EnhancedMetadata>,
+  isManualEdit: boolean = false
+): Promise<void> {
+  const existing = await db.tracks.get(trackId);
+  if (!existing) {
+    throw new Error(`Track not found: ${trackId}`);
+  }
+
+  const now = Date.now();
+  const existingEnhanced = existing.enhancedMetadata || {};
+  const existingManualFields = existingEnhanced.manualFields || [];
+
+  // Merge updates with existing enhanced metadata
+  const mergedEnhanced: EnhancedMetadata = {
+    ...existingEnhanced,
+    ...updates,
+  };
+
+  // Track which fields were manually edited
+  if (isManualEdit) {
+    const updatedFields = Object.keys(updates).filter(key => 
+      updates[key as keyof EnhancedMetadata] !== undefined
+    ) as string[];
+    
+    const newManualFields = Array.from(new Set([...existingManualFields, ...updatedFields]));
+    mergedEnhanced.manualFields = newManualFields;
+    mergedEnhanced.manualEditDate = now;
+  }
+
+  await db.tracks.update(trackId, {
+    enhancedMetadata: mergedEnhanced,
+    updatedAt: now,
+  });
+}
+
+/**
+ * Update genres for a specific track
+ * 
+ * @param trackId - Composite track ID (trackFileId-libraryRootId)
+ * @param genres - Array of genre strings
+ * @param isManualEdit - Whether this is a manual edit (default: true)
+ * 
+ * @example
+ * ```typescript
+ * await updateTrackGenres('track1-root1', ['Rock', 'Metal'], true);
+ * ```
+ */
+export async function updateTrackGenres(
+  trackId: string,
+  genres: string[],
+  isManualEdit: boolean = true
+): Promise<void> {
+  await updateTrackMetadata(trackId, { genres }, isManualEdit);
+}
+
+/**
+ * Update mood tags for a specific track
+ * 
+ * @param trackId - Composite track ID (trackFileId-libraryRootId)
+ * @param mood - Array of mood tag strings
+ * @param isManualEdit - Whether this is a manual edit (default: true)
+ * 
+ * @example
+ * ```typescript
+ * await updateTrackMood('track1-root1', ['energetic', 'uplifting'], true);
+ * ```
+ */
+export async function updateTrackMood(
+  trackId: string,
+  mood: string[],
+  isManualEdit: boolean = true
+): Promise<void> {
+  await updateTrackMetadata(trackId, { mood }, isManualEdit);
+}
+
+/**
+ * Update tempo/BPM in enhanced metadata for a specific track
+ * 
+ * This updates the enhancedMetadata.tempo field. For updating tech.bpm,
+ * use the existing updateTrackTempo() function.
+ * 
+ * @param trackId - Composite track ID (trackFileId-libraryRootId)
+ * @param tempo - Tempo/BPM value (number) or tempo category (string: "slow", "medium", "fast")
+ * @param isManualEdit - Whether this is a manual edit (default: true)
+ * 
+ * @example
+ * ```typescript
+ * await updateTrackTempoEnhanced('track1-root1', 120, true);
+ * await updateTrackTempoEnhanced('track1-root1', 'medium', true);
+ * ```
+ */
+export async function updateTrackTempoEnhanced(
+  trackId: string,
+  tempo: number | "slow" | "medium" | "fast",
+  isManualEdit: boolean = true
+): Promise<void> {
+  const tempoValue = typeof tempo === "number" ? Math.round(tempo) : tempo;
+  await updateTrackMetadata(trackId, { tempo: tempoValue }, isManualEdit);
 }
 

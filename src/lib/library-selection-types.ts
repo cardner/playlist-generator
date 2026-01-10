@@ -9,7 +9,7 @@
 /**
  * Library root selection mode
  */
-export type LibraryRootMode = "handle" | "fallback";
+export type LibraryRootMode = "handle" | "fallback" | "spotify";
 
 /**
  * Library root configuration

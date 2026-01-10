@@ -37,7 +37,7 @@
 
 import Dexie, { type Table } from "dexie";
 import type { LibraryRootMode } from "@/lib/library-selection";
-import type { NormalizedTags, TechInfo } from "@/features/library/metadata";
+import type { NormalizedTags, TechInfo, EnhancedMetadata } from "@/features/library/metadata";
 import { logger } from "@/lib/logger";
 
 /**
@@ -71,12 +71,19 @@ import { logger } from "@/lib/logger";
 export interface LibraryRootRecord {
   /** Unique identifier for the library root */
   id: string;
-  /** Access mode: "handle" (File System Access API) or "filelist" (fallback) */
+  /** Access mode: "handle" (File System Access API), "filelist" (fallback), or "spotify" (imported from Spotify) */
   mode: LibraryRootMode;
   /** Display name for the library root */
   name: string;
   /** Reference to directoryHandles store (only for "handle" mode) */
   handleRef?: string;
+  /** Spotify export metadata (only for "spotify" mode) */
+  spotifyExportMetadata?: {
+    /** Date when Spotify export was created (ISO string) */
+    exportDate: string;
+    /** Paths to source JSON files */
+    filePaths: string[];
+  };
   /** Timestamp when the library root was created (Unix epoch milliseconds) */
   createdAt: number;
   /** Timestamp when the library root was last updated (Unix epoch milliseconds) */
@@ -198,6 +205,18 @@ export interface TrackRecord {
   tags: NormalizedTags;
   /** Technical audio information (optional, may be missing for some files) */
   tech?: TechInfo;
+  /** Source of the track: "local" (scanned from file system) or "spotify" (imported from Spotify export) */
+  source?: "local" | "spotify";
+  /** Spotify URI for tracks imported from Spotify (e.g., "spotify:track:4iV5W9uYEdYUVa79Axb7Rh") */
+  spotifyUri?: string;
+  /** ID of linked local track (for Spotify tracks that have been matched to local files) */
+  linkedLocalTrackId?: string;
+  /** MusicBrainz recording MBID */
+  musicbrainzId?: string;
+  /** Enhanced metadata from MusicBrainz API and audio analysis */
+  enhancedMetadata?: EnhancedMetadata;
+  /** Timestamp of last metadata enhancement (Unix epoch milliseconds) */
+  metadataEnhancementDate?: number;
   /** Timestamp when this record was last updated (Unix epoch milliseconds) */
   updatedAt: number;
 }
@@ -498,6 +517,9 @@ export interface SavedPlaylistRecord {
  * - Version 3: Composite primary keys (trackFileId-libraryRootId)
  * - Version 4: Added savedPlaylists table
  * - Version 5: Added libraryRootId index to savedPlaylists
+ * - Version 6: Added scanCheckpoints table for resuming interrupted scans
+ * - Version 7: Added Spotify import support (spotifyExportMetadata, source, spotifyUri, linkedLocalTrackId fields)
+ * - Version 8: Added enhanced metadata support (musicbrainzId, enhancedMetadata, metadataEnhancementDate fields)
  * 
  * @example
  * ```typescript
@@ -694,6 +716,36 @@ export class AppDatabase extends Dexie {
     // Version 6: Add scanCheckpoints table for resuming interrupted scans
     // This enables checkpoint-based scanning for network drives that may disconnect
     this.version(6).stores({
+      libraryRoots: "id, createdAt",
+      fileIndex: "id, trackFileId, libraryRootId, name, extension, updatedAt",
+      tracks: "id, trackFileId, libraryRootId, updatedAt",
+      scanRuns: "id, libraryRootId, startedAt",
+      settings: "key",
+      directoryHandles: "id",
+      savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
+      scanCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+    });
+
+    // Version 7: Add Spotify import support
+    // - LibraryRootRecord: Add spotifyExportMetadata field
+    // - TrackRecord: Add source, spotifyUri, linkedLocalTrackId fields
+    // - LibraryRootMode: Add "spotify" mode
+    // Note: Schema stores remain the same, only TypeScript interfaces are updated
+    this.version(7).stores({
+      libraryRoots: "id, createdAt",
+      fileIndex: "id, trackFileId, libraryRootId, name, extension, updatedAt",
+      tracks: "id, trackFileId, libraryRootId, updatedAt",
+      scanRuns: "id, libraryRootId, startedAt",
+      settings: "key",
+      directoryHandles: "id",
+      savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
+      scanCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+    });
+
+    // Version 8: Add enhanced metadata support
+    // - TrackRecord: Add musicbrainzId, enhancedMetadata, metadataEnhancementDate fields
+    // Note: Schema stores remain the same, only TypeScript interfaces are updated
+    this.version(8).stores({
       libraryRoots: "id, createdAt",
       fileIndex: "id, trackFileId, libraryRootId, name, extension, updatedAt",
       tracks: "id, trackFileId, libraryRootId, updatedAt",

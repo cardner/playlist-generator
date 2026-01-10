@@ -59,11 +59,16 @@ import {
   type TrackLookup,
   type PlaylistLocationConfig,
 } from "@/features/playlists/export";
+import { exportITunesXML } from "@/features/playlists/export-itunes";
+import { exportJellyfinM3U, exportPlexM3U } from "@/features/playlists/export-media-servers";
+import type { ServiceType } from "@/lib/path-normalization";
 import { getAllTracks, getCurrentCollectionId, getCollection } from "@/db/storage";
 import { getFileIndexEntries } from "@/db/storage";
 import { db } from "@/db/schema";
 import { hasRelativePaths } from "@/features/library/relink";
 import { RelinkLibraryRoot } from "./RelinkLibraryRoot";
+import { SpotifyPlaylistExport } from "./SpotifyPlaylistExport";
+import { hasSpotifyTracks } from "@/features/spotify-export/uri-resolver";
 import type { LibraryRootRecord } from "@/db/schema";
 import { logger } from "@/lib/logger";
 import {
@@ -99,6 +104,11 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
   const [currentCollectionId, setCurrentCollectionId] = useState<string | null>(null);
   const [playlistCollection, setPlaylistCollection] = useState<LibraryRootRecord | null>(null);
   const [currentCollection, setCurrentCollection] = useState<LibraryRootRecord | null>(null);
+  const [showSpotifyExport, setShowSpotifyExport] = useState(false);
+  const [hasSpotify, setHasSpotify] = useState<boolean | null>(null);
+  const [selectedService, setSelectedService] = useState<ServiceType>("generic");
+  const [serviceLibraryPath, setServiceLibraryPath] = useState<string>("");
+  const [useNetworkPaths, setUseNetworkPaths] = useState<boolean>(false);
 
   // Load export preferences from localStorage
   useEffect(() => {
@@ -157,11 +167,33 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
     checkPaths();
   }, [libraryRootId]);
 
+  // Check if collection has Spotify tracks
+  useEffect(() => {
+    async function checkSpotify() {
+      if (libraryRootId) {
+        const has = await hasSpotifyTracks(libraryRootId);
+        setHasSpotify(has);
+      } else {
+        // Check all collections
+        const allCollections = await db.libraryRoots.toArray();
+        let found = false;
+        for (const collection of allCollections) {
+          if (collection.mode === "spotify") {
+            found = true;
+            break;
+          }
+        }
+        setHasSpotify(found);
+      }
+    }
+    checkSpotify();
+  }, [libraryRootId]);
+
   // Check if playlist collection matches current collection
   const collectionMismatch = playlistCollectionId && 
     playlistCollectionId !== currentCollectionId;
 
-  async function handleExport(format: "m3u" | "pls" | "xspf" | "csv" | "json") {
+  async function handleExport(format: "m3u" | "pls" | "xspf" | "csv" | "json" | "itunes-xml") {
     setIsExporting(format);
     setError(null);
     setHasPathWarning(false);
@@ -211,7 +243,21 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
       let result;
       switch (format) {
         case "m3u":
-          result = exportM3U(playlist, trackLookups, exportConfig);
+          if (selectedService === "jellyfin") {
+            result = exportJellyfinM3U(playlist, trackLookups, exportConfig, {
+              service: "jellyfin",
+              libraryRoot: serviceLibraryPath || undefined,
+              useNetworkPaths,
+            });
+          } else if (selectedService === "plex") {
+            result = exportPlexM3U(playlist, trackLookups, exportConfig, {
+              service: "plex",
+              libraryRoot: serviceLibraryPath || undefined,
+              useNetworkPaths,
+            });
+          } else {
+            result = exportM3U(playlist, trackLookups, exportConfig);
+          }
           break;
         case "pls":
           result = exportPLS(playlist, trackLookups, exportConfig);
@@ -224,6 +270,9 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
           break;
         case "json":
           result = exportJSON(playlist, trackLookups, exportConfig);
+          break;
+        case "itunes-xml":
+          result = exportITunesXML(playlist, trackLookups, exportConfig, serviceLibraryPath || undefined);
           break;
       }
 
@@ -255,30 +304,42 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
       label: "M3U",
       icon: Music,
       description: "Standard playlist format",
+      supportsService: true,
     },
     {
       format: "pls" as const,
       label: "PLS",
       icon: Music,
       description: "Winamp playlist format",
+      supportsService: false,
     },
     {
       format: "xspf" as const,
       label: "XSPF",
       icon: FileText,
       description: "XML Shareable Playlist",
+      supportsService: false,
+    },
+    {
+      format: "itunes-xml" as const,
+      label: "iTunes XML",
+      icon: FileText,
+      description: "iTunes/Apple Music import",
+      supportsService: false,
     },
     {
       format: "csv" as const,
       label: "CSV",
       icon: FileText,
       description: "Spreadsheet format",
+      supportsService: false,
     },
     {
       format: "json" as const,
       label: "JSON",
       icon: FileJson,
       description: "Data format",
+      supportsService: false,
     },
   ];
 
@@ -382,6 +443,63 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
               <option value="relative-to-library-root">Relative to Library Root</option>
             </select>
             
+          {/* Service Selector (for M3U format) */}
+          {exportButtons.find(b => b.format === "m3u" || b.format === "itunes-xml") && (
+            <div>
+              <label className="block text-app-primary text-sm font-medium mb-2 uppercase tracking-wider">
+                Media Service
+              </label>
+              <p className="text-app-secondary text-xs mb-3">
+                Select the target media service for optimized path handling
+              </p>
+              <select
+                value={selectedService}
+                onChange={(e) => setSelectedService(e.target.value as ServiceType)}
+                className="w-full px-4 py-2 bg-app-surface text-app-primary border border-app-border rounded-sm focus:outline-none focus:ring-2 focus:ring-accent-primary text-sm mb-3"
+              >
+                <option value="generic">Generic (Default)</option>
+                <option value="itunes">iTunes / Apple Music</option>
+                <option value="jellyfin">Jellyfin</option>
+                <option value="plex">Plex</option>
+              </select>
+              
+              {(selectedService === "jellyfin" || selectedService === "plex" || selectedService === "itunes") && (
+                <div className="space-y-3 mt-3">
+                  <div>
+                    <label className="block text-app-primary text-xs font-medium mb-2">
+                      Media Library Path
+                    </label>
+                    <input
+                      type="text"
+                      value={serviceLibraryPath}
+                      onChange={(e) => setServiceLibraryPath(e.target.value)}
+                      placeholder={selectedService === "itunes" ? "/Users/me/Music/iTunes" : "/media/music"}
+                      className="w-full px-4 py-2 bg-app-surface text-app-primary border border-app-border rounded-sm focus:outline-none focus:ring-2 focus:ring-accent-primary text-sm"
+                    />
+                    <p className="text-app-tertiary text-xs mt-1">
+                      {selectedService === "itunes" 
+                        ? "Path to your iTunes Media folder"
+                        : "Path to your media server library root"}
+                    </p>
+                  </div>
+                  {(selectedService === "jellyfin" || selectedService === "plex") && (
+                    <div>
+                      <label className="flex items-center gap-2 text-app-primary text-xs">
+                        <input
+                          type="checkbox"
+                          checked={useNetworkPaths}
+                          onChange={(e) => setUseNetworkPaths(e.target.checked)}
+                          className="rounded border-app-border"
+                        />
+                        <span>Use network paths (UNC/SMB)</span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
             {pathStrategy === "absolute" && (
               <div className="mt-3">
                 <label className="block text-app-primary text-xs font-medium mb-2">
@@ -510,6 +628,37 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
           require manual file relinking if relative paths are not available.
         </p>
       </div>
+
+      {/* Spotify Export Section */}
+      {hasSpotify && (
+        <div className="mt-6 pt-6 border-t border-app-border">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-app-primary font-medium uppercase tracking-wider text-sm mb-1">
+                Export to Spotify Format
+              </h3>
+              <p className="text-app-secondary text-sm">
+                Export playlist in Spotify-compatible JSON format for manual import
+              </p>
+            </div>
+            <button
+              onClick={() => setShowSpotifyExport(!showSpotifyExport)}
+              className="p-2 hover:bg-app-hover rounded-sm transition-colors text-app-secondary hover:text-app-primary"
+              aria-label={showSpotifyExport ? "Hide Spotify export" : "Show Spotify export"}
+            >
+              {showSpotifyExport ? (
+                <ChevronUp className="size-5" />
+              ) : (
+                <ChevronDown className="size-5" />
+              )}
+            </button>
+          </div>
+
+          {showSpotifyExport && (
+            <SpotifyPlaylistExport playlist={playlist} libraryRootId={libraryRootId} />
+          )}
+        </div>
+      )}
     </div>
   );
 }
