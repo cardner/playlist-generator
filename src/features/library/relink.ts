@@ -87,7 +87,23 @@ export async function relinkLibraryRoot(
     // Prompt user to pick new root
     const newRoot = await pickLibraryRoot();
 
-    // Build new file index
+    // Ensure handle is stored (pickLibraryRoot should have done this, but verify)
+    if (newRoot.mode === "handle" && !newRoot.handleId) {
+      throw new Error("Directory handle not stored after folder selection");
+    }
+
+    // Verify handle exists in database before proceeding
+    if (newRoot.mode === "handle" && newRoot.handleId) {
+      const { getDirectoryHandle } = await import("@/lib/library-selection-fs-api");
+      const handle = await getDirectoryHandle(newRoot.handleId);
+      if (!handle) {
+        throw new Error(`Directory handle not found in database. Handle ID: ${newRoot.handleId}. Please try selecting the folder again.`);
+      }
+    }
+
+    // Note: pickLibraryRoot already saves the root via saveLibraryRootLegacy
+    // We'll update it later with the correct ID after scanning
+    // Build new file index - the handle should already be stored by pickLibraryRoot
     let scanned = 0;
     let matched = 0;
     const newFileIndex: Array<{
@@ -102,14 +118,7 @@ export async function relinkLibraryRoot(
       updatedAt: number;
     }> = [];
 
-    // Save new root
-    const newRootRecord = await saveLibraryRoot(
-      newRoot,
-      newRoot.handleId
-    );
-    const newRootId = newRootRecord.id;
-
-    // Scan new root and match files
+    // Scan new root and match files (do this before saving to ensure handle is accessible)
     const newIndex = await buildFileIndex(newRoot, (progress) => {
       scanned = progress.scanned;
       onProgress?.({
@@ -118,6 +127,25 @@ export async function relinkLibraryRoot(
         currentFile: progress.currentFile,
       });
     });
+
+    // Get or create the root record
+    // pickLibraryRoot already saved it, but we need to ensure we have the right ID
+    // If the root was saved with handleId as the ID, use that; otherwise create new
+    let newRootRecord = await db.libraryRoots.get(newRoot.handleId || "");
+    if (!newRootRecord) {
+      // Root wasn't saved yet (shouldn't happen, but handle it)
+      newRootRecord = await saveLibraryRoot(newRoot, newRoot.handleId);
+    } else {
+      // Update the existing root record to ensure handleRef is set
+      if (newRoot.mode === "handle" && newRoot.handleId && newRootRecord.handleRef !== newRoot.handleId) {
+        await db.libraryRoots.update(newRootRecord.id, {
+          handleRef: newRoot.handleId,
+          updatedAt: Date.now(),
+        });
+        newRootRecord.handleRef = newRoot.handleId;
+      }
+    }
+    const newRootId = newRootRecord.id;
 
     // Match files from new index to old tracks
     const matchedTrackFileIds = new Set<string>();

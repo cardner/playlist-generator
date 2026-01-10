@@ -285,7 +285,7 @@ export function LibraryScanner({
   // Show folder info even if permission not granted yet
   if (permissionStatus !== "granted") {
     return (
-      <div className="max-w-4xl">
+      <div className="">
         <div className="bg-app-surface rounded-sm border border-app-border p-6">
           <div className="mb-4">
             <p className="text-app-secondary text-xs uppercase tracking-wider mb-1">

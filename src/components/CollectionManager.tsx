@@ -50,6 +50,9 @@ import {
   X,
   AlertCircle,
   Check,
+  Download,
+  Upload,
+  Loader2,
 } from "lucide-react";
 import type { LibraryRootRecord } from "@/db/schema";
 import {
@@ -62,6 +65,14 @@ import {
   updateCollection,
 } from "@/db/storage";
 import { CollectionConfigEditor } from "./CollectionConfigEditor";
+import { CollectionImportDialog } from "./CollectionImportDialog";
+import {
+  exportCollection,
+  importCollection,
+  validateExportFormat,
+  checkCollectionNameExists,
+  type CollectionExport,
+} from "@/db/storage-collection-import";
 import { logger } from "@/lib/logger";
 
 interface CollectionManagerProps {
@@ -81,6 +92,10 @@ export function CollectionManager({ onCollectionChange, refreshTrigger }: Collec
     Map<string, { trackCount: number; lastScanDate: number | null }>
   >(new Map());
   const [isLoading, setIsLoading] = useState(true);
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importData, setImportData] = useState<CollectionExport | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const loadCollections = async () => {
     setIsLoading(true);
@@ -216,6 +231,121 @@ export function CollectionManager({ onCollectionChange, refreshTrigger }: Collec
     });
   };
 
+  const handleExportCollection = async (collectionId: string) => {
+    setExportingId(collectionId);
+    try {
+      const exportData = await exportCollection(collectionId);
+      const collection = collections.find((c) => c.id === collectionId);
+      const fileName = `${collection?.name || "collection"}-${Date.now()}.json`;
+      
+      // Create blob and download
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      logger.error("Failed to export collection:", error);
+      alert(`Failed to export collection: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally {
+      setExportingId(null);
+    }
+  };
+
+  const handleImportClick = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+
+        if (!validateExportFormat(data)) {
+          alert("Invalid export file format. Please select a valid collection export file.");
+          return;
+        }
+
+        // Check for duplicate name
+        const nameExists = await checkCollectionNameExists(data.collection.name);
+        let existingCollection: LibraryRootRecord | undefined;
+        let existingStats: { trackCount: number; lastScanDate: number | null } | undefined;
+
+        if (nameExists) {
+          const allCollections = await getAllCollections();
+          existingCollection = allCollections.find(
+            (c) => c.name.toLowerCase() === data.collection.name.toLowerCase()
+          );
+          if (existingCollection) {
+            const tracks = await getTracks(existingCollection.id);
+            const scanRuns = await getScanRuns(existingCollection.id);
+            const lastScan = scanRuns
+              .filter((run) => run.finishedAt)
+              .sort((a, b) => (b.finishedAt || 0) - (a.finishedAt || 0))[0];
+            existingStats = {
+              trackCount: tracks.length,
+              lastScanDate: lastScan?.finishedAt || null,
+            };
+          }
+        }
+
+        setImportData(data);
+        setImportDialogOpen(true);
+      } catch (error) {
+        logger.error("Failed to read import file:", error);
+        alert(`Failed to read import file: ${error instanceof Error ? error.message : "Unknown error"}`);
+      }
+    };
+    input.click();
+  };
+
+  const handleImportConfirm = async (options: {
+    replaceExisting: boolean;
+    newName?: string;
+    setAsCurrent?: boolean;
+  }) => {
+    if (!importData) return;
+
+    setImporting(true);
+    try {
+      const newCollectionId = await importCollection(importData, {
+        replaceExisting: options.replaceExisting,
+        newName: options.newName,
+        setAsCurrent: options.setAsCurrent ?? true,
+      });
+
+      setImportDialogOpen(false);
+      setImportData(null);
+
+      // Reload collections
+      await loadCollections();
+
+      // Notify parent if collection was set as current
+      if (options.setAsCurrent) {
+        onCollectionChange?.(newCollectionId);
+      }
+
+      alert("Collection imported successfully!");
+    } catch (error) {
+      logger.error("Failed to import collection:", error);
+      alert(`Failed to import collection: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleImportCancel = () => {
+    setImportDialogOpen(false);
+    setImportData(null);
+  };
+
   if (isLoading) {
     return (
       <div className="bg-app-surface rounded-sm p-6 border border-app-border">
@@ -230,10 +360,37 @@ export function CollectionManager({ onCollectionChange, refreshTrigger }: Collec
         <div className="text-center py-8">
           <Music className="size-12 text-app-tertiary mx-auto mb-4" />
           <h3 className="text-app-primary font-medium mb-2">No Collections</h3>
-          <p className="text-app-secondary text-sm">
-            Scan a music folder to create your first collection.
+          <p className="text-app-secondary text-sm mb-4">
+            Scan a music folder to create your first collection, or import an existing one.
           </p>
+          <button
+            onClick={handleImportClick}
+            disabled={importing}
+            className="flex items-center gap-2 px-4 py-2 mx-auto text-sm bg-accent-primary hover:bg-accent-hover text-white rounded-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {importing ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                Importing...
+              </>
+            ) : (
+              <>
+                <Upload className="size-4" />
+                Import Collection
+              </>
+            )}
+          </button>
         </div>
+        {/* Import Dialog */}
+        {importDialogOpen && importData && (
+          <CollectionImportDialog
+            exportData={importData}
+            existingCollection={undefined}
+            existingStats={undefined}
+            onConfirm={handleImportConfirm}
+            onCancel={handleImportCancel}
+          />
+        )}
       </div>
     );
   }
@@ -242,6 +399,23 @@ export function CollectionManager({ onCollectionChange, refreshTrigger }: Collec
     <div className="bg-app-surface rounded-sm border border-app-border p-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-app-primary text-base font-semibold">All Collections</h2>
+        <button
+          onClick={handleImportClick}
+          disabled={importing}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {importing ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              Importing...
+            </>
+          ) : (
+            <>
+              <Upload className="size-4" />
+              Import Collection
+            </>
+          )}
+        </button>
       </div>
 
       <div className="space-y-2">
@@ -373,6 +547,19 @@ export function CollectionManager({ onCollectionChange, refreshTrigger }: Collec
                     </button>
                   )}
                   <button
+                    onClick={() => handleExportCollection(collection.id)}
+                    disabled={exportingId === collection.id || isDeleting}
+                    className="p-1.5 hover:bg-app-surface text-app-secondary hover:text-accent-primary rounded-sm transition-colors disabled:opacity-50"
+                    aria-label="Export collection"
+                    title="Export collection"
+                  >
+                    {exportingId === collection.id ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Download className="size-3.5" />
+                    )}
+                  </button>
+                  <button
                     onClick={() => setEditingId(collection.id)}
                     disabled={isDeleting}
                     className="p-1.5 hover:bg-app-surface text-app-secondary hover:text-app-primary rounded-sm transition-colors disabled:opacity-50"
@@ -398,6 +585,26 @@ export function CollectionManager({ onCollectionChange, refreshTrigger }: Collec
           );
         })}
       </div>
+
+      {/* Import Dialog */}
+      {importDialogOpen && importData && (
+        <CollectionImportDialog
+          exportData={importData}
+          existingCollection={collections.find(
+            (c) => c.name.toLowerCase() === importData.collection.name.toLowerCase()
+          )}
+          existingStats={
+            (() => {
+              const existing = collections.find(
+                (c) => c.name.toLowerCase() === importData.collection.name.toLowerCase()
+              );
+              return existing ? collectionStats.get(existing.id) : undefined;
+            })()
+          }
+          onConfirm={handleImportConfirm}
+          onCancel={handleImportCancel}
+        />
+      )}
     </div>
   );
 }
