@@ -114,7 +114,7 @@ export function CollectionImportDialog({
                 <div className="flex-1">
                   <h3 className="text-yellow-500 font-medium mb-1">Collection Name Conflict</h3>
                   <p className="text-app-secondary text-sm">
-                    A collection named "{existingCollection.name}" already exists.
+                    A collection named &quot;{existingCollection.name}&quot; already exists.
                   </p>
                 </div>
               </div>
