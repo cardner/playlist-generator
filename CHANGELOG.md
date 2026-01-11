@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [0.8.0] - 2026-01-11
+
+### Added
+
+- add import and export of collection databases
+- add itunes playlist export and library track playback
+
+### Fixed
+
+- use proper unicode quotes
+- improve paths of files in playlists
+
+### Other Changes
+
+- Merge pull request #6 from cardner/playlist-export
+
 ## [0.7.1] - 2026-01-10
 
 ### Fixed
