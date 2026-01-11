@@ -55,22 +55,39 @@ async function getFileHandleFromPath(
  * 
  * @param root Library root
  * @param entries File index entries to get files for
+ * @param libraryRootId Optional library root ID to get handleRef from database
  * @returns Promise resolving to array of LibraryFile objects
  */
 export async function getLibraryFilesForEntries(
   root: LibraryRoot,
-  entries: FileIndexEntry[]
+  entries: FileIndexEntry[],
+  libraryRootId?: string
 ): Promise<LibraryFile[]> {
   if (root.mode !== "handle") {
     throw new Error("Only handle mode supported for metadata parsing");
   }
 
   // Get root directory handle from database
+  // First try to get handleRef from LibraryRootRecord if libraryRootId is provided
+  let handleId: string | undefined = root.handleId;
+  
+  if (libraryRootId) {
+    const { db } = await import("@/db/schema");
+    const libraryRootRecord = await db.libraryRoots.get(libraryRootId);
+    if (libraryRootRecord?.handleRef) {
+      handleId = libraryRootRecord.handleRef;
+    }
+  }
+  
+  if (!handleId) {
+    throw new Error("Directory handle ID not found. Please re-select your folder.");
+  }
+  
   const { db } = await import("@/db/schema");
-  const handleRecord = await db.directoryHandles.get(root.handleId!);
+  const handleRecord = await db.directoryHandles.get(handleId);
   const rootHandle = handleRecord?.handle as FileSystemDirectoryHandle | undefined;
   if (!rootHandle) {
-    throw new Error("Directory handle not found");
+    throw new Error(`Directory handle not found for handleId: ${handleId}. Please re-select your folder.`);
   }
 
   const libraryFiles: LibraryFile[] = [];
@@ -133,7 +150,13 @@ export async function getLibraryFilesForEntries(
         entryMap.set(entry.trackFileId, entry);
       }
       
-      for await (const libraryFile of getLibraryFiles(root)) {
+      // Create a root object with the correct handleId for getLibraryFiles
+      const rootWithCorrectHandle: LibraryRoot = {
+        ...root,
+        handleId: handleId,
+      };
+      
+      for await (const libraryFile of getLibraryFiles(rootWithCorrectHandle)) {
         if (entryMap.has(libraryFile.trackFileId)) {
           libraryFiles.push(libraryFile);
           entryMap.delete(libraryFile.trackFileId);
@@ -154,7 +177,13 @@ export async function getLibraryFilesForEntries(
       entryMap.set(entry.trackFileId, entry);
     }
 
-    for await (const libraryFile of getLibraryFiles(root)) {
+    // Create a root object with the correct handleId for getLibraryFiles
+    const rootWithCorrectHandle: LibraryRoot = {
+      ...root,
+      handleId: handleId,
+    };
+    
+    for await (const libraryFile of getLibraryFiles(rootWithCorrectHandle)) {
       if (entryMap.has(libraryFile.trackFileId)) {
         libraryFiles.push(libraryFile);
         entryMap.delete(libraryFile.trackFileId);

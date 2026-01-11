@@ -112,7 +112,7 @@ export function useMetadataParsing(
         const entriesToParse = result.entries;
 
         // Get LibraryFile objects for these entries
-        const libraryFiles = await getLibraryFilesForEntries(root, entriesToParse);
+        const libraryFiles = await getLibraryFilesForEntries(root, entriesToParse, libraryRootId);
 
         if (libraryFiles.length === 0) {
           logger.warn(
