@@ -76,6 +76,10 @@ export {
   getTopArtists,
   getTopAlbums,
   getTopTrackTitles,
+  searchTracksByArtist,
+  searchTracksByAlbum,
+  searchTracksByTempo,
+  searchTracksByMood,
 } from "./storage-queries";
 
 import { db } from "./schema";

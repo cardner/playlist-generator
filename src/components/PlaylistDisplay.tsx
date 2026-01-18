@@ -41,7 +41,8 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
 import { useRouter } from "next/navigation";
-import type { GeneratedPlaylist } from "@/features/playlists";
+import type { GeneratedPlaylist, TrackSelection } from "@/features/playlists";
+import type { TrackRecord } from "@/db/schema";
 import { getAllTracks, getTracks, getCurrentLibraryRoot } from "@/db/storage";
 import { db } from "@/db/schema";
 import { PlaylistWhySummary } from "./PlaylistWhySummary";
@@ -54,12 +55,22 @@ import { searchTrackSample } from "@/features/audio-preview/platform-searcher";
 import type { SampleResult } from "@/features/audio-preview/types";
 import { logger } from "@/lib/logger";
 import { useAudioPreviewState } from "@/hooks/useAudioPreviewState";
+import { usePlaylistEditState } from "@/hooks/usePlaylistEditState";
+import {
+  calculatePlaylistSummaryFromTracks,
+  type SummaryTrackInput,
+} from "@/lib/playlist-summary-calculator";
 import { FlowArcEditor } from "./FlowArcEditor";
 import { generateVariant, type VariantType } from "@/features/playlists/variants";
 import { generatePlaylistTitle } from "@/features/playlists/naming";
 import { orderTracks } from "@/features/playlists/ordering";
 import { buildMatchingIndex } from "@/features/library/summarization";
 import { EmojiPicker } from "./EmojiPicker";
+import { DraggableTrackList } from "./DraggableTrackList";
+import { TrackAddDialog } from "./TrackAddDialog";
+import type { LLMConfig } from "@/types/playlist";
+import { TrackExpansionPanel } from "./TrackExpansionPanel";
+import { findSimilarTracks } from "@/lib/similar-tracks-finder";
 import {
   Play,
   Pause,
@@ -84,6 +95,8 @@ import {
   Tag,
   GripVertical,
   Loader2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AlertCircle } from "lucide-react";
@@ -191,9 +204,11 @@ import { getCurrentLibrarySummary } from "@/features/library/summarization";
 import { getAllGenres, getAllArtists, getAllAlbums, getAllTrackTitles } from "@/db/storage";
 import {
   savePlaylist,
+  updatePlaylist as updateSavedPlaylist,
   updatePlaylistMetadata,
   isPlaylistSaved,
 } from "@/db/playlist-storage";
+import { SavePlaylistDialog } from "./SavePlaylistDialog";
 
 interface PlaylistDisplayProps {
   playlist: GeneratedPlaylist;
@@ -219,6 +234,17 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   }, [playlist.customEmoji]);
   
   const [showInlineEditor, setShowInlineEditor] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [showTrackAddDialog, setShowTrackAddDialog] = useState(false);
+  const [llmConfig, setLlmConfig] = useState<LLMConfig | undefined>(undefined);
+  const [expandedTrackId, setExpandedTrackId] = useState<string | null>(null);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [isSavingChanges, setIsSavingChanges] = useState(false);
+  const [variantError, setVariantError] = useState<{
+    title: string;
+    message: string;
+    suggestions: string[];
+  } | null>(null);
   const [genres, setGenres] = useState<string[]>([]);
   const [artists, setArtists] = useState<string[]>([]);
   const [albums, setAlbums] = useState<string[]>([]);
@@ -236,6 +262,109 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   } | null>(null);
   const [searchingSample, setSearchingSample] = useState<string | null>(null); // trackFileId being searched
   const [sampleError, setSampleError] = useState<string | null>(null);
+
+  type DiscoveryTrackItem = NonNullable<GeneratedPlaylist["discoveryTracks"]>[number];
+
+  const buildSummary = useCallback((trackFileIds: string[]) => {
+    const discoveryMap = new Map<string, DiscoveryTrackItem>();
+    if (playlist.discoveryTracks) {
+      for (const dt of playlist.discoveryTracks) {
+        discoveryMap.set(`discovery:${dt.discoveryTrack.mbid}`, dt);
+      }
+    }
+
+    const summaryInputs: SummaryTrackInput[] = [];
+    for (const trackFileId of trackFileIds) {
+      if (trackFileId.startsWith("discovery:")) {
+        const discovery = discoveryMap.get(trackFileId);
+        if (discovery) {
+          summaryInputs.push({
+            trackFileId,
+            genres: discovery.discoveryTrack.genres || [],
+            artist: discovery.discoveryTrack.artist,
+            durationSeconds: discovery.discoveryTrack.duration,
+          });
+        }
+        continue;
+      }
+
+      const track = tracks.get(trackFileId);
+      if (!track) continue;
+      summaryInputs.push({
+        trackFileId,
+        genres: track.tags.genres || [],
+        artist: track.tags.artist,
+        durationSeconds: track.tech?.durationSeconds,
+        bpm: track.tech?.bpm,
+      });
+    }
+
+    return calculatePlaylistSummaryFromTracks(summaryInputs);
+  }, [playlist.discoveryTracks, tracks]);
+
+  const {
+    editedPlaylist,
+    isDirty,
+    updatePlaylist,
+    updateTrackFileIds,
+    resetEdits,
+    markClean,
+  } = usePlaylistEditState(playlist, { buildSummary });
+
+  const displayPlaylist = isEditMode ? editedPlaylist : playlist;
+
+  const trackItems = useMemo(() => {
+    const discoveryTracksMap = new Map();
+
+    if (displayPlaylist.discoveryTracks) {
+      for (const dt of displayPlaylist.discoveryTracks) {
+        discoveryTracksMap.set(`discovery:${dt.discoveryTrack.mbid}`, dt);
+      }
+    }
+
+    const selectionsMap = new Map();
+    for (const selection of displayPlaylist.trackSelections) {
+      selectionsMap.set(selection.trackFileId, selection);
+    }
+
+    const orderedTracksMap = new Map();
+    if (displayPlaylist.orderedTracks) {
+      for (const orderedTrack of displayPlaylist.orderedTracks) {
+        orderedTracksMap.set(orderedTrack.trackFileId, orderedTrack);
+      }
+    }
+
+    return displayPlaylist.trackFileIds
+      .map((trackFileId, index) => {
+        const isDiscoveryTrack = trackFileId.startsWith("discovery:");
+        const discoveryTrack = isDiscoveryTrack ? discoveryTracksMap.get(trackFileId) : null;
+        const track = isDiscoveryTrack ? null : tracks.get(trackFileId);
+        const selection = selectionsMap.get(trackFileId);
+        const orderedTrack = orderedTracksMap.get(trackFileId);
+
+        if (!track && !discoveryTrack) return null;
+
+        return {
+          trackFileId,
+          index,
+          isDiscoveryTrack,
+          discoveryTrack,
+          track,
+          selection,
+          orderedTrack,
+          reasons: orderedTrack?.reasons || selection?.reasons || [],
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+  }, [
+    displayPlaylist.trackFileIds,
+    displayPlaylist.discoveryTracks,
+    displayPlaylist.trackSelections,
+    displayPlaylist.orderedTracks,
+    tracks,
+  ]);
+
+  const allTrackRecords = useMemo(() => Array.from(tracks.values()), [tracks]);
   
   // Inline audio preview state - use hook for better state management
   const audioPreviewState = useAudioPreviewState();
@@ -288,6 +417,49 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     // Clear playing sample when playlist changes to prevent blob URL errors
     setPlayingSample(null);
   }, [playlist, checkIfSaved, loadTracks, loadLibraryRoot]);
+
+  useEffect(() => {
+    if (!isEditMode) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
+        return;
+      }
+
+      if (event.key === "Escape") {
+        handleToggleEditMode(false);
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (isDirty) {
+          setShowSaveDialog(true);
+        }
+        return;
+      }
+
+      if ((event.key === "Delete" || event.key === "Backspace") && expandedTrackId) {
+        event.preventDefault();
+        handleRemoveTrack(expandedTrackId);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [expandedTrackId, handleToggleEditMode, handleRemoveTrack, isDirty, isEditMode]);
+
+  useEffect(() => {
+    const stored = sessionStorage.getItem("playlist-request");
+    if (!stored) return;
+    try {
+      const request = JSON.parse(stored) as { llmConfig?: LLMConfig };
+      setLlmConfig(request.llmConfig);
+    } catch {
+      // Ignore parsing errors
+    }
+  }, []);
 
   // Load suggestions for inline editor
   useEffect(() => {
@@ -357,6 +529,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
 
   async function handleVariant(variantType: VariantType, genre?: string) {
     setIsRegenerating(true);
+    setVariantError(null);
     try {
       // Load original request
       const stored = sessionStorage.getItem("playlist-request");
@@ -388,9 +561,28 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       );
 
       setPlaylist(generated);
-      sessionStorage.setItem("generated-playlist", JSON.stringify(generated));
+      storePlaylistInSessionStorage(generated);
     } catch (error) {
       logger.error("Failed to generate variant:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to generate variant";
+      if (errorMessage.includes("No tracks match the playlist criteria")) {
+        setVariantError({
+          title: "No more variants available",
+          message: "We ran out of tracks that match the current criteria for this variant.",
+          suggestions: [
+            "Add more genres, artists, or albums.",
+            "Reduce constraints like mood/tempo.",
+            "Try a different variant button.",
+            "Add tracks directly in edit mode.",
+          ],
+        });
+      } else {
+        setVariantError({
+          title: "Variant generation failed",
+          message: errorMessage,
+          suggestions: ["Try again or adjust your criteria."],
+        });
+      }
     } finally {
       setIsRegenerating(false);
     }
@@ -463,6 +655,405 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     return `${minutes}:${String(secs).padStart(2, "0")}`;
   };
 
+  const storePlaylistInSessionStorage = (updated: GeneratedPlaylist) => {
+    const serializable = {
+      ...updated,
+      summary: {
+        ...updated.summary,
+        genreMix: Object.fromEntries(updated.summary.genreMix),
+        tempoMix: Object.fromEntries(updated.summary.tempoMix),
+        artistMix: Object.fromEntries(updated.summary.artistMix),
+      },
+    };
+    sessionStorage.setItem("generated-playlist", JSON.stringify(serializable));
+  };
+
+  const renderTrackRow = (
+    item: {
+      trackFileId: string;
+      index: number;
+      isDiscoveryTrack: boolean;
+      discoveryTrack: any;
+      track: any;
+      reasons: any[];
+    },
+    options?: { rowProps?: React.HTMLAttributes<HTMLDivElement>; isDragging?: boolean }
+  ) => {
+    const { trackFileId, index, isDiscoveryTrack, discoveryTrack, track, reasons } = item;
+    const rowProps = options?.rowProps || {};
+    const isDragging = options?.isDragging || false;
+
+    const dragHandle = isEditMode ? (
+      <div
+        className="flex items-center justify-center size-7 text-app-tertiary cursor-grab active:cursor-grabbing"
+        title="Drag to reorder"
+      >
+        <GripVertical className="size-4" />
+      </div>
+    ) : null;
+
+    if (isDiscoveryTrack && discoveryTrack) {
+      const dtrack = discoveryTrack.discoveryTrack;
+      return (
+        <div
+          {...rowProps}
+          className={cn(
+            "px-4 md:px-6 py-4 hover:bg-app-hover transition-colors group border-l-2 border-accent-primary/30 bg-accent-primary/5",
+            isDragging && "opacity-70"
+          )}
+        >
+          <div className="flex items-start gap-4">
+            {dragHandle}
+            <button
+              onClick={() =>
+                handleInlinePlayClick(trackFileId, {
+                  title: dtrack.title,
+                  artist: dtrack.artist,
+                  album: dtrack.album,
+                })
+              }
+              disabled={searchingTrackId === trackFileId}
+              className="flex items-center justify-center size-8 text-app-tertiary group-hover:text-accent-primary transition-colors shrink-0 mt-1 cursor-pointer disabled:opacity-50"
+            >
+              {searchingTrackId === trackFileId ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : playingTrackId === trackFileId ? (
+                <Pause className="size-4" />
+              ) : (
+                <>
+                  <span className="text-sm group-hover:hidden">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <Play className="size-4 hidden group-hover:block" />
+                </>
+              )}
+            </button>
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-4 mb-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="text-app-primary font-medium truncate">
+                      {dtrack.title}
+                    </div>
+                    <DiscoveryTrackBadge explanation={dtrack.explanation} />
+                  </div>
+                  <div className="text-app-secondary text-sm truncate">
+                    {dtrack.artist}
+                  </div>
+                  {dtrack.album && (
+                    <div className="text-app-tertiary text-xs truncate mt-1">
+                      {dtrack.album}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  {dtrack.duration && (
+                    <div className="text-app-secondary text-sm tabular-nums shrink-0">
+                      {formatDuration(dtrack.duration)}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (isEditMode) {
+                        handleRemoveTrack(trackFileId);
+                        return;
+                      }
+                      const updatedTrackFileIds = displayPlaylist.trackFileIds.filter(
+                        id => id !== trackFileId
+                      );
+                      const updatedDiscoveryTracks = displayPlaylist.discoveryTracks?.filter(
+                        dt => `discovery:${dt.discoveryTrack.mbid}` !== trackFileId
+                      );
+                      setPlaylist({
+                        ...displayPlaylist,
+                        trackFileIds: updatedTrackFileIds,
+                        discoveryTracks: updatedDiscoveryTracks,
+                      });
+                    }}
+                    disabled={isRegenerating}
+                    className="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:bg-red-500/10 rounded-sm transition-all disabled:opacity-50"
+                    title="Remove discovery track"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
+              </div>
+
+              {dtrack.explanation && (
+                <div className="mt-2 p-2 bg-app-hover rounded-sm border border-app-border">
+                  <p className="text-app-secondary text-xs leading-relaxed">
+                    {dtrack.explanation}
+                  </p>
+                </div>
+              )}
+
+              {getError(trackFileId) && (
+                <div className="mt-2 flex items-center gap-2 text-red-500 text-xs">
+                  <AlertCircle className="size-3" />
+                  <span>{getError(trackFileId)}</span>
+                </div>
+              )}
+
+              {reasons.length > 0 && (
+                <div className="mt-2">
+                  <TrackReasonChips reasons={reasons} />
+                </div>
+              )}
+            </div>
+          </div>
+
+          <InlineAudioPlayer
+            ref={(ref) => {
+              if (ref) {
+                audioRefs.current.set(trackFileId, ref);
+              } else {
+                audioRefs.current.delete(trackFileId);
+              }
+            }}
+            trackFileId={trackFileId}
+            sampleResult={getSampleResult(trackFileId) || null}
+            autoPlay={playingTrackId === trackFileId && !searchingTrackId && hasSampleResult(trackFileId)}
+            onPlay={() => setPlayingTrack(trackFileId)}
+            onPause={() => clearPlayingTrack()}
+            onEnded={() => clearPlayingTrack()}
+            onError={(error) => {
+              setTrackError(trackFileId, error);
+              clearPlayingTrack();
+            }}
+            onLoaded={async () => {
+              if (playingTrackId === trackFileId && !searchingTrackId) {
+                const audioControls = audioRefs.current.get(trackFileId);
+                if (audioControls) {
+                  try {
+                    await audioControls.play();
+                  } catch {
+                    // Ignore play errors
+                  }
+                }
+              }
+            }}
+          />
+        </div>
+      );
+    }
+
+    if (!track) return null;
+
+    const isExpanded = expandedTrackId === trackFileId;
+    const similar = isExpanded ? findSimilarTracks(track, allTrackRecords) : null;
+
+    return (
+      <>
+        <div
+          {...rowProps}
+          className={cn(
+            "px-4 md:px-6 py-4 hover:bg-app-hover transition-colors group",
+            isDragging && "opacity-70"
+          )}
+        >
+          <div className="flex items-start gap-4">
+            {dragHandle}
+            <button
+              onClick={() =>
+                handleInlinePlayClick(trackFileId, {
+                  title: track.tags.title || "Unknown Title",
+                  artist: track.tags.artist || "Unknown Artist",
+                  album: track.tags.album,
+                })
+              }
+              disabled={searchingTrackId === trackFileId}
+              className="flex items-center justify-center size-8 text-app-tertiary group-hover:text-accent-primary transition-colors shrink-0 mt-1 cursor-pointer disabled:opacity-50"
+            >
+              {searchingTrackId === trackFileId ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : playingTrackId === trackFileId ? (
+                <Pause className="size-4" />
+              ) : (
+                <>
+                  <span className="text-sm group-hover:hidden">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <Play className="size-4 hidden group-hover:block" />
+                </>
+              )}
+            </button>
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-4 mb-2">
+                <div className="flex-1 min-w-0">
+                  <div className="text-app-primary font-medium truncate">
+                    {track.tags.title || "Unknown Title"}
+                  </div>
+                  <div className="text-app-secondary text-sm truncate">
+                    {track.tags.artist || "Unknown Artist"}
+                  </div>
+                  {track.tags.album && (
+                    <div className="text-app-tertiary text-xs truncate mt-1">
+                      {track.tags.album}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="text-app-secondary text-sm tabular-nums shrink-0">
+                    {formatDuration(track.tech?.durationSeconds)}
+                  </div>
+                  <button
+                    onClick={() => setExpandedTrackId(isExpanded ? null : trackFileId)}
+                    className="p-2 text-app-secondary hover:text-accent-primary transition-colors"
+                    title={isExpanded ? "Hide details" : "Show details"}
+                  >
+                    {isExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                  </button>
+                  <button
+                    onClick={() => handleRemoveTrack(trackFileId)}
+                    disabled={isRegenerating}
+                    className="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:bg-red-500/10 rounded-sm transition-all disabled:opacity-50"
+                    title="Remove track"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
+              </div>
+
+              {getError(trackFileId) && (
+                <div className="mt-2 flex items-center gap-2 text-red-500 text-xs">
+                  <AlertCircle className="size-3" />
+                  <span>{getError(trackFileId)}</span>
+                </div>
+              )}
+
+              {reasons.length > 0 && (
+                <div className="mt-2">
+                  <TrackReasonChips reasons={reasons} />
+                </div>
+              )}
+            </div>
+
+            <InlineAudioPlayer
+              ref={(ref) => {
+                if (ref) {
+                  audioRefs.current.set(trackFileId, ref);
+                } else {
+                  audioRefs.current.delete(trackFileId);
+                }
+              }}
+              trackFileId={trackFileId}
+              sampleResult={getSampleResult(trackFileId) || null}
+              autoPlay={playingTrackId === trackFileId && !searchingTrackId && hasSampleResult(trackFileId)}
+              onPlay={() => setPlayingTrack(trackFileId)}
+              onPause={() => clearPlayingTrack()}
+              onEnded={() => clearPlayingTrack()}
+              onError={(error) => {
+                setTrackError(trackFileId, error);
+                clearPlayingTrack();
+              }}
+              onLoaded={async () => {
+                if (playingTrackId === trackFileId && !searchingTrackId) {
+                  const audioControls = audioRefs.current.get(trackFileId);
+                  if (audioControls) {
+                    try {
+                      await audioControls.play();
+                    } catch {
+                      // Ignore play errors
+                    }
+                  }
+                }
+              }}
+            />
+          </div>
+
+          {isExpanded && similar && (
+            <TrackExpansionPanel
+              track={track}
+              similarArtists={similar.similarArtists}
+              similarTracks={similar.similarTracks}
+              onAddTrack={isEditMode ? handleAddTrackToEditPlaylist : undefined}
+            />
+          )}
+        </div>
+      </>
+    );
+  };
+
+  const handleAddTrackToEditPlaylist = (track: TrackRecord) => {
+    if (!isEditMode) return;
+    updatePlaylist((prev) => {
+      if (prev.trackFileIds.includes(track.trackFileId)) {
+        return prev;
+      }
+      const newSelection: TrackSelection = {
+        trackFileId: track.trackFileId,
+        track,
+        score: 0,
+        reasons: [],
+        genreMatch: 0,
+        tempoMatch: 0,
+        durationFit: 0,
+        diversity: 0,
+        surprise: 0,
+      };
+      const updatedSelections = [...prev.trackSelections, newSelection];
+      const updatedTrackFileIds = [...prev.trackFileIds, track.trackFileId];
+      const updatedOrderedTracks = prev.orderedTracks
+        ? [
+            ...prev.orderedTracks,
+            {
+              trackFileId: track.trackFileId,
+              position: prev.orderedTracks.length,
+              section: "transition",
+              reasons: [],
+              transitionScore: 0,
+            },
+          ]
+        : prev.orderedTracks;
+
+      return {
+        ...prev,
+        trackFileIds: updatedTrackFileIds,
+        trackSelections: updatedSelections,
+        orderedTracks: updatedOrderedTracks,
+      };
+    });
+  };
+
+  const handleSaveEdits = async (options: { mode: "override" | "remix"; title: string; description?: string }) => {
+    setIsSavingChanges(true);
+    try {
+      if (options.mode === "override") {
+        const updated: GeneratedPlaylist = {
+          ...editedPlaylist,
+          title: options.title,
+          description: options.description ?? editedPlaylist.description,
+        };
+        await updateSavedPlaylist(updated, libraryRootId);
+        setPlaylist(updated);
+        markClean(updated);
+        setIsSaved(true);
+        storePlaylistInSessionStorage(updated);
+      } else {
+        const remixId = `playlist-remix-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const remixed: GeneratedPlaylist = {
+          ...editedPlaylist,
+          id: remixId,
+          title: options.title || `${editedPlaylist.title} (Remix)`,
+          description: options.description ?? editedPlaylist.description,
+          createdAt: Date.now(),
+        };
+        await savePlaylist(remixed, libraryRootId);
+        setPlaylist(remixed);
+        markClean(remixed);
+        setIsSaved(true);
+        storePlaylistInSessionStorage(remixed);
+      }
+    } catch (error) {
+      logger.error("Failed to save playlist edits:", error);
+    } finally {
+      setIsSavingChanges(false);
+      setShowSaveDialog(false);
+    }
+  };
+
   async function handleSaveTitle() {
     if (editedTitle.trim() === "") {
       return;
@@ -476,16 +1067,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     setIsEditingTitle(false);
 
     // Update sessionStorage
-    const serializable = {
-      ...updatedPlaylist,
-      summary: {
-        ...updatedPlaylist.summary,
-        genreMix: Object.fromEntries(updatedPlaylist.summary.genreMix),
-        tempoMix: Object.fromEntries(updatedPlaylist.summary.tempoMix),
-        artistMix: Object.fromEntries(updatedPlaylist.summary.artistMix),
-      },
-    };
-    sessionStorage.setItem("generated-playlist", JSON.stringify(serializable));
+    storePlaylistInSessionStorage(updatedPlaylist);
 
     // Update in IndexedDB if saved
     if (isSaved) {
@@ -519,9 +1101,26 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     }
   }
 
+  function handleToggleEditMode(next: boolean) {
+    if (!next && isDirty) {
+      const shouldExit = confirm("You have unsaved changes. Discard them?");
+      if (!shouldExit) {
+        return;
+      }
+      resetEdits();
+    }
+    setIsEditMode(next);
+    if (!next) {
+      setShowInlineEditor(false);
+      setShowFlowArcEditor(false);
+      setExpandedTrackId(null);
+    }
+  }
+
   async function handleFlowArcUpdate(updatedStrategy: typeof playlist.strategy) {
     setIsRegenerating(true);
     try {
+      const targetPlaylist = isEditMode ? editedPlaylist : playlist;
       // Re-order tracks based on updated strategy
       const request = JSON.parse(
         sessionStorage.getItem("playlist-request") || "{}"
@@ -532,7 +1131,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       
       // Re-order tracks using the updated strategy
       const ordered = orderTracks(
-        playlist.trackSelections,
+        targetPlaylist.trackSelections,
         updatedStrategy,
         request,
         matchingIndex
@@ -540,13 +1139,17 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
 
       // Update playlist with new ordering
       const updatedPlaylist: typeof playlist = {
-        ...playlist,
+        ...targetPlaylist,
         strategy: updatedStrategy,
         orderedTracks: ordered.tracks,
         trackFileIds: ordered.tracks.map((t) => t.trackFileId),
       };
 
-      setPlaylist(updatedPlaylist);
+      if (isEditMode) {
+        updatePlaylist(() => updatedPlaylist);
+      } else {
+        setPlaylist(updatedPlaylist);
+      }
 
       // Update sessionStorage
       const serializable = {
@@ -569,9 +1172,9 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   function handleFlowArcReorder(reorderedSections: typeof playlist.strategy.orderingPlan.sections) {
     // Update strategy with reordered sections
     const updatedStrategy = {
-      ...playlist.strategy,
+      ...displayPlaylist.strategy,
       orderingPlan: {
-        ...playlist.strategy.orderingPlan,
+        ...displayPlaylist.strategy.orderingPlan,
         sections: reorderedSections,
       },
     };
@@ -604,10 +1207,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
 
     // Check if we already have sample result cached
     if (hasSampleResult(trackFileId)) {
-      const sampleResult = getSampleResult(trackFileId)!;
-      // Start playing immediately
-      setPlayingTrack(trackFileId);
-      // Use setTimeout to ensure audio element is ready
+      // Start playing immediately without updating UI until play event fires
       setTimeout(() => {
         const audioControls = audioRefs.current.get(trackFileId);
         if (audioControls) {
@@ -622,9 +1222,8 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     try {
       const sampleResult = await searchTrackSample(trackInfo);
       if (sampleResult) {
-        // Set sample result and playing track state first
+        // Set sample result before attempting to play
         setSampleResult(trackFileId, sampleResult);
-        setPlayingTrack(trackFileId);
         // Clear searching state AFTER setting sample result to ensure audio element exists
         setSearchingTrack(null);
         
@@ -677,6 +1276,29 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   }, [playlist.id, clearAllAudioState]);
 
   async function handleRemoveTrack(trackFileId: string) {
+    if (isEditMode) {
+      updatePlaylist((prev) => {
+        const updatedTrackFileIds = prev.trackFileIds.filter((id) => id !== trackFileId);
+        const updatedOrderedTracks = prev.orderedTracks?.filter(
+          (track) => track.trackFileId !== trackFileId
+        );
+        const updatedSelections = prev.trackSelections?.filter(
+          (track) => track.trackFileId !== trackFileId
+        );
+        const updatedDiscoveryTracks = prev.discoveryTracks?.filter(
+          (dt) => `discovery:${dt.discoveryTrack.mbid}` !== trackFileId
+        );
+        return {
+          ...prev,
+          trackFileIds: updatedTrackFileIds,
+          orderedTracks: updatedOrderedTracks,
+          trackSelections: updatedSelections,
+          discoveryTracks: updatedDiscoveryTracks,
+        };
+      });
+      return;
+    }
+
     setIsRegenerating(true);
     try {
       // Load original request from sessionStorage
@@ -810,7 +1432,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
 
   const { title, subtitle, emoji } = generatePlaylistTitle(
     safeRequest,
-    playlist.strategy,
+    displayPlaylist.strategy,
     true,
     customEmoji
   );
@@ -867,7 +1489,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
               ) : (
                 <div className="flex items-center gap-2 group">
                   <h1 className="text-2xl md:text-3xl font-semibold text-app-primary">
-                    {playlist.title || title}
+                    {displayPlaylist.title || title}
                   </h1>
                   <button
                     onClick={() => setIsEditingTitle(true)}
@@ -880,29 +1502,29 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
               )}
             </div>
             <p className="text-app-secondary text-sm md:text-base mt-2">
-              {playlist.description || subtitle}
+              {displayPlaylist.description || subtitle}
             </p>
             
             {/* Validation and Explanation */}
-            {(playlist.validation || playlist.explanation) && (
+            {(displayPlaylist.validation || displayPlaylist.explanation) && (
               <div className="mt-4 space-y-3">
                 {/* Validation Score */}
-                {playlist.validation && (
+                {displayPlaylist.validation && (
                   <div className="p-3 bg-app-hover rounded-sm border border-app-border">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-app-primary text-sm font-medium">Validation Score</span>
                       <span className={cn(
                         "text-sm font-semibold",
-                        playlist.validation.score >= 0.8 ? "text-green-500" :
-                        playlist.validation.score >= 0.6 ? "text-yellow-500" :
+                        displayPlaylist.validation.score >= 0.8 ? "text-green-500" :
+                        displayPlaylist.validation.score >= 0.6 ? "text-yellow-500" :
                         "text-red-500"
                       )}>
-                        {(playlist.validation.score * 100).toFixed(0)}%
+                        {(displayPlaylist.validation.score * 100).toFixed(0)}%
                       </span>
                     </div>
-                    {playlist.validation.issues.length > 0 && (
+                    {displayPlaylist.validation.issues.length > 0 && (
                       <div className="mt-2 space-y-1">
-                        {playlist.validation.issues.map((issue, idx) => (
+                        {displayPlaylist.validation.issues.map((issue, idx) => (
                           <div key={idx} className="flex items-start gap-2 text-sm text-yellow-500">
                             <AlertCircle className="size-4 mt-0.5 flex-shrink-0" />
                             <span>{issue}</span>
@@ -910,9 +1532,9 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                         ))}
                       </div>
                     )}
-                    {playlist.validation.strengths.length > 0 && (
+                    {displayPlaylist.validation.strengths.length > 0 && (
                       <div className="mt-2 space-y-1">
-                        {playlist.validation.strengths.map((strength, idx) => (
+                        {displayPlaylist.validation.strengths.map((strength, idx) => (
                           <div key={idx} className="flex items-start gap-2 text-sm text-green-500">
                             <Check className="size-4 mt-0.5 flex-shrink-0" />
                             <span>{strength}</span>
@@ -924,18 +1546,18 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                 )}
                 
                 {/* Explanation */}
-                {playlist.explanation && (
+                {displayPlaylist.explanation && (
                   <div className="p-4 bg-app-hover rounded-sm border border-app-border">
                     <h3 className="text-app-primary text-sm font-medium uppercase tracking-wider mb-2 flex items-center gap-2">
                       <Sparkles className="size-4 text-accent-primary" />
                       Why This Playlist Works
                     </h3>
                     <p className="text-app-secondary text-sm leading-relaxed whitespace-pre-line">
-                      {playlist.explanation.explanation}
+                      {displayPlaylist.explanation.explanation}
                     </p>
-                    {playlist.explanation.flowDescription && (
+                    {displayPlaylist.explanation.flowDescription && (
                       <p className="text-app-tertiary text-xs mt-3 italic">
-                        {playlist.explanation.flowDescription}
+                        {displayPlaylist.explanation.flowDescription}
                       </p>
                     )}
                   </div>
@@ -944,6 +1566,48 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
             )}
           </div>
           <div className="flex items-center gap-2">
+            {!isEditMode && (
+              <button
+                onClick={() => handleToggleEditMode(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm border border-app-border"
+              >
+                <Edit2 className="size-4" />
+                Edit Mode
+              </button>
+            )}
+            {isEditMode && (
+              <button
+                onClick={() => handleToggleEditMode(false)}
+                className="flex items-center gap-2 px-4 py-2 bg-accent-primary/10 text-accent-primary rounded-sm transition-colors text-sm border border-accent-primary/20"
+              >
+                <X className="size-4" />
+                Exit Edit
+              </button>
+            )}
+            {isEditMode && (
+              <button
+                onClick={() => setShowSaveDialog(true)}
+                disabled={!isDirty || isSavingChanges}
+                className="flex items-center gap-2 px-4 py-2 bg-accent-primary hover:bg-accent-hover text-white rounded-sm transition-colors disabled:opacity-50 text-sm"
+              >
+                {isSavingChanges ? (
+                  <>
+                    <RefreshCw className="size-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="size-4" />
+                    Save Changes
+                  </>
+                )}
+              </button>
+            )}
+            {isEditMode && isDirty && (
+              <span className="text-xs text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 px-2 py-1 rounded-sm">
+                Unsaved changes
+              </span>
+            )}
             {!isSaved && (
               <button
                 onClick={handleSavePlaylist}
@@ -973,60 +1637,167 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
         </div>
 
         {/* Variant Buttons */}
-        <div className="flex flex-wrap gap-2 mt-4">
-          <button
-            onClick={() => setShowFlowArcEditor(!showFlowArcEditor)}
-            disabled={isRegenerating}
-            className="flex items-center gap-2 px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm disabled:opacity-50"
-          >
-            <GripVertical className="size-4" />
-            {showFlowArcEditor ? "Hide" : "Edit"} Flow Arc
-          </button>
-          <button
-            onClick={() => handleVariant("calmer")}
-            disabled={isRegenerating}
-            className="flex items-center gap-2 px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm disabled:opacity-50"
-          >
-            <TrendingDown className="size-4" />
-            Make it calmer
-          </button>
-          <button
-            onClick={() => handleVariant("faster")}
-            disabled={isRegenerating}
-            className="flex items-center gap-2 px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm disabled:opacity-50"
-          >
-            <TrendingUp className="size-4" />
-            Make it faster
-          </button>
-          <button
-            onClick={() => handleVariant("more_variety")}
-            disabled={isRegenerating}
-            className="flex items-center gap-2 px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm disabled:opacity-50"
-          >
-            <Shuffle className="size-4" />
-            More variety
-          </button>
-          {playlist.summary.genreMix.size > 0 && (
+        {!isEditMode && (
+          <div className="flex flex-wrap gap-2 mt-4">
             <button
-              onClick={() => {
-                const topGenre = Array.from(playlist.summary.genreMix.entries())
-                  .sort((a, b) => b[1] - a[1])[0]?.[0];
-                if (topGenre) handleVariant("more_genre", topGenre);
-              }}
+              onClick={() => setShowFlowArcEditor(!showFlowArcEditor)}
               disabled={isRegenerating}
               className="flex items-center gap-2 px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm disabled:opacity-50"
             >
-              <Plus className="size-4" />
-              More {Array.from(playlist.summary.genreMix.entries()).sort((a, b) => b[1] - a[1])[0]?.[0]}
+              <GripVertical className="size-4" />
+              {showFlowArcEditor ? "Hide" : "Edit"} Flow Arc
             </button>
-          )}
-        </div>
+            <button
+              onClick={() => handleVariant("calmer")}
+              disabled={isRegenerating}
+              className="flex items-center gap-2 px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm disabled:opacity-50"
+            >
+              <TrendingDown className="size-4" />
+              Make it calmer
+            </button>
+            <button
+              onClick={() => handleVariant("faster")}
+              disabled={isRegenerating}
+              className="flex items-center gap-2 px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm disabled:opacity-50"
+            >
+              <TrendingUp className="size-4" />
+              Make it faster
+            </button>
+            <button
+              onClick={() => handleVariant("more_variety")}
+              disabled={isRegenerating}
+              className="flex items-center gap-2 px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm disabled:opacity-50"
+            >
+              <Shuffle className="size-4" />
+              More variety
+            </button>
+            {displayPlaylist.summary.genreMix.size > 0 && (
+              <button
+                onClick={() => {
+                  const topGenre = Array.from(displayPlaylist.summary.genreMix.entries())
+                    .sort((a, b) => b[1] - a[1])[0]?.[0];
+                  if (topGenre) handleVariant("more_genre", topGenre);
+                }}
+                disabled={isRegenerating}
+                className="flex items-center gap-2 px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm disabled:opacity-50"
+              >
+                <Plus className="size-4" />
+                More {Array.from(displayPlaylist.summary.genreMix.entries()).sort((a, b) => b[1] - a[1])[0]?.[0]}
+              </button>
+            )}
+          </div>
+        )}
+        {isEditMode && (
+          <div className="flex flex-wrap gap-2 mt-4">
+            <button
+              onClick={() => setShowFlowArcEditor(!showFlowArcEditor)}
+              disabled={isRegenerating}
+              className="flex items-center gap-2 px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm disabled:opacity-50"
+            >
+              <GripVertical className="size-4" />
+              {showFlowArcEditor ? "Hide" : "Edit"} Flow Arc
+            </button>
+            <button
+              onClick={() => handleVariant("calmer")}
+              disabled={isRegenerating}
+              className="flex items-center gap-2 px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm disabled:opacity-50"
+            >
+              <TrendingDown className="size-4" />
+              Make it calmer
+            </button>
+            <button
+              onClick={() => handleVariant("faster")}
+              disabled={isRegenerating}
+              className="flex items-center gap-2 px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm disabled:opacity-50"
+            >
+              <TrendingUp className="size-4" />
+              Make it faster
+            </button>
+            <button
+              onClick={() => handleVariant("more_variety")}
+              disabled={isRegenerating}
+              className="flex items-center gap-2 px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm disabled:opacity-50"
+            >
+              <Shuffle className="size-4" />
+              More variety
+            </button>
+            {displayPlaylist.summary.genreMix.size > 0 && (
+              <button
+                onClick={() => {
+                  const topGenre = Array.from(displayPlaylist.summary.genreMix.entries())
+                    .sort((a, b) => b[1] - a[1])[0]?.[0];
+                  if (topGenre) handleVariant("more_genre", topGenre);
+                }}
+                disabled={isRegenerating}
+                className="flex items-center gap-2 px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm disabled:opacity-50"
+              >
+                <Plus className="size-4" />
+                More {Array.from(displayPlaylist.summary.genreMix.entries()).sort((a, b) => b[1] - a[1])[0]?.[0]}
+              </button>
+            )}
+            <button
+              onClick={() => setShowTrackAddDialog(true)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm"
+            >
+              <Plus className="size-4" />
+              Add Track
+            </button>
+            <button
+              onClick={handleRegenerate}
+              disabled={isRegenerating}
+              className="flex items-center gap-2 px-3 py-1.5 bg-accent-primary hover:bg-accent-hover text-white rounded-sm transition-colors text-sm disabled:opacity-50"
+            >
+              {isRegenerating ? (
+                <>
+                  <RefreshCw className="size-4 animate-spin" />
+                  Regenerating...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="size-4" />
+                  Regenerate
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => setStableMode(!stableMode)}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-sm transition-colors text-sm",
+                stableMode
+                  ? "bg-accent-primary/10 text-accent-primary border border-accent-primary/20"
+                  : "bg-app-hover text-app-primary border border-app-border hover:bg-app-surface-hover"
+              )}
+              title={stableMode ? "Stable mode: same seed, similar results" : "Fresh mode: new seed, different results"}
+            >
+              {stableMode ? <Lock className="size-4" /> : <Unlock className="size-4" />}
+              {stableMode ? "Stable" : "Fresh"}
+            </button>
+          </div>
+        )}
+        {variantError && (
+          <div className="mt-4 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-sm">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="size-5 text-yellow-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-yellow-500 text-sm font-medium mb-1">{variantError.title}</p>
+                <p className="text-yellow-500 text-sm">{variantError.message}</p>
+                {variantError.suggestions.length > 0 && (
+                  <div className="mt-2 text-yellow-500 text-xs space-y-1">
+                    {variantError.suggestions.map((suggestion) => (
+                      <div key={suggestion}>• {suggestion}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Flow Arc Editor */}
         {showFlowArcEditor && (
           <div className="mt-4 pt-4 border-t border-app-border">
             <FlowArcEditor
-              strategy={playlist.strategy}
+              strategy={displayPlaylist.strategy}
               onUpdate={handleFlowArcUpdate}
               onReorder={handleFlowArcReorder}
             />
@@ -1034,7 +1805,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
         )}
 
         {/* Inline Editor */}
-        {showInlineEditor && (
+        {showInlineEditor && !isEditMode && (
           <div className="mt-4 pt-4 border-t border-app-border space-y-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-app-primary text-sm font-medium uppercase tracking-wider">
@@ -1152,7 +1923,8 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
         )}
 
         {/* Regenerate Button */}
-        <div className="flex items-center gap-3 mt-4 pt-4 border-t border-app-border">
+        {!isEditMode && (
+          <div className="flex items-center gap-3 mt-4 pt-4 border-t border-app-border">
           <button
             onClick={handleRegenerate}
             disabled={isRegenerating}
@@ -1192,325 +1964,33 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
               Add More
             </button>
           )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Why This Playlist Summary */}
-      <PlaylistWhySummary playlist={playlist} />
+      {!isEditMode && <PlaylistWhySummary playlist={displayPlaylist} />}
 
       {/* Track List */}
       <div className="bg-app-surface rounded-sm border border-app-border overflow-hidden">
-        <div className="divide-y divide-app-border">
-          {useMemo(() => {
-            // Pre-compute track data for all tracks to avoid repeated lookups
-            const discoveryTracksMap = new Map();
-            
-            // Build discovery tracks map
-            if (playlist.discoveryTracks) {
-              for (const dt of playlist.discoveryTracks) {
-                discoveryTracksMap.set(`discovery:${dt.discoveryTrack.mbid}`, dt);
-              }
+        {isEditMode ? (
+          <DraggableTrackList
+            items={trackItems}
+            getItemId={(item, index) => `${item.trackFileId}-${index}`}
+            onReorder={(items) => updateTrackFileIds(items.map((item) => item.trackFileId))}
+            renderItem={(item, { rowProps, isDragging }) =>
+              renderTrackRow(item, { rowProps, isDragging })
             }
-            
-            // Build selections map
-            const selectionsMap = new Map();
-            for (const selection of playlist.trackSelections) {
-              selectionsMap.set(selection.trackFileId, selection);
-            }
-            
-            // Build ordered tracks map
-            const orderedTracksMap = new Map();
-            if (playlist.orderedTracks) {
-              for (const orderedTrack of playlist.orderedTracks) {
-                orderedTracksMap.set(orderedTrack.trackFileId, orderedTrack);
-              }
-            }
-            
-            return playlist.trackFileIds.map((trackFileId, index) => {
-              const isDiscoveryTrack = trackFileId.startsWith("discovery:");
-              const discoveryTrack = isDiscoveryTrack ? discoveryTracksMap.get(trackFileId) : null;
-              const track = isDiscoveryTrack ? null : tracks.get(trackFileId);
-              const selection = selectionsMap.get(trackFileId);
-              const orderedTrack = orderedTracksMap.get(trackFileId);
-              
-              if (!track && !discoveryTrack) return null;
-              
-              return {
-                trackFileId,
-                index,
-                isDiscoveryTrack,
-                discoveryTrack,
-                track,
-                selection,
-                orderedTrack,
-                reasons: orderedTrack?.reasons || selection?.reasons || [],
-              };
-            }).filter((item): item is NonNullable<typeof item> => item !== null);
-          }, [playlist.trackFileIds, playlist.discoveryTracks, playlist.trackSelections, playlist.orderedTracks, tracks]).map(({ trackFileId, index, isDiscoveryTrack, discoveryTrack, track, reasons }) => {
-
-            // Render discovery track
-            if (isDiscoveryTrack && discoveryTrack) {
-              const dtrack = discoveryTrack.discoveryTrack;
-              return (
-                <div
-                  key={`${trackFileId}-${index}`}
-                  className="px-4 md:px-6 py-4 hover:bg-app-hover transition-colors group border-l-2 border-accent-primary/30 bg-accent-primary/5"
-                >
-                  <div className="flex items-start gap-4">
-                    <button
-                      onClick={() => handleInlinePlayClick(trackFileId, {
-                        title: dtrack.title,
-                        artist: dtrack.artist,
-                        album: dtrack.album,
-                      })}
-                      disabled={searchingTrackId === trackFileId}
-                      className="flex items-center justify-center size-8 text-app-tertiary group-hover:text-accent-primary transition-colors shrink-0 mt-1 cursor-pointer disabled:opacity-50"
-                    >
-                      {searchingTrackId === trackFileId ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : playingTrackId === trackFileId ? (
-                        <Pause className="size-4" />
-                      ) : (
-                        <>
-                          <span className="text-sm group-hover:hidden">
-                            {String(index + 1).padStart(2, "0")}
-                          </span>
-                          <Play className="size-4 hidden group-hover:block" />
-                        </>
-                      )}
-                    </button>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-4 mb-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <div className="text-app-primary font-medium truncate">
-                              {dtrack.title}
-                            </div>
-                            <DiscoveryTrackBadge explanation={dtrack.explanation} />
-                          </div>
-                          <div className="text-app-secondary text-sm truncate">
-                            {dtrack.artist}
-                          </div>
-                          {dtrack.album && (
-                            <div className="text-app-tertiary text-xs truncate mt-1">
-                              {dtrack.album}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          {dtrack.duration && (
-                            <div className="text-app-secondary text-sm tabular-nums shrink-0">
-                              {formatDuration(dtrack.duration)}
-                            </div>
-                          )}
-                          <button
-                            onClick={() => {
-                              // Remove discovery track from playlist
-                              const updatedTrackFileIds = playlist.trackFileIds.filter(
-                                id => id !== trackFileId
-                              );
-                              const updatedDiscoveryTracks = playlist.discoveryTracks?.filter(
-                                dt => `discovery:${dt.discoveryTrack.mbid}` !== trackFileId
-                              );
-                              setPlaylist({
-                                ...playlist,
-                                trackFileIds: updatedTrackFileIds,
-                                discoveryTracks: updatedDiscoveryTracks,
-                              });
-                            }}
-                            disabled={isRegenerating}
-                            className="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:bg-red-500/10 rounded-sm transition-all disabled:opacity-50"
-                            title="Remove discovery track"
-                          >
-                            <Trash2 className="size-4" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Discovery Explanation */}
-                      {dtrack.explanation && (
-                        <div className="mt-2 p-2 bg-app-hover rounded-sm border border-app-border">
-                          <p className="text-app-secondary text-xs leading-relaxed">
-                            {dtrack.explanation}
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Inline Error Display */}
-                      {getError(trackFileId) && (
-                        <div className="mt-2 flex items-center gap-2 text-red-500 text-xs">
-                          <AlertCircle className="size-3" />
-                          <span>{getError(trackFileId)}</span>
-                        </div>
-                      )}
-
-                      {/* Why This Track Chips */}
-                      {reasons.length > 0 && (
-                        <div className="mt-2">
-                          <TrackReasonChips reasons={reasons} />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* Inline Audio Player */}
-                  <InlineAudioPlayer
-                    ref={(ref) => {
-                      if (ref) {
-                        audioRefs.current.set(trackFileId, ref);
-                      } else {
-                        audioRefs.current.delete(trackFileId);
-                      }
-                    }}
-                    trackFileId={trackFileId}
-                    sampleResult={getSampleResult(trackFileId) || null}
-                    autoPlay={playingTrackId === trackFileId && !searchingTrackId && hasSampleResult(trackFileId)}
-                    onPlay={() => setPlayingTrack(trackFileId)}
-                    onPause={() => clearPlayingTrack()}
-                    onEnded={() => clearPlayingTrack()}
-                    onError={(error) => {
-                      setTrackError(trackFileId, error);
-                      clearPlayingTrack();
-                    }}
-                    onLoaded={async () => {
-                      // Audio loaded successfully - trigger play if this track should be playing
-                      // This is a fallback in case autoPlay didn't work due to timing issues
-                      if (playingTrackId === trackFileId && !searchingTrackId) {
-                          const audioControls = audioRefs.current.get(trackFileId);
-                        if (audioControls) {
-                            try {
-                              await audioControls.play();
-                            } catch {
-                              // Ignore play errors - user may have paused or switched tracks
-                            // The useAudioPreview hook should handle auto-play via the autoPlay prop
-                            }
-                          }
-                      }
-                    }}
-                  />
-                </div>
-              );
-            }
-
-            // Render regular library track
-            if (!track) return null;
-
-            return (
-              <div
-                key={`${trackFileId}-${index}`}
-                className="px-4 md:px-6 py-4 hover:bg-app-hover transition-colors group"
-              >
-                <div className="flex items-start gap-4">
-                  <button
-                    onClick={() => handleInlinePlayClick(trackFileId, {
-                      title: track.tags.title || "Unknown Title",
-                      artist: track.tags.artist || "Unknown Artist",
-                      album: track.tags.album,
-                    })}
-                    disabled={searchingTrackId === trackFileId}
-                    className="flex items-center justify-center size-8 text-app-tertiary group-hover:text-accent-primary transition-colors shrink-0 mt-1 cursor-pointer disabled:opacity-50"
-                  >
-                    {searchingTrackId === trackFileId ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : playingTrackId === trackFileId ? (
-                      <Pause className="size-4" />
-                    ) : (
-                      <>
-                        <span className="text-sm group-hover:hidden">
-                          {String(index + 1).padStart(2, "0")}
-                        </span>
-                        <Play className="size-4 hidden group-hover:block" />
-                      </>
-                    )}
-                  </button>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-4 mb-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-app-primary font-medium truncate">
-                          {track.tags.title || "Unknown Title"}
-                        </div>
-                        <div className="text-app-secondary text-sm truncate">
-                          {track.tags.artist || "Unknown Artist"}
-                        </div>
-                        {track.tags.album && (
-                          <div className="text-app-tertiary text-xs truncate mt-1">
-                            {track.tags.album}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="text-app-secondary text-sm tabular-nums shrink-0">
-                          {formatDuration(track.tech?.durationSeconds)}
-                        </div>
-                        <button
-                          onClick={() => handleRemoveTrack(trackFileId)}
-                          disabled={isRegenerating}
-                          className="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:bg-red-500/10 rounded-sm transition-all disabled:opacity-50"
-                          title="Remove track"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Inline Error Display */}
-                    {getError(trackFileId) && (
-                      <div className="mt-2 flex items-center gap-2 text-red-500 text-xs">
-                        <AlertCircle className="size-3" />
-                        <span>{getError(trackFileId)}</span>
-                      </div>
-                    )}
-
-                    {/* Why This Track Chips */}
-                    {reasons.length > 0 && (
-                      <div className="mt-2">
-                        <TrackReasonChips reasons={reasons} />
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Inline Audio Player */}
-                  <InlineAudioPlayer
-                    ref={(ref) => {
-                      if (ref) {
-                        audioRefs.current.set(trackFileId, ref);
-                      } else {
-                        audioRefs.current.delete(trackFileId);
-                      }
-                    }}
-                    trackFileId={trackFileId}
-                    sampleResult={getSampleResult(trackFileId) || null}
-                    autoPlay={playingTrackId === trackFileId && !searchingTrackId && hasSampleResult(trackFileId)}
-                    onPlay={() => setPlayingTrack(trackFileId)}
-                    onPause={() => clearPlayingTrack()}
-                    onEnded={() => clearPlayingTrack()}
-                    onError={(error) => {
-                      setTrackError(trackFileId, error);
-                      clearPlayingTrack();
-                    }}
-                    onLoaded={async () => {
-                      // Audio loaded successfully - trigger play if this track should be playing
-                      // This is a fallback in case autoPlay didn't work due to timing issues
-                      if (playingTrackId === trackFileId && !searchingTrackId) {
-                          const audioControls = audioRefs.current.get(trackFileId);
-                        if (audioControls) {
-                            try {
-                              await audioControls.play();
-                            } catch {
-                              // Ignore play errors - user may have paused or switched tracks
-                            // The useAudioPreview hook should handle auto-play via the autoPlay prop
-                            }
-                          }
-                      }
-                    }}
-                  />
-                </div>
+          />
+        ) : (
+          <div className="divide-y divide-app-border">
+            {trackItems.map((item) => (
+              <div key={`${item.trackFileId}-${item.index}`}>
+                {renderTrackRow(item)}
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Sample Error Message */}
@@ -1540,14 +2020,32 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
         </div>
       )}
 
+      <TrackAddDialog
+        isOpen={showTrackAddDialog}
+        libraryRootId={libraryRootId}
+        llmConfig={llmConfig}
+        onAddTrack={handleAddTrackToEditPlaylist}
+        onClose={() => setShowTrackAddDialog(false)}
+      />
+
+      <SavePlaylistDialog
+        isOpen={showSaveDialog}
+        defaultTitle={editedPlaylist.title || displayPlaylist.title}
+        defaultDescription={editedPlaylist.description || displayPlaylist.description}
+        onClose={() => setShowSaveDialog(false)}
+        onConfirm={handleSaveEdits}
+      />
+
       {/* Export Section */}
-      <div className="bg-app-surface rounded-sm border border-app-border p-6">
-        <PlaylistExport 
-          playlist={playlist} 
-          libraryRootId={libraryRootId}
-          playlistCollectionId={playlistCollectionId}
-        />
-      </div>
+      {!isEditMode && (
+        <div className="bg-app-surface rounded-sm border border-app-border p-6">
+          <PlaylistExport 
+            playlist={displayPlaylist} 
+            libraryRootId={libraryRootId}
+            playlistCollectionId={playlistCollectionId}
+          />
+        </div>
+      )}
     </div>
   );
 }
