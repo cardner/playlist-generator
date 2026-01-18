@@ -38,6 +38,7 @@ import { db } from "@/db/schema";
 import type { PlaylistRequest } from "@/types/playlist";
 import type { AppSettings } from "@/lib/settings";
 import { buildGenreMappings, normalizeGenre } from "@/features/library/genre-normalization";
+import { applyTempoMappingsToRequest } from "@/lib/tempo-mapping";
 
 export interface GenreCount {
   genre: string;
@@ -377,14 +378,20 @@ export function buildLLMPayload(
   summary: LibrarySummary,
   settings: AppSettings
 ): LLMPayload {
+  const mappedRequest = applyTempoMappingsToRequest({
+    ...request,
+    mood: [...request.mood],
+    activity: [...request.activity],
+    tempo: { ...request.tempo },
+  });
   const payload: LLMPayload = {
     request: {
-      genres: request.genres,
-      length: request.length,
-      mood: request.mood,
-      activity: request.activity,
-      tempo: request.tempo,
-      surprise: request.surprise,
+      genres: mappedRequest.genres,
+      length: mappedRequest.length,
+      mood: mappedRequest.mood,
+      activity: mappedRequest.activity,
+      tempo: mappedRequest.tempo,
+      surprise: mappedRequest.surprise,
     },
     librarySummary: {
       totalTracks: summary.totalTracks,

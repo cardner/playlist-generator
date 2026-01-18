@@ -11,6 +11,7 @@ import { getAllTracks } from "@/db/storage";
 import { db } from "@/db/schema";
 import type { TrackRecord } from "@/db/schema";
 import { logger } from "@/lib/logger";
+import { applyTempoMappingsToRequest } from "@/lib/tempo-mapping";
 
 // Re-export types from matching engine
 export type {
@@ -33,6 +34,12 @@ export async function generatePlaylistFromStrategy(
   seed?: string,
   excludeTrackIds?: string[]
 ): Promise<GeneratedPlaylist> {
+  const normalizedRequest = applyTempoMappingsToRequest({
+    ...request,
+    mood: [...request.mood],
+    activity: [...request.activity],
+    tempo: { ...request.tempo },
+  });
   // Get all tracks
   let allTracks: TrackRecord[];
   if (libraryRootId) {
@@ -56,13 +63,20 @@ export async function generatePlaylistFromStrategy(
   }
 
   // Check if LLM is enabled for tempo detection
-  const llmConfig = request.llmConfig;
+  const llmConfig = normalizedRequest.llmConfig;
   const apiKey = llmConfig?.apiKey;
-  const useLLM = !!(request.agentType === "llm" && llmConfig && apiKey && llmConfig.provider);
+  const useLLM = !!(
+    normalizedRequest.agentType === "llm" &&
+    llmConfig &&
+    apiKey &&
+    llmConfig.provider
+  );
 
   // Detect tempo for tracks missing BPM if LLM is enabled
   // Prioritize tracks that match requested genres and tempo requirements
-  const hasTempoRequirement = !!(request.tempo.bucket || request.tempo.bpmRange);
+  const hasTempoRequirement = !!(
+    normalizedRequest.tempo.bucket || normalizedRequest.tempo.bpmRange
+  );
   
   if (useLLM && llmConfig && apiKey) {
     try {
@@ -71,7 +85,7 @@ export async function generatePlaylistFromStrategy(
       
       // Get tracks that match requested genres (prioritize these)
       const genreMatchedTrackIds = new Set<string>();
-      for (const genre of request.genres) {
+      for (const genre of normalizedRequest.genres) {
         const genreTracks = tempIndex.byGenre.get(genre) || [];
         genreTracks.forEach((id) => genreMatchedTrackIds.add(id));
       }
@@ -163,7 +177,7 @@ export async function generatePlaylistFromStrategy(
   const { generatePlaylist: generatePlaylistDeterministic } = await import("./matching-engine");
   let playlist = await generatePlaylistDeterministic(
     libraryRootId,
-    request,
+    normalizedRequest,
     strategy,
     matchingIndex,
     allTracks,
@@ -255,7 +269,7 @@ export async function generatePlaylistFromStrategy(
       
       // Validate playlist
       const validation = await validatePlaylistWithLLM(
-        request,
+        normalizedRequest,
         playlist,
         llmConfig.provider,
         apiKey
@@ -263,7 +277,7 @@ export async function generatePlaylistFromStrategy(
 
       // Generate explanation
       const explanation = await generatePlaylistExplanation(
-        request,
+        normalizedRequest,
         playlist,
         validation,
         llmConfig.provider,
