@@ -21,6 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [0.8.2] - 2026-01-18
+
+### Fixed
+
+- improve usage of tempo in playlist generation
+- improves reliability of calculating the tempo for tracks as uploading to collection
+- improve tempo dectection
+
+### Other Changes
+
+- Merge pull request #7 from cardner/tempo-fix
+
 ## [0.8.1] - 2026-01-11
 
 ### Fixed
