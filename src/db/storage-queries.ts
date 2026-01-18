@@ -413,6 +413,123 @@ export async function searchTrackTitles(
 }
 
 /**
+ * Search tracks by artist name (case-insensitive substring match)
+ */
+export async function searchTracksByArtist(
+  artist: string,
+  limit: number = 50,
+  libraryRootId?: string
+): Promise<TrackRecord[]> {
+  if (!artist.trim()) {
+    return [];
+  }
+
+  const lowerQuery = artist.toLowerCase();
+  let collection = db.tracks.toCollection();
+  if (libraryRootId) {
+    collection = db.tracks.where("libraryRootId").equals(libraryRootId);
+  }
+
+  const allTracks = await collection.toArray();
+  const filtered = allTracks.filter((track) =>
+    (track.tags.artist || "").toLowerCase().includes(lowerQuery)
+  );
+
+  return limit ? filtered.slice(0, limit) : filtered;
+}
+
+/**
+ * Search tracks by album name (case-insensitive substring match)
+ */
+export async function searchTracksByAlbum(
+  album: string,
+  limit: number = 50,
+  libraryRootId?: string
+): Promise<TrackRecord[]> {
+  if (!album.trim()) {
+    return [];
+  }
+
+  const lowerQuery = album.toLowerCase();
+  let collection = db.tracks.toCollection();
+  if (libraryRootId) {
+    collection = db.tracks.where("libraryRootId").equals(libraryRootId);
+  }
+
+  const allTracks = await collection.toArray();
+  const filtered = allTracks.filter((track) =>
+    (track.tags.album || "").toLowerCase().includes(lowerQuery)
+  );
+
+  return limit ? filtered.slice(0, limit) : filtered;
+}
+
+type TempoQuery = "slow" | "medium" | "fast" | { min: number; max: number };
+
+function getTempoBucket(bpm?: number): "slow" | "medium" | "fast" | "unknown" {
+  if (typeof bpm !== "number" || Number.isNaN(bpm)) {
+    return "unknown";
+  }
+  if (bpm < 90) return "slow";
+  if (bpm < 140) return "medium";
+  return "fast";
+}
+
+/**
+ * Search tracks by tempo bucket or BPM range
+ */
+export async function searchTracksByTempo(
+  tempo: TempoQuery,
+  limit: number = 50,
+  libraryRootId?: string
+): Promise<TrackRecord[]> {
+  let collection = db.tracks.toCollection();
+  if (libraryRootId) {
+    collection = db.tracks.where("libraryRootId").equals(libraryRootId);
+  }
+
+  const allTracks = await collection.toArray();
+  const filtered = allTracks.filter((track) => {
+    const bpm = track.tech?.bpm;
+    if (typeof tempo === "string") {
+      return getTempoBucket(bpm) === tempo;
+    }
+    if (typeof bpm !== "number") return false;
+    return bpm >= tempo.min && bpm <= tempo.max;
+  });
+
+  return limit ? filtered.slice(0, limit) : filtered;
+}
+
+/**
+ * Search tracks by existing mood tags in enhanced metadata
+ */
+export async function searchTracksByMood(
+  mood: string,
+  limit: number = 50,
+  libraryRootId?: string
+): Promise<TrackRecord[]> {
+  if (!mood.trim()) {
+    return [];
+  }
+
+  const lowerQuery = mood.toLowerCase();
+  let collection = db.tracks.toCollection();
+  if (libraryRootId) {
+    collection = db.tracks.where("libraryRootId").equals(libraryRootId);
+  }
+
+  const allTracks = await collection.toArray();
+  const filtered = allTracks.filter((track) =>
+    (track.enhancedMetadata?.mood || []).some((tag) =>
+      tag.toLowerCase().includes(lowerQuery)
+    )
+  );
+
+  return limit ? filtered.slice(0, limit) : filtered;
+}
+
+/**
  * Get top N most common artists (for initial display when no query)
  * 
  * Counts track occurrences per artist and returns the most common ones.

@@ -285,9 +285,7 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
 
     // Check if we already have sample result cached
     if (hasSampleResult(trackFileId)) {
-      const sampleResult = getSampleResult(trackFileId)!;
-      // Start playing immediately
-      setPlayingTrack(trackFileId);
+      // Start playing immediately without updating UI until play event fires
       // Use retry logic to ensure audio element is ready
       const attemptPlay = async (attempts = 0) => {
         if (attempts > 10) return; // Max 10 attempts (1 second total)
@@ -320,9 +318,8 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
     try {
       const sampleResult = await searchTrackSample(trackInfo);
       if (sampleResult) {
-        // Set sample result and playing track state first
+        // Set sample result before attempting to play
         setSampleResult(trackFileId, sampleResult);
-        setPlayingTrack(trackFileId);
         // Clear searching state AFTER setting sample result to ensure audio element exists
         setSearchingTrack(null);
         

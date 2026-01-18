@@ -121,6 +121,17 @@ export async function savePlaylist(
 }
 
 /**
+ * Update an existing saved playlist with new data
+ */
+export async function updatePlaylist(
+  playlist: GeneratedPlaylist,
+  libraryRootId?: string
+): Promise<void> {
+  const record = playlistToRecord(playlist, libraryRootId);
+  await db.savedPlaylists.put(record);
+}
+
+/**
  * Get a saved playlist by ID
  */
 export async function getSavedPlaylist(id: string): Promise<GeneratedPlaylist | null> {
