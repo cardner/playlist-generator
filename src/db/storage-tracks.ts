@@ -289,19 +289,53 @@ export async function updateTrackMood(
  * @param trackId - Composite track ID (trackFileId-libraryRootId)
  * @param tempo - Tempo/BPM value (number) or tempo category (string: "slow", "medium", "fast")
  * @param isManualEdit - Whether this is a manual edit (default: true)
+ * @param confidence - Optional confidence score (0-1)
+ * @param source - Optional source of BPM data
+ * @param method - Optional detection method used
  * 
  * @example
  * ```typescript
- * await updateTrackTempoEnhanced('track1-root1', 120, true);
+ * await updateTrackTempoEnhanced('track1-root1', 120, true, 0.9, 'local-file', 'combined');
  * await updateTrackTempoEnhanced('track1-root1', 'medium', true);
  * ```
  */
 export async function updateTrackTempoEnhanced(
   trackId: string,
   tempo: number | "slow" | "medium" | "fast",
-  isManualEdit: boolean = true
+  isManualEdit: boolean = true,
+  confidence?: number,
+  source?: 'id3' | 'local-file' | 'itunes-preview' | 'manual',
+  method?: 'autocorrelation' | 'spectral-flux' | 'peak-picking' | 'combined'
 ): Promise<void> {
   const tempoValue = typeof tempo === "number" ? Math.round(tempo) : tempo;
   await updateTrackMetadata(trackId, { tempo: tempoValue }, isManualEdit);
+  
+  // Also update tech info if confidence/source/method provided
+  if (confidence !== undefined || source !== undefined || method !== undefined) {
+    const existing = await db.tracks.get(trackId);
+    if (existing) {
+      const techUpdate: Partial<import("@/features/library/metadata").TechInfo> = {};
+      
+      if (typeof tempo === "number") {
+        techUpdate.bpm = tempoValue as number;
+      }
+      if (confidence !== undefined) {
+        techUpdate.bpmConfidence = confidence;
+      }
+      if (source !== undefined) {
+        techUpdate.bpmSource = source;
+      }
+      if (method !== undefined) {
+        techUpdate.bpmMethod = method;
+      }
+      
+      await db.tracks.update(trackId, {
+        tech: {
+          ...existing.tech,
+          ...techUpdate,
+        },
+      });
+    }
+  }
 }
 

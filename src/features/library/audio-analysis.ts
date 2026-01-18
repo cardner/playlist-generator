@@ -47,16 +47,31 @@ export async function detectTempo(file: File): Promise<number | null> {
     const sampleRate = audioBuffer.sampleRate;
     
     // Analyze tempo using autocorrelation
-    const bpm = analyzeTempo(channelData, sampleRate);
+    const result = analyzeTempo(channelData, sampleRate);
     
     // Clean up
     audioContext.close();
     
-    return bpm;
+    return result.bpm;
   } catch (error) {
     logger.error("Failed to detect tempo:", error);
     return null;
   }
+}
+
+/**
+ * Detect tempo with confidence score
+ * 
+ * @param file - Audio file to analyze
+ * @param method - Detection method to use (default: 'combined')
+ * @returns Promise resolving to BPM value, confidence, and method
+ */
+export async function detectTempoWithConfidence(
+  file: File,
+  method: 'autocorrelation' | 'spectral-flux' | 'peak-picking' | 'combined' = 'combined'
+): Promise<{ bpm: number | null; confidence: number; method: string }> {
+  // Use worker for non-blocking detection
+  return detectTempoInWorker(file, method);
 }
 
 /**
@@ -69,9 +84,9 @@ export async function detectTempo(file: File): Promise<number | null> {
  * 
  * @param channelData - Audio channel data (Float32Array)
  * @param sampleRate - Sample rate in Hz
- * @returns BPM value or null if detection fails
+ * @returns BPM value with confidence or null if detection fails
  */
-function analyzeTempo(channelData: Float32Array, sampleRate: number): number | null {
+function analyzeTempo(channelData: Float32Array, sampleRate: number): { bpm: number | null; confidence: number } {
   // Limit analysis to first 30 seconds to reduce computation
   const maxSamples = Math.min(channelData.length, sampleRate * 30);
   const samples = channelData.slice(0, maxSamples);
@@ -116,16 +131,38 @@ function analyzeTempo(channelData: Float32Array, sampleRate: number): number | n
     }
   }
   
+  // Find second-best correlation for confidence calculation
+  let secondBestCorrelation = 0;
+  for (let period = minPeriod; period <= maxPeriod && period < correlationLength; period++) {
+    if (period === bestPeriod) continue;
+    
+    let correlation = 0;
+    let count = 0;
+    
+    for (let i = 0; i < correlationLength - period; i++) {
+      correlation += Math.abs(downsampled[i] * downsampled[i + period]);
+      count++;
+    }
+    
+    if (count > 0) {
+      correlation /= count;
+      correlation /= Math.sqrt(period);
+      if (correlation > secondBestCorrelation) {
+        secondBestCorrelation = correlation;
+      }
+    }
+  }
+  
   if (bestPeriod === 0 || maxCorrelation < 0.1) {
     // Detection failed - correlation too low
-    return null;
+    return { bpm: null, confidence: 0 };
   }
   
   // Convert period to BPM
   const bpm = (downsampledRate * 60) / bestPeriod;
   
   // Round to nearest integer and validate range
-  const roundedBpm = Math.round(bpm);
+  let roundedBpm = Math.round(bpm);
   if (roundedBpm < 60 || roundedBpm > 200) {
     // Out of typical range, might be a harmonic
     // Try doubling or halving
@@ -133,14 +170,23 @@ function analyzeTempo(channelData: Float32Array, sampleRate: number): number | n
     const halved = roundedBpm / 2;
     
     if (doubled >= 60 && doubled <= 200) {
-      return doubled;
-    }
-    if (halved >= 60 && halved <= 200) {
-      return halved;
+      roundedBpm = doubled;
+    } else if (halved >= 60 && halved <= 200) {
+      roundedBpm = halved;
+    } else {
+      return { bpm: null, confidence: 0 };
     }
   }
   
-  return roundedBpm >= 60 && roundedBpm <= 200 ? roundedBpm : null;
+  // Calculate confidence: ratio between best and second-best correlation
+  const confidence = secondBestCorrelation > 0 
+    ? Math.min(1, maxCorrelation / (maxCorrelation + secondBestCorrelation))
+    : maxCorrelation;
+  
+  return {
+    bpm: roundedBpm >= 60 && roundedBpm <= 200 ? roundedBpm : null,
+    confidence: Math.min(1, Math.max(0, confidence)),
+  };
 }
 
 /**
@@ -150,16 +196,107 @@ function analyzeTempo(channelData: Float32Array, sampleRate: number): number | n
  * blocking the main thread. Useful for large files or batch processing.
  * 
  * @param file - Audio file to analyze
- * @returns Promise resolving to BPM value or null
+ * @param method - Detection method to use (default: 'combined')
+ * @returns Promise resolving to BPM value, confidence, and method used
  * 
  * @example
  * ```typescript
- * const bpm = await detectTempoInWorker(audioFile);
+ * const result = await detectTempoInWorker(audioFile, 'combined');
+ * if (result.bpm) {
+ *   console.log(`Detected tempo: ${result.bpm} BPM (confidence: ${result.confidence})`);
+ * }
  * ```
  */
-export async function detectTempoInWorker(file: File): Promise<number | null> {
-  // For now, just use the main thread version
-  // In the future, this could spawn a Web Worker
-  return detectTempo(file);
+export async function detectTempoInWorker(
+  file: File,
+  method: 'autocorrelation' | 'spectral-flux' | 'peak-picking' | 'combined' = 'combined'
+): Promise<{ bpm: number | null; confidence: number; method: string }> {
+  try {
+    // Decode audio in main thread (AudioContext not available in Worker)
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const arrayBuffer = await file.arrayBuffer();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    const channelData = audioBuffer.getChannelData(0);
+    const sampleRate = audioBuffer.sampleRate;
+    
+    audioContext.close();
+    
+    // Create worker from public folder (works best for static builds)
+    // For static webapps, workers must be in the public folder as JavaScript files
+    let worker: Worker | null = null;
+    
+    try {
+      // Load worker from public folder - this works reliably in static builds
+      worker = new Worker('/tempo-detection-worker.js', { type: 'classic' });
+      logger.debug("Created tempo detection worker from public folder");
+    } catch (workerError) {
+      // Worker creation failed, use main thread
+      logger.debug("Worker not available, using main thread for tempo detection", workerError);
+      const result = analyzeTempo(channelData, sampleRate);
+      return {
+        bpm: result.bpm,
+        confidence: result.confidence,
+        method: 'autocorrelation',
+      };
+    }
+    
+    if (!worker) {
+      // Final fallback to main thread
+      const result = analyzeTempo(channelData, sampleRate);
+      return {
+        bpm: result.bpm,
+        confidence: result.confidence,
+        method: 'autocorrelation',
+      };
+    }
+    
+    // Send data to worker
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        worker?.terminate();
+        reject(new Error('Tempo detection timeout'));
+      }, 30000); // 30 second timeout
+      
+      worker!.onmessage = (event: MessageEvent<{ bpm: number | null; confidence: number; method: string; error?: string }>) => {
+        clearTimeout(timeout);
+        worker?.terminate();
+        
+        if (event.data.error) {
+          reject(new Error(event.data.error));
+        } else {
+          resolve(event.data);
+        }
+      };
+      
+      worker!.onerror = (error) => {
+        clearTimeout(timeout);
+        worker?.terminate();
+        // Fallback to main thread on worker error
+        logger.debug("Worker error, falling back to main thread");
+        const result = analyzeTempo(channelData, sampleRate);
+        resolve({
+          bpm: result.bpm,
+          confidence: result.confidence,
+          method: 'autocorrelation',
+        });
+      };
+      
+      // Transfer channel data to worker (using transferable for performance)
+      worker!.postMessage({
+        channelData: channelData,
+        sampleRate,
+        method,
+      }, [channelData.buffer]);
+    });
+  } catch (error) {
+    logger.error("Failed to detect tempo in worker:", error);
+    // Fallback to main thread detection
+    const bpm = await detectTempo(file);
+    return {
+      bpm,
+      confidence: bpm ? 0.5 : 0, // Lower confidence for fallback
+      method: 'autocorrelation',
+    };
+  }
 }
 

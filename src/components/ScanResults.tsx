@@ -52,7 +52,7 @@ export function ScanResults({
   };
 
   return (
-    <div className="max-w-4xl">
+    <div className="">
       <div className="bg-app-surface rounded-sm shadow-2xl p-6">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-app-primary">Scan Complete</h3>

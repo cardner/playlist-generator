@@ -58,6 +58,7 @@ import type { LibraryRoot, LibraryFile } from "./library-selection-types";
  * 
  * Automatically selects the appropriate method based on browser support.
  * 
+ * @param forceReset If true, resets any existing picker state before opening (FS API only)
  * @returns Promise resolving to the selected library root
  * @throws Error if user cancels or selection fails
  * 
@@ -73,9 +74,9 @@ import type { LibraryRoot, LibraryFile } from "./library-selection-types";
  * }
  * ```
  */
-export async function pickLibraryRoot(): Promise<LibraryRoot> {
+export async function pickLibraryRoot(forceReset: boolean = false): Promise<LibraryRoot> {
   if (supportsFileSystemAccess()) {
-    return pickLibraryRootWithFSAPI();
+    return pickLibraryRootWithFSAPI(forceReset);
   } else {
     return pickLibraryRootWithFallback();
   }

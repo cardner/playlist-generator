@@ -162,9 +162,20 @@ export function calculateTempoMatch(
 
   // Match BPM range if specified
   if (request.tempo.bpmRange) {
-    // Note: BPM not currently extracted, so this is placeholder
-    // When BPM is available, check if track BPM falls within range
-    if (trackTempoBucket === "unknown") {
+    const { min, max } = request.tempo.bpmRange;
+    const trackBpm = track.tech?.bpm;
+    if (typeof trackBpm === "number") {
+      if (trackBpm >= min && trackBpm <= max) {
+        score = Math.max(score, 1.0);
+        reasons.push({
+          type: "tempo_match",
+          explanation: `Matches BPM range: ${min}-${max}`,
+          score: 1.0,
+        });
+      } else {
+        score = Math.max(score, 0.2);
+      }
+    } else if (trackTempoBucket === "unknown") {
       score = 0.5;
     }
   }

@@ -54,7 +54,7 @@ export function PlaylistForm({ onGenerate, isGenerating, libraryCount, onRescanL
   };
 
   return (
-    <div className="max-w-4xl">
+    <div className="">
       {/* Library Info Banner */}
       <div className="bg-app-surface rounded-sm shadow-2xl p-4 mb-4 flex items-center justify-between">
         <div className="flex items-center gap-3">

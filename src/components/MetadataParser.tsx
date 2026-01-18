@@ -65,7 +65,7 @@ export function MetadataParser({
 
   if (error) {
     return (
-      <div className="max-w-4xl">
+      <div className="">
         <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-sm">
           <p className="text-red-500 text-sm">
             <strong>Metadata parsing error:</strong> {error}
@@ -81,7 +81,7 @@ export function MetadataParser({
       : 0;
 
     return (
-      <div className="max-w-4xl">
+      <div className="">
         <div className="bg-app-surface rounded-sm shadow-2xl p-6">
           <h3 className="text-app-primary mb-4 uppercase tracking-wider text-xs">Parsing Metadata</h3>
           
@@ -125,7 +125,7 @@ export function MetadataParser({
     const successCount = results.length - errorCount;
 
     return (
-      <div className="max-w-4xl">
+      <div className="">
         <div className="bg-app-surface rounded-sm shadow-2xl p-6">
           <h3 className="text-app-primary mb-4 uppercase tracking-wider text-xs">Metadata Parsing Complete</h3>
           

@@ -61,7 +61,7 @@ export function PlaylistResult({ playlist, onCreateNew }: PlaylistResultProps) {
   };
 
   return (
-    <div className="max-w-4xl">
+    <div className="">
       {/* Playlist Header */}
       <div className="bg-app-surface rounded-sm shadow-2xl mb-1">
         <div className="p-8 border-b border-app-border">
