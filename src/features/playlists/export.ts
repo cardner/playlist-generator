@@ -213,21 +213,21 @@ export function getTrackPath(
         
         // If prefix is provided, construct absolute path
         if (normalizedPrefix) {
-          // Ensure prefix ends with / if it's not empty
+        // Ensure prefix ends with / if it's not empty
           const prefix = normalizedPrefix.endsWith("/") 
             ? normalizedPrefix 
             : normalizedPrefix + "/";
-          
-          // Ensure path doesn't start with / if prefix is provided (to avoid double slashes)
-          const pathWithoutLeadingSlash = normalizedRelative.startsWith("/") 
-            ? normalizedRelative.substring(1) 
-            : normalizedRelative;
-          
-          const absolutePath = prefix + pathWithoutLeadingSlash;
-          return {
-            path: normalizePath(absolutePath),
-            hasRelativePath: true,
-          };
+        
+        // Ensure path doesn't start with / if prefix is provided (to avoid double slashes)
+        const pathWithoutLeadingSlash = normalizedRelative.startsWith("/") 
+          ? normalizedRelative.substring(1) 
+          : normalizedRelative;
+        
+        const absolutePath = prefix + pathWithoutLeadingSlash;
+        return {
+          path: normalizePath(absolutePath),
+          hasRelativePath: true,
+        };
         } else {
           // No prefix provided, return relative path as-is (may not work for all services)
           return {
@@ -244,13 +244,13 @@ export function getTrackPath(
           const defaultPrefixWithSlash = defaultPrefix.endsWith("/") 
             ? defaultPrefix 
             : defaultPrefix + "/";
-          const defaultPathWithoutSlash = defaultNormalized.startsWith("/") 
-            ? defaultNormalized.substring(1) 
-            : defaultNormalized;
-          return {
-            path: normalizePath(defaultPrefixWithSlash + defaultPathWithoutSlash),
-            hasRelativePath: true,
-          };
+        const defaultPathWithoutSlash = defaultNormalized.startsWith("/") 
+          ? defaultNormalized.substring(1) 
+          : defaultNormalized;
+        return {
+          path: normalizePath(defaultPrefixWithSlash + defaultPathWithoutSlash),
+          hasRelativePath: true,
+        };
         } else {
           return {
             path: normalizePath(defaultNormalized),

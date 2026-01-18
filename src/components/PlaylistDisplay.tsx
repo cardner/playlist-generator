@@ -648,7 +648,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
           } else if (attempts < 10) {
             // Audio controls not ready yet, try again
             setTimeout(() => attemptPlay(attempts + 1), 100);
-          }
+            }
         };
         
         // Start attempting to play after a short initial delay
@@ -1377,15 +1377,15 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                       // Audio loaded successfully - trigger play if this track should be playing
                       // This is a fallback in case autoPlay didn't work due to timing issues
                       if (playingTrackId === trackFileId && !searchingTrackId) {
-                        const audioControls = audioRefs.current.get(trackFileId);
+                          const audioControls = audioRefs.current.get(trackFileId);
                         if (audioControls) {
-                          try {
-                            await audioControls.play();
-                          } catch {
-                            // Ignore play errors - user may have paused or switched tracks
+                            try {
+                              await audioControls.play();
+                            } catch {
+                              // Ignore play errors - user may have paused or switched tracks
                             // The useAudioPreview hook should handle auto-play via the autoPlay prop
+                            }
                           }
-                        }
                       }
                     }}
                   />
@@ -1494,15 +1494,15 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                       // Audio loaded successfully - trigger play if this track should be playing
                       // This is a fallback in case autoPlay didn't work due to timing issues
                       if (playingTrackId === trackFileId && !searchingTrackId) {
-                        const audioControls = audioRefs.current.get(trackFileId);
+                          const audioControls = audioRefs.current.get(trackFileId);
                         if (audioControls) {
-                          try {
-                            await audioControls.play();
-                          } catch {
-                            // Ignore play errors - user may have paused or switched tracks
+                            try {
+                              await audioControls.play();
+                            } catch {
+                              // Ignore play errors - user may have paused or switched tracks
                             // The useAudioPreview hook should handle auto-play via the autoPlay prop
+                            }
                           }
-                        }
                       }
                     }}
                   />

@@ -77,7 +77,7 @@ export function LibraryScanner({ onLibraryScanned }: LibraryScannerProps) {
   };
 
   return (
-    <div className="max-w-4xl">
+    <div className="">
       <div className="bg-app-surface rounded-sm shadow-2xl p-8 md:p-12">
         <div className="text-center">
           <div className="inline-flex items-center justify-center size-20 bg-gradient-to-br from-accent-primary to-accent-secondary rounded-sm mb-6">

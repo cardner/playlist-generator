@@ -316,7 +316,7 @@ export function LibraryScanner({
 
   if (libraryRoot.mode === "fallback") {
     return (
-      <div className="max-w-4xl">
+      <div className="">
         <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-sm">
           <p className="text-red-500 text-sm">
             Fallback mode: Please re-select your folder to scan. Files cannot be
@@ -339,7 +339,7 @@ export function LibraryScanner({
 
   if (error) {
     return (
-      <div className="max-w-4xl">
+      <div className="">
         <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-sm mb-4">
           <p className="text-red-500 mb-4 text-sm">{error}</p>
           <button
@@ -357,7 +357,7 @@ export function LibraryScanner({
     const isComplete = !isParsingMetadata && metadataResults !== null;
     
     return (
-      <div className="space-y-4 max-w-4xl">
+      <div className="space-y-4 ">
         {/* Show interrupted scan banner if applicable */}
         {(isMonitoringReconnection || interruptedScanRunId) && (
           <InterruptedScanBanner
@@ -469,7 +469,7 @@ export function LibraryScanner({
   if (hasExistingScans === true && libraryRoot) {
     // Show manual rescan option for existing library
     return (
-      <div className="max-w-4xl">
+      <div className="">
         <div className="space-y-4">
           {/* Show interrupted scan banner if applicable */}
           {(isMonitoringReconnection || interruptedScanRunId || detectedInterruptedScanRunId) && (
@@ -515,7 +515,7 @@ export function LibraryScanner({
   // If we have existing scans but libraryRoot is not loaded yet, show loading state
   if (hasExistingScans === true && !libraryRoot) {
     return (
-      <div className="max-w-4xl">
+      <div className="">
         <div className="bg-app-surface rounded-sm border border-app-border p-6">
           <div className="flex items-center gap-3">
             <div className="animate-spin rounded-full h-5 w-5 border-2 border-accent-primary border-t-transparent" />
@@ -529,7 +529,7 @@ export function LibraryScanner({
   // Show scan prompt for new library (only if libraryRoot exists)
   if (libraryRoot) {
     return (
-      <div className="max-w-4xl">
+      <div className="">
         <div className="space-y-4">
           {/* Show interrupted scan banner if applicable */}
           {(isMonitoringReconnection || interruptedScanRunId || detectedInterruptedScanRunId) && (

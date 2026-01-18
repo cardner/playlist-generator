@@ -26,6 +26,7 @@ import type { ScanResult, MetadataResult, MetadataProgressCallback } from "@/fea
 import { parseMetadataForFiles } from "@/features/library";
 import { getLibraryFilesForEntries } from "@/features/library/metadata-integration";
 import { saveTrackMetadata, updateScanRun } from "@/db/storage";
+import { detectTempoForLibrary } from "@/features/library/metadata-enhancement";
 import { isQuotaExceededError, getStorageQuotaInfo } from "@/db/storage-errors";
 import { logger } from "@/lib/logger";
 
@@ -256,6 +257,16 @@ export function useMetadataParsing(
           logger.error("Tracks were parsed but not saved to database!");
           setError("Failed to save tracks to database. Please try scanning again.");
         }
+
+        // Automatically detect tempo for tracks missing BPM (runs in background)
+        // This is non-blocking and happens after metadata parsing completes
+        detectTempoForLibrary(libraryRootId, (tempoProgress: { processed: number; total: number; detected: number; currentTrack?: string }) => {
+          // Optionally update progress for tempo detection
+          logger.debug(`Tempo detection: ${tempoProgress.detected}/${tempoProgress.processed} tracks`);
+        }, 5).catch((error: unknown) => {
+          // Don't fail the scan if tempo detection fails
+          logger.warn("Background tempo detection failed:", error);
+        });
 
         // Notify parent that scan and data persistence is complete
         // This will trigger refresh of LibrarySummary and LibraryBrowser

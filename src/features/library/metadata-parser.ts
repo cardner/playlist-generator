@@ -65,6 +65,11 @@ async function parseSingleFile(file: LibraryFile): Promise<MetadataResult> {
       sampleRate: metadata.format.sampleRate,
       channels: metadata.format.numberOfChannels,
       bpm: metadata.common.bpm ? Math.round(metadata.common.bpm) : undefined,
+      // If BPM comes from ID3 tag, mark it with high confidence and source
+      ...(metadata.common.bpm ? {
+        bpmConfidence: 1.0, // ID3 tags are considered highly reliable
+        bpmSource: 'id3' as const,
+      } : {}),
       ...extractCodecInfo(metadata.format),
     };
 

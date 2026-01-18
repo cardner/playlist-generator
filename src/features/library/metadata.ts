@@ -80,6 +80,9 @@ export interface TechInfo {
   sampleRate?: number;
   channels?: number;
   bpm?: number; // Beats per minute (tempo)
+  bpmConfidence?: number; // Confidence score 0-1
+  bpmSource?: 'id3' | 'local-file' | 'itunes-preview' | 'manual'; // Source of BPM data
+  bpmMethod?: 'autocorrelation' | 'spectral-flux' | 'peak-picking' | 'combined'; // Detection method used
 }
 
 /**

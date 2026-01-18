@@ -70,6 +70,7 @@ import { SpotifyImport } from "./SpotifyImport";
 import { useLibraryRoot } from "@/hooks/useLibraryRoot";
 import { useLibraryPermissions } from "@/hooks/useLibraryPermissions";
 import { useCollectionSelection } from "@/hooks/useCollectionSelection";
+import { logger } from "@/lib/logger";
 
 interface LibrarySelectorProps {
   onLibrarySelected?: (root: LibraryRoot) => void;
@@ -330,12 +331,78 @@ export function LibrarySelector({
               )}
 
               {permissionStatus === "prompt" && isHandleMode && (
-                <button
-                  onClick={requestPermission}
-                  className="px-3 py-1.5 bg-app-hover text-app-primary rounded-sm hover:bg-app-surface-hover transition-colors border border-app-border uppercase tracking-wider text-xs"
-                >
-                  Re-request permission
-                </button>
+                <div className="space-y-2">
+                  <button
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      
+                      // First, try requesting permission with the cached handle
+                      // This should show the browser permission prompt if user activation is preserved
+                      logger.debug("Attempting to request permission...");
+                      await requestPermission();
+                      
+                      // Check permission status after request
+                      await checkPermission();
+                    }}
+                    className="px-3 py-1.5 bg-app-hover text-app-primary rounded-sm hover:bg-app-surface-hover transition-colors border border-app-border uppercase tracking-wider text-xs"
+                  >
+                    Request permission
+                  </button>
+                  <p className="text-app-tertiary text-xs">
+                    If no permission prompt appears, re-select your folder to get a fresh permission request.
+                  </p>
+                  <button
+                    onClick={async () => {
+                      // Re-select folder to get a fresh handle
+                      // Force reset any existing picker state to ensure dialog always opens
+                      // showDirectoryPicker() will automatically request permission and grant it
+                      try {
+                        const { pickLibraryRoot } = await import("@/lib/library-selection");
+                        // Pass forceReset=true to ensure picker always opens
+                        const newRoot = await pickLibraryRoot(true);
+                        // pickLibraryRoot uses showDirectoryPicker which automatically grants permission
+                        onLibrarySelected?.(newRoot);
+                      } catch (error) {
+                        // User cancelled or error occurred - that's OK
+                        const errorMessage = (error as Error).message;
+                        if (errorMessage === "Folder selection cancelled") {
+                          // User cancelled - that's fine, don't log
+                          return;
+                        }
+                        logger.error("Failed to re-select folder:", error);
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-accent-primary text-white rounded-sm hover:bg-accent-hover transition-colors border border-accent-primary uppercase tracking-wider text-xs"
+                  >
+                    Re-select folder
+                  </button>
+                </div>
+              )}
+              
+              {permissionStatus === "denied" && isHandleMode && (
+                <div className="space-y-2">
+                  <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-sm text-left">
+                    <p className="text-red-500 text-xs mb-2">
+                      Permission was denied. Please re-select your folder to grant access again.
+                    </p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      // Re-select folder to get a new handle and request permission
+                      try {
+                        const { pickLibraryRoot } = await import("@/lib/library-selection");
+                        const newRoot = await pickLibraryRoot(true);
+                        onLibrarySelected?.(newRoot);
+                      } catch (error) {
+                        // User cancelled or error occurred - that's OK
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-accent-primary text-white rounded-sm hover:bg-accent-hover transition-colors border border-accent-primary uppercase tracking-wider text-xs"
+                  >
+                    Re-select folder
+                  </button>
+                </div>
               )}
 
               {hasRelativePathsCheck === false && currentRootId && hasCompletedScan && (

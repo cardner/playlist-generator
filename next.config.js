@@ -20,8 +20,16 @@ const nextConfig = {
   webpack: (config) => {
     config.watchOptions = {
       ...config.watchOptions,
-      ignored: ['**/Playlist Creation Website/**'],
+      ignored: ['**/Playlist Creation Website/**', '**/workers/tempo-detection-worker.ts'],
     };
+    
+    // Exclude tempo detection worker from being processed
+    // It's only used as a standalone file in public folder
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@/workers/tempo-detection-worker': false,
+    };
+    
     return config;
   },
 }

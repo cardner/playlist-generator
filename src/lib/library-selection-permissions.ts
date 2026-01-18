@@ -91,29 +91,56 @@ export async function requestLibraryPermission(
   root: LibraryRoot
 ): Promise<PermissionStatus> {
   if (root.mode === "handle") {
-    // For handle mode, we need to retrieve the handle and check permission
+    // For handle mode, we need to retrieve the handle and request permission
     try {
-      const handle = await getDirectoryHandle(root.handleId!);
-      if (!handle) {
+      const handleId = root.handleId;
+      if (!handleId) {
+        logger.warn("No handleId found in library root, cannot request permission");
         return "prompt";
       }
 
-      // Check if we still have permission
-      const permissionStatus = await handle.queryPermission({ mode: "read" });
-
-      if (permissionStatus === "prompt") {
-        // Request permission (requires user activation)
-        try {
-          const newStatus = await handle.requestPermission({ mode: "read" });
-          return newStatus;
-        } catch (error) {
-          // If requestPermission fails (e.g., no user activation), return current status
-          logger.error("Failed to request permission:", error);
-          return permissionStatus; // Return the current status, don't throw
-        }
+      logger.debug(`Attempting to retrieve handle with ID: ${handleId}`);
+      const handle = await getDirectoryHandle(handleId);
+      if (!handle) {
+        logger.warn(`Directory handle not found for handleId: ${handleId}`);
+        return "prompt";
       }
 
-      return permissionStatus;
+      // IMPORTANT: Call requestPermission() immediately after getting the handle
+      // to minimize async operations that could lose user activation.
+      // We'll check status after requesting, not before, to preserve user activation.
+      try {
+        logger.debug("Calling handle.requestPermission({ mode: 'read' }) immediately...");
+        logger.debug("This should show the browser permission prompt if user activation is still valid");
+        
+        // Call requestPermission() directly - this should show the browser prompt
+        // The promise resolves when user interacts with prompt or if no prompt is shown
+        const newStatus = await handle.requestPermission({ mode: "read" });
+        logger.debug(`Permission request completed. Result: ${newStatus}`);
+        
+        return newStatus;
+      } catch (error) {
+        // If requestPermission fails, log the error and check current status as fallback
+        const err = error as Error;
+        logger.error("requestPermission threw an error:", err);
+        logger.error("Error name:", err.name);
+        logger.error("Error message:", err.message);
+        
+        // Check if it's a specific error type indicating user activation was lost
+        if (err.name === "NotAllowedError" || err.message?.includes("user activation")) {
+          logger.error("User activation was lost. This can happen if too many async operations occurred before calling requestPermission.");
+        }
+        
+        // Fallback: check current status
+        try {
+          const currentStatus = await handle.queryPermission({ mode: "read" });
+          logger.debug(`Fallback: Current permission status is ${currentStatus}`);
+          return currentStatus;
+        } catch (queryError) {
+          logger.error("Failed to query permission after request failed:", queryError);
+          return "denied";
+        }
+      }
     } catch (error) {
       logger.error("Failed to request permission:", error);
       return "denied";

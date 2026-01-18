@@ -517,6 +517,9 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
                   <th className="text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
                     Duration
                   </th>
+                  <th className="text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
+                    BPM
+                  </th>
                   <th className="text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider w-16">
                     Actions
                   </th>
@@ -562,6 +565,32 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
                         <td className="py-2 px-4 text-app-secondary tabular-nums">
                           {formatDuration(track.tech?.durationSeconds)}
                         </td>
+                        <td className="py-2 px-4 text-app-secondary">
+                          {track.tech?.bpm ? (
+                            <div className="flex items-center gap-2">
+                              <span className="tabular-nums">{track.tech.bpm}</span>
+                              {track.tech.bpmConfidence !== undefined && (
+                                <span
+                                  className={`text-xs px-1.5 py-0.5 rounded ${
+                                    track.tech.bpmConfidence >= 0.7
+                                      ? "bg-green-500/20 text-green-400"
+                                      : track.tech.bpmConfidence >= 0.5
+                                      ? "bg-yellow-500/20 text-yellow-400"
+                                      : "bg-red-500/20 text-red-400"
+                                  }`}
+                                  title={`Confidence: ${Math.round(track.tech.bpmConfidence * 100)}% | Source: ${track.tech.bpmSource || 'unknown'} | Method: ${track.tech.bpmMethod || 'unknown'}`}
+                                >
+                                  {track.tech.bpmConfidence >= 0.7 ? "✓" : track.tech.bpmConfidence >= 0.5 ? "~" : "?"}
+                                </span>
+                              )}
+                              {track.tech.bpmSource === 'id3' && (
+                                <span className="text-xs text-app-tertiary" title="From ID3 tag">ID3</span>
+                              )}
+                            </div>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
                         <td className="py-2 px-4">
                           <button
                             onClick={() => setEditingTrackId(isEditing ? null : track.id)}
@@ -575,7 +604,7 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
                       </tr>
                       {isEditing && (
                         <tr key={`${track.id}-editor`}>
-                          <td colSpan={7} className="p-0">
+                          <td colSpan={8} className="p-0">
                             <div className="px-4 py-2">
                               <TrackMetadataEditor
                                 track={track}

@@ -14,12 +14,24 @@ import { normalizeRelativePath, generateFileId, getFileExtension } from "./libra
 
 // Guard to prevent multiple simultaneous directory picker calls
 let isPickerOpen = false;
+const MAX_PICKER_RETRIES = 4;
+const PICKER_RETRY_DELAY_MS = 350;
+
+/**
+ * Reset the picker state - useful when user explicitly wants to re-select
+ * This ensures the picker can always be opened when requested
+ */
+export function resetPickerState(): void {
+  logger.debug("Resetting picker state");
+  isPickerOpen = false;
+}
 
 /**
  * Pick a library root using File System Access API
  * 
  * Opens a directory picker dialog and stores the selected directory handle.
  * 
+ * @param forceReset If true, resets any existing picker state before opening
  * @returns Promise resolving to the selected library root
  * @throws Error if user cancels or selection fails
  * 
@@ -35,50 +47,80 @@ let isPickerOpen = false;
  * }
  * ```
  */
-export async function pickLibraryRootWithFSAPI(): Promise<LibraryRoot> {
+export async function pickLibraryRootWithFSAPI(forceReset: boolean = false): Promise<LibraryRoot> {
   if (!supportsFileSystemAccess()) {
     throw new Error("File System Access API not supported");
   }
 
-  // Prevent multiple simultaneous picker calls
-  if (isPickerOpen) {
-    throw new Error("File picker already active");
+  // If force reset is requested, clear any existing picker state
+  if (forceReset) {
+    logger.debug("Force reset requested, clearing picker state");
+    resetPickerState();
   }
 
-  isPickerOpen = true;
-  try {
-    const handle = await window.showDirectoryPicker({
-      mode: "read",
-    });
+  // If picker is already open and not forcing reset, reset and continue
+  // This ensures the picker can always be opened when user clicks the button
+  if (isPickerOpen) {
+    logger.warn("File picker already active, resetting state and opening new picker");
+    resetPickerState();
+  }
 
-    const root: LibraryRoot = {
-      mode: "handle",
-      name: handle.name,
-    };
+  let attempt = 0;
+  while (true) {
+    isPickerOpen = true;
+    logger.debug(`Opening directory picker (attempt ${attempt + 1})`);
 
-    // Store handle in IndexedDB and get handleId
-    root.handleId = await storeDirectoryHandle(handle);
+    try {
+      const handle = await window.showDirectoryPicker({
+        mode: "read",
+      });
 
-    // Save library root configuration
-    const { saveLibraryRootLegacy } = await import("./library-selection-root");
-    await saveLibraryRootLegacy(root);
+      logger.debug("Directory picker completed successfully");
 
-    return root;
-  } catch (error) {
-    // User cancelled or error occurred
-    if ((error as Error).name === "AbortError") {
-      throw new Error("Folder selection cancelled");
-    }
-    // Check if it's the "picker already active" error
-    if ((error as Error).message?.includes("already active")) {
-      throw new Error("File picker already active");
-    }
-    throw error;
-  } finally {
-    // Reset flag after a short delay to allow any pending operations to complete
-    setTimeout(() => {
+      const root: LibraryRoot = {
+        mode: "handle",
+        name: handle.name,
+      };
+
+      // Store handle in IndexedDB and get handleId
+      root.handleId = await storeDirectoryHandle(handle);
+
+      // Save library root configuration
+      const { saveLibraryRootLegacy } = await import("./library-selection-root");
+      await saveLibraryRootLegacy(root);
+
+      // Reset flag immediately after successful selection
       isPickerOpen = false;
-    }, 100);
+      return root;
+    } catch (error) {
+      // Reset flag on error
+      isPickerOpen = false;
+
+      const err = error as Error;
+      const message = err.message ?? "";
+
+      // User cancelled or error occurred
+      if (err.name === "AbortError") {
+        logger.debug("Directory picker was cancelled");
+        throw new Error("Folder selection cancelled");
+      }
+
+      // Browser reports picker already active: wait and retry a few times
+      if (err.name === "NotAllowedError" || message.includes("already active")) {
+        if (attempt < MAX_PICKER_RETRIES) {
+          const waitMs = PICKER_RETRY_DELAY_MS * (attempt + 1);
+          logger.warn(`Directory picker already active, retrying in ${waitMs}ms`);
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+          attempt += 1;
+          continue;
+        }
+        logger.error("Directory picker still active after retries");
+        throw new Error("File picker already active. Please close any open file picker dialogs and try again.");
+      }
+
+      logger.error("Directory picker error:", error);
+      throw error;
+    }
   }
 }
 

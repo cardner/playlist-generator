@@ -16,12 +16,64 @@
 import type { TrackRecord, LibraryRootRecord } from "@/db/schema";
 import type { EnhancedMetadata } from "@/features/library/metadata";
 import { findRecordingByTrack, getRecordingGenres, getSimilarArtists } from "@/features/discovery/musicbrainz-client";
-import { detectTempo } from "./audio-analysis";
+import { detectTempo, detectTempoWithConfidence } from "./audio-analysis";
+import { searchTrackSample } from "@/features/audio-preview/platform-searcher";
 import { updateTrackMetadata } from "@/db/storage-tracks";
 import { getFileIndexEntries } from "@/db/storage";
 import { getLibraryRoot } from "@/db/storage-library-root";
 import { db, getCompositeId } from "@/db/schema";
 import { logger } from "@/lib/logger";
+
+/**
+ * Detect tempo from iTunes preview sample
+ * 
+ * Downloads the 30-second preview sample from iTunes and runs tempo detection on it.
+ * This is useful when local file access is not available.
+ * 
+ * @param track - Track record to detect tempo for
+ * @returns Promise resolving to tempo result with BPM, confidence, method, and source
+ */
+async function detectTempoFromPreview(
+  track: TrackRecord
+): Promise<{ bpm: number | null; confidence: number; method: string; source: 'itunes-preview' } | null> {
+  try {
+    // Search iTunes for preview URL
+    const sampleResult = await searchTrackSample({
+      title: track.tags.title,
+      artist: track.tags.artist,
+      album: track.tags.album,
+    });
+    
+    if (!sampleResult || !sampleResult.url) {
+      return null;
+    }
+    
+    // Download preview sample
+    const response = await fetch(sampleResult.url);
+    if (!response.ok) {
+      return null;
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const blob = new Blob([arrayBuffer]);
+    const file = new File([blob], 'preview.m4a', { type: 'audio/m4a' });
+    
+    // Run tempo detection on preview
+    const result = await detectTempoWithConfidence(file, 'combined');
+    
+    if (result.bpm) {
+      return {
+        ...result,
+        source: 'itunes-preview',
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    logger.debug(`Failed to detect tempo from iTunes preview:`, error);
+    return null;
+  }
+}
 
 /**
  * Get a File object from a track record using File System Access API
@@ -170,7 +222,11 @@ export async function enhanceTrackMetadata(
       }
     }
 
-    // 2. Detect tempo from audio file
+    // 2. Detect tempo from audio file or iTunes preview
+    type TempoResult = { bpm: number | null; confidence: number; method: string; source: 'local-file' | 'itunes-preview' };
+    let tempoResult: TempoResult | null = null;
+    
+    // Try local file first
     let audioFile: File | null = null;
     if (file) {
       audioFile = file;
@@ -178,19 +234,58 @@ export async function enhanceTrackMetadata(
       // Try to load file using File System Access API
       audioFile = await getFileForTrack(track);
       if (!audioFile) {
-        logger.debug(`Cannot detect tempo: file handle not available for ${track.trackFileId}`);
+        logger.debug(`Cannot detect tempo from local file: file handle not available for ${track.trackFileId}`);
       }
     }
 
     if (audioFile) {
       try {
-        const tempo = await detectTempo(audioFile);
-        if (tempo) {
-          enhanced.tempo = tempo;
-          hasEnhancements = true;
+        const result = await detectTempoWithConfidence(audioFile, 'combined');
+        if (result.bpm) {
+          tempoResult = {
+            ...result,
+            source: 'local-file',
+          };
         }
       } catch (error) {
         logger.warn(`Failed to detect tempo for track ${track.trackFileId}:`, error);
+      }
+    }
+    
+    // If local file detection failed, try iTunes preview
+    if (!tempoResult || !tempoResult.bpm || tempoResult.confidence < 0.5) {
+      try {
+        const previewResult = await detectTempoFromPreview(track);
+        if (previewResult && previewResult.bpm && (!tempoResult || previewResult.confidence > tempoResult.confidence)) {
+          tempoResult = previewResult;
+        }
+      } catch (error) {
+        logger.debug(`Failed to detect tempo from iTunes preview for track ${track.trackFileId}:`, error);
+      }
+    }
+    
+    if (tempoResult && tempoResult.bpm) {
+      enhanced.tempo = tempoResult.bpm;
+      hasEnhancements = true;
+      
+      // Update tech info with confidence, source, and method
+      // We'll update the track record directly to store this in tech.bpmConfidence, etc.
+      try {
+        const trackId = getCompositeId(track.trackFileId, track.libraryRootId);
+        const existing = await db.tracks.get(trackId);
+        if (existing) {
+          await db.tracks.update(trackId, {
+            tech: {
+              ...existing.tech,
+              bpm: tempoResult.bpm,
+              bpmConfidence: tempoResult.confidence,
+              bpmSource: tempoResult.source,
+              bpmMethod: tempoResult.method as 'autocorrelation' | 'spectral-flux' | 'peak-picking' | 'combined',
+            },
+          });
+        }
+      } catch (error) {
+        logger.warn(`Failed to update tech info with tempo metadata for track ${track.trackFileId}:`, error);
       }
     }
 
@@ -278,6 +373,12 @@ export async function enhanceLibraryMetadata(
           const enhanced = await enhanceTrackMetadata(track);
           
           result.processed++;
+          
+          // Check if tempo was detected (check tech.bpm after enhancement)
+          const updatedTrack = await db.tracks.get(track.id);
+          if (updatedTrack?.tech?.bpm) {
+            result.tempoDetected++;
+          }
           
           if (enhanced) {
             result.enhanced++;
@@ -384,5 +485,176 @@ export async function enhanceSelectedTracks(
     logger.error("Failed to enhance selected tracks:", error);
     throw error;
   }
+}
+
+/**
+ * Detect tempo for tracks missing BPM data
+ * 
+ * Automatically detects tempo for tracks that don't have BPM in their ID3 tags.
+ * Runs in background after scanning completes. Uses Web Workers for non-blocking processing.
+ * 
+ * @param libraryRootId - Library root ID to detect tempo for
+ * @param onProgress - Optional progress callback
+ * @param batchSize - Number of tracks to process per batch (default: 5)
+ * @returns Promise resolving to detection result
+ */
+export async function detectTempoForLibrary(
+  libraryRootId: string,
+  onProgress?: (progress: { processed: number; total: number; detected: number; currentTrack?: string }) => void,
+  batchSize: number = 5
+): Promise<{ processed: number; detected: number; errors: Array<{ trackId: string; error: string }> }> {
+  const result = {
+    processed: 0,
+    detected: 0,
+    errors: [] as Array<{ trackId: string; error: string }>,
+  };
+
+  try {
+    // Get tracks without BPM (or with low confidence BPM)
+    const allTracks = await db.tracks
+      .where("libraryRootId")
+      .equals(libraryRootId)
+      .toArray();
+    
+    // Filter tracks that need tempo detection:
+    // - No BPM in tech.bpm
+    // - Or BPM exists but no confidence/source (old data)
+    const tracksNeedingDetection = allTracks.filter(track => {
+      if (!track.tech?.bpm) {
+        return true; // No BPM at all
+      }
+      // Has BPM but missing confidence/source - might want to re-detect
+      if (!track.tech.bpmConfidence || !track.tech.bpmSource) {
+        return true;
+      }
+      // Has BPM from ID3 - skip (already reliable)
+      if (track.tech.bpmSource === 'id3') {
+        return false;
+      }
+      // Has low confidence detected BPM - might want to re-detect
+      if (track.tech.bpmConfidence < 0.5) {
+        return true;
+      }
+      return false;
+    });
+
+    const total = tracksNeedingDetection.length;
+    logger.info(`Detecting tempo for ${total} tracks missing BPM data`);
+
+    // Process in batches
+    for (let i = 0; i < tracksNeedingDetection.length; i += batchSize) {
+      const batch = tracksNeedingDetection.slice(i, i + batchSize);
+      
+      // Process batch (can be parallel for tempo detection)
+      const promises = batch.map(async (track) => {
+        try {
+          if (onProgress) {
+            onProgress({
+              processed: result.processed,
+              total,
+              detected: result.detected,
+              currentTrack: track.tags.title,
+            });
+          }
+
+          // Detect tempo (will try local file, then iTunes preview)
+          const tempoResult = await detectTempoForTrack(track);
+          
+          result.processed++;
+          
+          if (tempoResult && tempoResult.bpm) {
+            result.detected++;
+          }
+        } catch (error) {
+          result.errors.push({
+            trackId: track.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          result.processed++;
+        }
+      });
+      
+      await Promise.all(promises);
+      
+      // Yield to UI thread between batches
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    logger.info(`Tempo detection complete: ${result.detected}/${result.processed} tracks detected`);
+    return result;
+  } catch (error) {
+    logger.error("Failed to detect tempo for library:", error);
+    result.errors.push({
+      trackId: "unknown",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return result;
+  }
+}
+
+/**
+ * Detect tempo for a single track
+ * 
+ * Wrapper function that attempts tempo detection using local file or iTunes preview.
+ * 
+ * @param track - Track record to detect tempo for
+ * @returns Promise resolving to tempo result or null
+ */
+async function detectTempoForTrack(
+  track: TrackRecord
+): Promise<{ bpm: number | null; confidence: number; method: string; source: 'local-file' | 'itunes-preview' } | null> {
+  type TempoResult = { bpm: number | null; confidence: number; method: string; source: 'local-file' | 'itunes-preview' };
+  let tempoResult: TempoResult | null = null;
+  
+  // Try local file first
+  const audioFile = await getFileForTrack(track);
+  if (audioFile) {
+    try {
+      const result = await detectTempoWithConfidence(audioFile, 'combined');
+      if (result.bpm) {
+        tempoResult = {
+          ...result,
+          source: 'local-file',
+        };
+      }
+    } catch (error) {
+      logger.debug(`Failed to detect tempo from local file for track ${track.trackFileId}:`, error);
+    }
+  }
+  
+  // If local file detection failed or low confidence, try iTunes preview
+  if (!tempoResult || !tempoResult.bpm || tempoResult.confidence < 0.5) {
+    try {
+      const previewResult = await detectTempoFromPreview(track);
+      if (previewResult && previewResult.bpm && (!tempoResult || previewResult.confidence > tempoResult.confidence)) {
+        tempoResult = previewResult;
+      }
+    } catch (error) {
+      logger.debug(`Failed to detect tempo from iTunes preview for track ${track.trackFileId}:`, error);
+    }
+  }
+  
+  // Update track with tempo data if detected
+  if (tempoResult && tempoResult.bpm) {
+    try {
+      const trackId = getCompositeId(track.trackFileId, track.libraryRootId);
+      const existing = await db.tracks.get(trackId);
+      if (existing) {
+        await db.tracks.update(trackId, {
+          tech: {
+            ...existing.tech,
+            bpm: tempoResult.bpm,
+            bpmConfidence: tempoResult.confidence,
+            bpmSource: tempoResult.source,
+            bpmMethod: tempoResult.method as 'autocorrelation' | 'spectral-flux' | 'peak-picking' | 'combined',
+          },
+        });
+      }
+    } catch (error) {
+      logger.warn(`Failed to update track with tempo data for ${track.trackFileId}:`, error);
+    }
+  }
+  
+  return tempoResult;
 }
 

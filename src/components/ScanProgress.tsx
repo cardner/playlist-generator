@@ -41,7 +41,7 @@ export function ScanProgress({ found, scanned, currentFile }: ScanProgressProps)
   const percentage = found > 0 ? Math.round((scanned / found) * 100) : 0;
 
   return (
-    <div className="max-w-4xl">
+    <div className="">
       <div className="bg-app-surface rounded-sm border border-app-border p-8 md:p-12">
         <div className="text-center">
           <div className="flex items-center justify-center gap-3 text-accent-primary mb-6">
