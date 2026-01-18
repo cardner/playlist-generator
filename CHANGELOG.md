@@ -22,6 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [0.9.0] - 2026-01-18
+
+### Added
+
+- add a focused editor mode
+
+### Other Changes
+
+- Merge pull request #8 from cardner/editor-mode
+
 ## [0.8.2] - 2026-01-18
 
 ### Fixed
