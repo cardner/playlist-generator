@@ -332,7 +332,7 @@ export function LibrarySelector({
 
               {permissionStatus === "prompt" && isHandleMode && (
                 <div className="space-y-2">
-                  <button
+                <button
                     onClick={async (e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -345,8 +345,8 @@ export function LibrarySelector({
                       // Check permission status after request
                       await checkPermission();
                     }}
-                    className="px-3 py-1.5 bg-app-hover text-app-primary rounded-sm hover:bg-app-surface-hover transition-colors border border-app-border uppercase tracking-wider text-xs"
-                  >
+                  className="px-3 py-1.5 bg-app-hover text-app-primary rounded-sm hover:bg-app-surface-hover transition-colors border border-app-border uppercase tracking-wider text-xs"
+                >
                     Request permission
                   </button>
                   <p className="text-app-tertiary text-xs">
@@ -376,7 +376,7 @@ export function LibrarySelector({
                     className="px-3 py-1.5 bg-accent-primary text-white rounded-sm hover:bg-accent-hover transition-colors border border-accent-primary uppercase tracking-wider text-xs"
                   >
                     Re-select folder
-                  </button>
+                </button>
                 </div>
               )}
               

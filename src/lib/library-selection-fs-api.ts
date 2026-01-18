@@ -67,43 +67,43 @@ export async function pickLibraryRootWithFSAPI(forceReset: boolean = false): Pro
 
   let attempt = 0;
   while (true) {
-    isPickerOpen = true;
+  isPickerOpen = true;
     logger.debug(`Opening directory picker (attempt ${attempt + 1})`);
 
-    try {
-      const handle = await window.showDirectoryPicker({
-        mode: "read",
-      });
+  try {
+    const handle = await window.showDirectoryPicker({
+      mode: "read",
+    });
 
       logger.debug("Directory picker completed successfully");
 
-      const root: LibraryRoot = {
-        mode: "handle",
-        name: handle.name,
-      };
+    const root: LibraryRoot = {
+      mode: "handle",
+      name: handle.name,
+    };
 
-      // Store handle in IndexedDB and get handleId
-      root.handleId = await storeDirectoryHandle(handle);
+    // Store handle in IndexedDB and get handleId
+    root.handleId = await storeDirectoryHandle(handle);
 
-      // Save library root configuration
-      const { saveLibraryRootLegacy } = await import("./library-selection-root");
-      await saveLibraryRootLegacy(root);
+    // Save library root configuration
+    const { saveLibraryRootLegacy } = await import("./library-selection-root");
+    await saveLibraryRootLegacy(root);
 
       // Reset flag immediately after successful selection
       isPickerOpen = false;
-      return root;
-    } catch (error) {
+    return root;
+  } catch (error) {
       // Reset flag on error
       isPickerOpen = false;
 
       const err = error as Error;
       const message = err.message ?? "";
 
-      // User cancelled or error occurred
+    // User cancelled or error occurred
       if (err.name === "AbortError") {
         logger.debug("Directory picker was cancelled");
-        throw new Error("Folder selection cancelled");
-      }
+      throw new Error("Folder selection cancelled");
+    }
 
       // Browser reports picker already active: wait and retry a few times
       if (err.name === "NotAllowedError" || message.includes("already active")) {

@@ -326,11 +326,20 @@ function detectTempoCombined(
   ];
   
   // Filter out null results
-  const validResults = results.filter(r => r.bpm !== null && r.confidence > 0.3);
+    const validResults = results.filter(r => r.bpm !== null && r.confidence > 0);
   
-  if (validResults.length === 0) {
-    return { bpm: null, confidence: 0 };
-  }
+    if (validResults.length === 0) {
+      const best = results.reduce(
+        (acc, cur) => {
+          if (cur.bpm !== null && cur.confidence > acc.confidence) {
+            return cur;
+          }
+          return acc;
+        },
+        { bpm: null, confidence: 0 }
+      );
+      return best.bpm !== null ? best : { bpm: null, confidence: 0 };
+    }
   
   // Group results by BPM (within ±2 BPM tolerance)
   const groups = new Map<number, Array<{ bpm: number; confidence: number }>>();

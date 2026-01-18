@@ -534,7 +534,7 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
                     <Fragment key={track.trackFileId}>
                       <tr
                         className="border-b border-app-border hover:bg-app-hover transition-colors group"
-                      >
+                  >
                         <td className="py-2 px-4">
                           <button
                             onClick={() => handleInlinePlayClick(track.trackFileId, {
@@ -556,14 +556,14 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
                             )}
                           </button>
                         </td>
-                        <td className="py-2 px-4 text-app-primary">{track.tags.title}</td>
-                        <td className="py-2 px-4 text-app-primary">{track.tags.artist}</td>
-                        <td className="py-2 px-4 text-app-secondary">{track.tags.album}</td>
-                        <td className="py-2 px-4 text-app-secondary">
+                    <td className="py-2 px-4 text-app-primary">{track.tags.title}</td>
+                    <td className="py-2 px-4 text-app-primary">{track.tags.artist}</td>
+                    <td className="py-2 px-4 text-app-secondary">{track.tags.album}</td>
+                    <td className="py-2 px-4 text-app-secondary">
                           {currentGenres.join(", ") || "—"}
-                        </td>
-                        <td className="py-2 px-4 text-app-secondary tabular-nums">
-                          {formatDuration(track.tech?.durationSeconds)}
+                    </td>
+                    <td className="py-2 px-4 text-app-secondary tabular-nums">
+                      {formatDuration(track.tech?.durationSeconds)}
                         </td>
                         <td className="py-2 px-4 text-app-secondary">
                           {track.tech?.bpm ? (
@@ -578,9 +578,9 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
                                       ? "bg-yellow-500/20 text-yellow-400"
                                       : "bg-red-500/20 text-red-400"
                                   }`}
-                                  title={`Confidence: ${Math.round(track.tech.bpmConfidence * 100)}% | Source: ${track.tech.bpmSource || 'unknown'} | Method: ${track.tech.bpmMethod || 'unknown'}`}
+                                  title={`Confidence: ${Math.round(track.tech.bpmConfidence * 100)}% | Thresholds: ✓ ≥ 70%, ? 50–69%, ? < 50% | Source: ${track.tech.bpmSource || 'unknown'} | Method: ${track.tech.bpmMethod || 'unknown'}`}
                                 >
-                                  {track.tech.bpmConfidence >= 0.7 ? "✓" : track.tech.bpmConfidence >= 0.5 ? "~" : "?"}
+                                  {track.tech.bpmConfidence >= 0.7 ? "✓" : "?"}
                                 </span>
                               )}
                               {track.tech.bpmSource === 'id3' && (
@@ -661,8 +661,8 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
                                 }
                               }}
                             />
-                          </td>
-                        </tr>
+                    </td>
+                  </tr>
                       )}
                     </Fragment>
                   );

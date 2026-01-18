@@ -59,6 +59,7 @@ import type { LibraryRoot } from "@/lib/library-selection";
 import { ScanProgress } from "./ScanProgress";
 import { ScanResults } from "./ScanResults";
 import { MetadataProgress } from "./MetadataProgress";
+import { TempoDetectionProgress } from "./TempoDetectionProgress";
 import { InterruptedScanBanner } from "./InterruptedScanBanner";
 import { useLibraryScanning } from "@/hooks/useLibraryScanning";
 import { useMetadataParsing } from "@/hooks/useMetadataParsing";
@@ -115,6 +116,8 @@ export function LibraryScanner({
     isParsingMetadata,
     metadataResults,
     metadataProgress,
+    isDetectingTempo,
+    tempoProgress,
     error: parseError,
     handleParseMetadata,
     clearError: clearParseError,
@@ -330,6 +333,18 @@ export function LibraryScanner({
   // Show metadata parsing progress if we're processing files
   if (isParsingMetadata && metadataProgress) {
     return <MetadataProgress {...metadataProgress} />;
+  }
+
+  // Show tempo detection progress if running
+  if (isDetectingTempo && tempoProgress) {
+    return (
+      <TempoDetectionProgress
+        processed={tempoProgress.processed}
+        total={tempoProgress.total}
+        detected={tempoProgress.detected}
+        currentTrack={tempoProgress.currentTrack}
+      />
+    );
   }
 
   // Show scanning progress if we're scanning files

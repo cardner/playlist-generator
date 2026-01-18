@@ -54,6 +54,15 @@ export interface UseMetadataParsingReturn {
   metadataResults: MetadataResult[] | null;
   /** Current metadata parsing progress */
   metadataProgress: MetadataProgress | null;
+  /** Whether tempo detection is currently running */
+  isDetectingTempo: boolean;
+  /** Tempo detection progress */
+  tempoProgress: {
+    processed: number;
+    total: number;
+    detected: number;
+    currentTrack?: string;
+  } | null;
   /** Current error message, if any */
   error: string | null;
   /** Parse metadata for files from a scan result */
@@ -79,6 +88,13 @@ export function useMetadataParsing(
   const [isParsingMetadata, setIsParsingMetadata] = useState(false);
   const [metadataResults, setMetadataResults] = useState<MetadataResult[] | null>(null);
   const [metadataProgress, setMetadataProgress] = useState<MetadataProgress | null>(null);
+  const [isDetectingTempo, setIsDetectingTempo] = useState(false);
+  const [tempoProgress, setTempoProgress] = useState<{
+    processed: number;
+    total: number;
+    detected: number;
+    currentTrack?: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Use ref for callback to avoid recreating handleParseMetadata when callback changes
@@ -260,13 +276,28 @@ export function useMetadataParsing(
 
         // Automatically detect tempo for tracks missing BPM (runs in background)
         // This is non-blocking and happens after metadata parsing completes
-        detectTempoForLibrary(libraryRootId, (tempoProgress: { processed: number; total: number; detected: number; currentTrack?: string }) => {
-          // Optionally update progress for tempo detection
-          logger.debug(`Tempo detection: ${tempoProgress.detected}/${tempoProgress.processed} tracks`);
-        }, 5).catch((error: unknown) => {
-          // Don't fail the scan if tempo detection fails
-          logger.warn("Background tempo detection failed:", error);
-        });
+        setIsDetectingTempo(true);
+        setTempoProgress({ processed: 0, total: 0, detected: 0 });
+        detectTempoForLibrary(
+          libraryRootId,
+          (progress: { processed: number; total: number; detected: number; currentTrack?: string }) => {
+            setTempoProgress({
+              processed: progress.processed,
+              total: progress.total,
+              detected: progress.detected,
+              currentTrack: progress.currentTrack,
+            });
+            logger.debug(`Tempo detection: ${progress.detected}/${progress.processed} tracks`);
+          },
+          5
+        )
+          .catch((error: unknown) => {
+            // Don't fail the scan if tempo detection fails
+            logger.warn("Background tempo detection failed:", error);
+          })
+          .finally(() => {
+            setIsDetectingTempo(false);
+          });
 
         // Notify parent that scan and data persistence is complete
         // This will trigger refresh of LibrarySummary and LibraryBrowser
@@ -306,6 +337,8 @@ export function useMetadataParsing(
     isParsingMetadata,
     metadataResults,
     metadataProgress,
+    isDetectingTempo,
+    tempoProgress,
     error,
     handleParseMetadata,
     clearError,

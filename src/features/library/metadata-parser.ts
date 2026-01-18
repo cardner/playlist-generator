@@ -6,7 +6,7 @@
 
 import { parseBlob } from "music-metadata";
 import type { LibraryFile } from "@/lib/library-selection";
-import type { MetadataResult } from "./metadata";
+import type { MetadataResult, TechInfo } from "./metadata";
 import {
   normalizeTitle,
   normalizeArtist,
@@ -17,6 +17,7 @@ import {
   normalizeDiscNo,
   extractCodecInfo,
 } from "./metadata";
+import { detectTempoWithConfidence } from "./audio-analysis";
 
 /**
  * Progress callback for metadata parsing
@@ -57,7 +58,7 @@ async function parseSingleFile(file: LibraryFile): Promise<MetadataResult> {
     };
 
     // Extract tech info
-    const tech = {
+    const tech: TechInfo = {
       durationSeconds: metadata.format.duration
         ? Math.round(metadata.format.duration)
         : undefined,
@@ -72,6 +73,21 @@ async function parseSingleFile(file: LibraryFile): Promise<MetadataResult> {
       } : {}),
       ...extractCodecInfo(metadata.format),
     };
+
+    // If BPM is missing, attempt local tempo detection while we have the File
+    if (!metadata.common.bpm) {
+      try {
+        const tempo = await detectTempoWithConfidence(file.file, "combined");
+        if (tempo.bpm) {
+          tech.bpm = tempo.bpm;
+          tech.bpmConfidence = tempo.confidence;
+          tech.bpmSource = "local-file";
+          tech.bpmMethod = tempo.method as "autocorrelation" | "spectral-flux" | "peak-picking" | "combined";
+        }
+      } catch {
+        // Ignore tempo detection failures during parsing
+      }
+    }
 
     // Collect warnings
     if (!metadata.common.title) {
