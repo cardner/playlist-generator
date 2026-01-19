@@ -38,6 +38,7 @@ import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import { Logo } from "./Logo";
+import { InstallPromptButton } from "./InstallPromptButton";
 
 /**
  * Main navigation component
@@ -122,6 +123,9 @@ export function Navigation() {
             <div className="hidden md:block">
               <ThemeToggle />
             </div>
+            <div className="hidden md:block">
+              <InstallPromptButton />
+            </div>
             <button
               className="md:hidden p-2 text-app-primary hover:bg-app-hover rounded-sm transition-colors"
               onClick={toggleMobileMenu}
@@ -178,6 +182,10 @@ export function Navigation() {
                   );
                 })}
               </nav>
+
+              <div className="mt-6">
+                <InstallPromptButton variant="mobile" />
+              </div>
               
               {/* Theme Toggle in mobile menu */}
               <div className="mt-8 pt-8 border-t border-app-border">

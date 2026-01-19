@@ -5,17 +5,17 @@
       <stop offset="100%" style="stop-color:#c2185b;stop-opacity:1" />
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="64" fill="url(#gradient)" />
+  <rect width="512" height="512" rx="96" fill="url(#gradient)" />
   <text
     x="256"
-    y="290"
+    y="296"
     font-family="system-ui, -apple-system, sans-serif"
-    font-size="260"
+    font-size="240"
     font-weight="bold"
     fill="white"
     text-anchor="middle"
     dominant-baseline="middle"
   >
-    k
+    ♫
   </text>
 </svg>
