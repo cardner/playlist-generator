@@ -362,7 +362,7 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
       setError(trackFileId, "Failed to find preview for this track");
       setSearchingTrack(null);
     }
-  }, [playingTrackId, hasSampleResult, getSampleResult, setSampleResult, setError, setPlayingTrack, clearPlayingTrack, setSearchingTrack]);
+  }, [playingTrackId, hasSampleResult, setSampleResult, setError, clearPlayingTrack, setSearchingTrack]);
 
   // Cleanup when component unmounts
   useEffect(() => {

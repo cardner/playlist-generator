@@ -420,38 +420,6 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   }, [playlist, checkIfSaved, loadTracks, loadLibraryRoot]);
 
   useEffect(() => {
-    if (!isEditMode) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
-        return;
-      }
-
-      if (event.key === "Escape") {
-        handleToggleEditMode(false);
-        return;
-      }
-
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        if (isDirty) {
-          setShowSaveDialog(true);
-        }
-        return;
-      }
-
-      if ((event.key === "Delete" || event.key === "Backspace") && expandedTrackId) {
-        event.preventDefault();
-        handleRemoveTrack(expandedTrackId);
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [expandedTrackId, handleToggleEditMode, handleRemoveTrack, isDirty, isEditMode]);
-
-  useEffect(() => {
     const stored = sessionStorage.getItem("playlist-request");
     if (!stored) return;
     try {
@@ -1102,7 +1070,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     }
   }
 
-  function handleToggleEditMode(next: boolean) {
+  const handleToggleEditMode = useCallback((next: boolean) => {
     if (!next && isDirty) {
       const shouldExit = confirm("You have unsaved changes. Discard them?");
       if (!shouldExit) {
@@ -1116,7 +1084,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       setShowFlowArcEditor(false);
       setExpandedTrackId(null);
     }
-  }
+  }, [isDirty, resetEdits]);
 
   async function handleFlowArcUpdate(updatedStrategy: typeof playlist.strategy) {
     setIsRegenerating(true);
@@ -1274,7 +1242,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       setTrackError(trackFileId, "Failed to find preview for this track");
       setSearchingTrack(null);
     }
-  }, [playingTrackId, hasSampleResult, getSampleResult, setSampleResult, setTrackError, setPlayingTrack, clearPlayingTrack, setSearchingTrack]);
+  }, [playingTrackId, hasSampleResult, setSampleResult, setTrackError, clearPlayingTrack, setSearchingTrack]);
 
   // Cleanup when playlist changes
   useEffect(() => {
@@ -1288,7 +1256,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     };
   }, [playlist.id, clearAllAudioState]);
 
-  async function handleRemoveTrack(trackFileId: string) {
+  const handleRemoveTrack = useCallback(async (trackFileId: string) => {
     if (isEditMode) {
       updatePlaylist((prev) => {
         const updatedTrackFileIds = prev.trackFileIds.filter((id) => id !== trackFileId);
@@ -1419,7 +1387,39 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     } finally {
       setIsRegenerating(false);
     }
-  }
+  }, [isEditMode, playlist, stableMode, updatePlaylist]);
+
+  useEffect(() => {
+    if (!isEditMode) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
+        return;
+      }
+
+      if (event.key === "Escape") {
+        handleToggleEditMode(false);
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (isDirty) {
+          setShowSaveDialog(true);
+        }
+        return;
+      }
+
+      if ((event.key === "Delete" || event.key === "Backspace") && expandedTrackId) {
+        event.preventDefault();
+        handleRemoveTrack(expandedTrackId);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [expandedTrackId, handleToggleEditMode, handleRemoveTrack, isDirty, isEditMode]);
 
   // Parse request from sessionStorage with defaults
   const storedRequest = sessionStorage.getItem("playlist-request");
