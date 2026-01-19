@@ -1,0 +1,5 @@
+.help-list {
+    list-style-position: outside;
+    margin-inline-start: 1rem;
+    margin-block-start: 1rem;
+}

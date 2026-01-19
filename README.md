@@ -102,6 +102,8 @@ The app automatically detects browser capabilities and adjusts the UI accordingl
 ## Project Structure
 
 ```
+docs/
+└── help.md               # In-app help content (About/FAQ/Tips)
 src/
 ├── app/                    # Next.js App Router pages
 │   ├── page.tsx           # Landing page
@@ -113,6 +115,7 @@ src/
 │       └── view/         # Playlist viewer
 ├── components/            # React components
 │   ├── Navigation.tsx    # Main navigation
+│   ├── HelpPanel.tsx     # Help sidebar overlay + TOC
 │   ├── LibrarySelector.tsx  # Library selection UI
 │   ├── CollectionManager.tsx  # Collection management
 │   ├── PlaylistBuilder.tsx  # Playlist creation form
@@ -443,6 +446,7 @@ If the LLM returns invalid JSON or doesn't match the schema, the app automatical
 - **Collection Association**: Playlists remember which collection they were generated from
 - **Export Formats**: Export to M3U, PLS, XSPF, CSV, and JSON formats
 - **Collection Mismatch Warnings**: Alerts when exporting playlists from different collections
+- **In-app Help Panel**: Sidebar with FAQs, usage guidance, and tips
 
 ### 🎯 Advanced Features
 

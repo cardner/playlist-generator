@@ -3,17 +3,21 @@ import "./globals.css";
 import { Navigation } from "@/components/Navigation";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { PwaRegister } from "@/components/PwaRegister";
+import { HelpPanel } from "@/components/HelpPanel";
+import { getHelpContent } from "@/lib/help-content";
 
 export const metadata: Metadata = {
   title: "mixtape gen",
   description: "intelligent music curation",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const helpContent = await getHelpContent();
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -40,6 +44,7 @@ export default function RootLayout({
         <ThemeProvider>
           <PwaRegister />
           <Navigation />
+          <HelpPanel markdown={helpContent} />
           <main className="min-h-screen bg-app-bg">
             <div className="container mx-auto px-4 py-8 md:py-12 max-w-6xl">
               {children}

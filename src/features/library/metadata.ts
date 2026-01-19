@@ -240,11 +240,11 @@ export function normalizeGenres(genres: string[] | string | undefined): string[]
 /**
  * Normalize year - safely coerce to number
  * 
- * Validates and normalizes year values. Only accepts years between 1900 and 2100.
+ * Validates and normalizes year values. Only accepts years between 1900 and 2099.
  * Returns undefined for invalid or out-of-range values.
  * 
  * @param year - Year value (number, string, or undefined)
- * @returns Normalized year number (1900-2100) or undefined
+ * @returns Normalized year number (1900-2099) or undefined
  * 
  * @example
  * ```typescript
@@ -261,7 +261,7 @@ export function normalizeYear(year: number | string | undefined): number | undef
 
   if (typeof year === "number") {
     // Sanity check: year should be reasonable
-    if (year >= 1900 && year <= 2100) {
+    if (year >= 1900 && year <= 2099) {
       return Math.floor(year);
     }
     return undefined;
@@ -269,7 +269,7 @@ export function normalizeYear(year: number | string | undefined): number | undef
 
   if (typeof year === "string") {
     const parsed = parseInt(year, 10);
-    if (!isNaN(parsed) && parsed >= 1900 && parsed <= 2100) {
+    if (!isNaN(parsed) && parsed >= 1900 && parsed <= 2099) {
       return parsed;
     }
   }
