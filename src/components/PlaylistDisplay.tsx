@@ -255,6 +255,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   const [pendingAlbums, setPendingAlbums] = useState<string[]>([]);
   const [pendingTracks, setPendingTracks] = useState<string[]>([]);
   const [showFlowArcEditor, setShowFlowArcEditor] = useState(false);
+  const [pendingFlowArcStrategy, setPendingFlowArcStrategy] = useState<typeof playlist.strategy | null>(null);
   const [playingSample, setPlayingSample] = useState<{
     trackFileId: string;
     sampleResult: SampleResult;
@@ -1169,17 +1170,29 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     }
   }
 
+  function handleFlowArcDraftUpdate(updatedStrategy: typeof playlist.strategy) {
+    setPendingFlowArcStrategy(updatedStrategy);
+  }
+
   function handleFlowArcReorder(reorderedSections: typeof playlist.strategy.orderingPlan.sections) {
-    // Update strategy with reordered sections
+    const baseStrategy = pendingFlowArcStrategy ?? displayPlaylist.strategy;
     const updatedStrategy = {
-      ...displayPlaylist.strategy,
+      ...baseStrategy,
       orderingPlan: {
-        ...displayPlaylist.strategy.orderingPlan,
+        ...baseStrategy.orderingPlan,
         sections: reorderedSections,
       },
     };
-    handleFlowArcUpdate(updatedStrategy);
+    handleFlowArcDraftUpdate(updatedStrategy);
   }
+
+  async function handleApplyFlowArc() {
+    if (!pendingFlowArcStrategy) return;
+    await handleFlowArcUpdate(pendingFlowArcStrategy);
+    setPendingFlowArcStrategy(null);
+  }
+
+  const flowArcStrategy = pendingFlowArcStrategy ?? displayPlaylist.strategy;
 
   // Handler for inline audio preview play/pause
   const handleInlinePlayClick = useCallback(async (
@@ -1797,10 +1810,23 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
         {showFlowArcEditor && (
           <div className="mt-4 pt-4 border-t border-app-border">
             <FlowArcEditor
-              strategy={displayPlaylist.strategy}
-              onUpdate={handleFlowArcUpdate}
+              strategy={flowArcStrategy}
+              durationSeconds={displayPlaylist.summary.totalDuration}
+              onUpdate={handleFlowArcDraftUpdate}
               onReorder={handleFlowArcReorder}
             />
+            {pendingFlowArcStrategy && (
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleApplyFlowArc}
+                  disabled={isRegenerating}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-accent-primary text-white rounded-sm hover:bg-accent-hover transition-colors text-sm disabled:opacity-50"
+                >
+                  {isRegenerating ? "Updating..." : "Apply Flow Arc"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 

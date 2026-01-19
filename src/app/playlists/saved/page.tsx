@@ -134,6 +134,7 @@ export default function SavedPlaylistsPage() {
         <div className="flex items-center gap-4 mb-4">
           <div className="size-12 bg-gradient-to-br from-accent-primary to-accent-secondary rounded-sm flex items-center justify-center">
             <Music className="size-6 text-white" />
+            
           </div>
           <div>
             <h1 className="text-app-primary tracking-tight text-2xl font-semibold">

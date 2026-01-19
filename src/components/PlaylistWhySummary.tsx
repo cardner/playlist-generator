@@ -150,9 +150,9 @@ export function PlaylistWhySummary({ playlist }: PlaylistWhySummaryProps) {
               <span>Flow Arc</span>
             </div>
             <div className="flex flex-wrap gap-2">
-              {sections.map((section) => (
+              {sections.map((section, index) => (
                 <div
-                  key={section.name}
+                  key={`${section.name}-${index}`}
                   className="px-3 py-1 bg-app-hover rounded-sm text-app-primary text-sm capitalize"
                 >
                   {section.name}
