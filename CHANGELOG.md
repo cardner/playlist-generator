@@ -26,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [0.11.2] - 2026-01-20
+
+### Fixed
+
+- trying for a valid manifest file again
+
+### Other Changes
+
+- Update deploy workflow to remove pull_request trigger
+- Merge pull request #12 from cardner/pwa-manifest
+
 ## [0.11.1] - 2026-01-20
 
 ### Fixed
