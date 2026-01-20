@@ -12,29 +12,33 @@
   "theme_color": "#0b0b0f",
   "icons": [
     {
-      "src": "/icons/icon.svg",
-      "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/gen-cassette-16x16.png",
+      "src": "/icons/icon_16x16.png",
       "sizes": "16x16",
       "type": "image/png"
     },
     {
-      "src": "/icons/gen-cassette-32x132.png",
+      "src": "/icons/icon_32x32.png",
       "sizes": "32x32",
       "type": "image/png"
     },
     {
-      "src": "/icons/gen-cassette-64x64.png",
+      "src": "/icons/icon_64x64.png",
       "sizes": "64x64",
       "type": "image/png"
     },
     {
-      "src": "/icons/gen-cassette-128x128.png",
+      "src": "/icons/icon_128x128.png",
       "sizes": "128x128",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon_256x256.png",
+      "sizes": "256x256",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon_512x512.png",
+      "sizes": "512x512",
       "type": "image/png"
     }
   ],
@@ -55,14 +59,14 @@
   },
   {
     "src": "screenshots/mobile-home.png",
-    "sizes": "750x1850",
+    "sizes": "850x1388",
     "type": "image/png",
     "form_factor": "narrow",
     "label": "Example of what a playlist looks like"
   },
   {
     "src": "screenshots/mobile-playlist.png",
-    "sizes": "750x1850",
+    "sizes": "850x1388",
     "type": "image/png",
     "form_factor": "narrow",
     "label": "Generating a new playlist"

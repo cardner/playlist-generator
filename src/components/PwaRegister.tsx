@@ -13,7 +13,18 @@ export function PwaRegister() {
 
     const registerServiceWorker = async () => {
       try {
-        await navigator.serviceWorker.register("/sw.js");
+        await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+        await navigator.serviceWorker.ready;
+
+        if (!navigator.serviceWorker.controller) {
+          const reloaded = sessionStorage.getItem("sw-reload");
+          if (!reloaded) {
+            sessionStorage.setItem("sw-reload", "true");
+            window.location.reload();
+          }
+        } else {
+          sessionStorage.removeItem("sw-reload");
+        }
       } catch (error) {
         console.warn("Service worker registration failed", error);
       }

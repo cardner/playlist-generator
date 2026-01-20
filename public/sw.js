@@ -6,8 +6,12 @@ const PRECACHE_URLS = [
   "/",
   "/manifest.webmanifest",
   "/icon.svg",
-  "/icons/app-icon.svg",
-  "/icons/app-icon-maskable.svg",
+  "/icons/icon_16x16.png",
+  "/icons/icon_32x32.png",
+  "/icons/icon_64x64.png",
+  "/icons/icon_128x128.png",
+  "/icons/icon_256x256.png",
+  "/icons/icon_512x512.png",
   "/tempo-detection-worker.js",
 ];
 
