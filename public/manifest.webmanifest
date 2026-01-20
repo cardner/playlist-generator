@@ -4,6 +4,7 @@
   "description": "Intelligent music curation",
   "start_url": "/",
   "scope": "/",
+  "id": "/",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone"],
   "orientation": "any",
@@ -11,16 +12,60 @@
   "theme_color": "#0b0b0f",
   "icons": [
     {
-      "src": "/icon.svg",
+      "src": "/icons/icon.svg",
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "/icon.svg",
-      "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "maskable"
+      "src": "/icons/gen-cassette-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/gen-cassette-32x132.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/gen-cassette-64x64.png",
+      "sizes": "64x64",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/gen-cassette-128x128.png",
+      "sizes": "128x128",
+      "type": "image/png"
     }
-  ]
+  ],
+  "screenshots": [
+  {
+    "src": "screenshots/home1.png",
+    "sizes": "1536x1850",
+    "type": "image/png",
+    "form_factor": "wide",
+    "label": "Home screen showing main navigation and featured content"
+  },
+  {
+    "src": "screenshots/playlist-gen.png",
+    "sizes": "1536x1850",
+    "type": "image/png",
+    "form_factor": "wide",
+    "label": "Generating a new playlist"
+  },
+  {
+    "src": "screenshots/mobile-home.png",
+    "sizes": "750x1850",
+    "type": "image/png",
+    "form_factor": "narrow",
+    "label": "Example of what a playlist looks like"
+  },
+  {
+    "src": "screenshots/mobile-playlist.png",
+    "sizes": "750x1850",
+    "type": "image/png",
+    "form_factor": "narrow",
+    "label": "Generating a new playlist"
+  }
+]
 }
