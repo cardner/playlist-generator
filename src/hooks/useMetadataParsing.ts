@@ -96,6 +96,7 @@ export function useMetadataParsing(
     currentTrack?: string;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const tempoLogStateRef = useRef({ lastLogTime: 0, lastProcessed: 0 });
 
   // Use ref for callback to avoid recreating handleParseMetadata when callback changes
   const onParseCompleteRef = useRef(onParseComplete);
@@ -171,7 +172,8 @@ export function useMetadataParsing(
             });
           };
 
-          results = await parseMetadataBatched(
+          const collectResults = libraryFiles.length <= 5000;
+          const batchedResult = await parseMetadataBatched(
             libraryFiles,
             libraryRootId,
             onBatchedProgress,
@@ -179,13 +181,19 @@ export function useMetadataParsing(
               batchSize,
               concurrency,
               saveAfterEachBatch: true, // Save incrementally
+              collectResults,
             }
           );
 
-          successCount = results.filter((r) => !r.error && r.tags).length;
-          errorCount = results.filter((r) => r.error).length;
+          results = batchedResult.results ?? [];
+          successCount = batchedResult.saved;
+          errorCount = batchedResult.errors;
 
-          setMetadataResults(results);
+          if (collectResults) {
+            setMetadataResults(results);
+          } else {
+            setMetadataResults(null);
+          }
 
           // Verify final count (tracks were saved incrementally during batching)
           const { getTracks } = await import("@/db/storage");
@@ -276,8 +284,36 @@ export function useMetadataParsing(
 
         // Automatically detect tempo for tracks missing BPM (runs in background)
         // This is non-blocking and happens after metadata parsing completes
+        const isStandalone =
+          typeof window !== "undefined" &&
+          (window.matchMedia?.("(display-mode: standalone)").matches ||
+            (window.navigator as Navigator & { standalone?: boolean }).standalone === true);
+        const deviceMemory = typeof navigator !== "undefined" ? (navigator as Navigator & { deviceMemory?: number }).deviceMemory : undefined;
+        const tempoBatchSize =
+          isStandalone && deviceMemory && deviceMemory <= 4 ? 2 : 5;
+        const isLargeLibrary = libraryFiles.length > 10000;
+        const isLowMemoryStandalone = isStandalone && deviceMemory && deviceMemory <= 4;
+        let shouldDetectTempo = true;
+
+        if (isLowMemoryStandalone && isLargeLibrary && typeof window !== "undefined") {
+          shouldDetectTempo = window.confirm(
+            "Tempo detection may be slow or unstable on this device. Run it now?"
+          );
+        }
+
+        if (!shouldDetectTempo) {
+          logger.info(
+            `Tempo detection skipped: standalone=${isStandalone}, deviceMemory=${deviceMemory ?? "unknown"}, librarySize=${libraryFiles.length}`
+          );
+          setIsDetectingTempo(false);
+          setTempoProgress(null);
+          onParseCompleteRef.current?.();
+          return;
+        }
+
         setIsDetectingTempo(true);
         setTempoProgress({ processed: 0, total: 0, detected: 0 });
+
         detectTempoForLibrary(
           libraryRootId,
           (progress: { processed: number; total: number; detected: number; currentTrack?: string }) => {
@@ -287,10 +323,26 @@ export function useMetadataParsing(
               detected: progress.detected,
               currentTrack: progress.currentTrack,
             });
-            logger.debug(`Tempo detection: ${progress.detected}/${progress.processed} tracks`);
+            const now = Date.now();
+            const { lastLogTime, lastProcessed } = tempoLogStateRef.current;
+            const shouldLogByTime = now - lastLogTime >= 2000;
+            const shouldLogByCount = progress.processed - lastProcessed >= 50;
+
+            if (shouldLogByTime || shouldLogByCount) {
+              logger.debug(`Tempo detection: ${progress.detected}/${progress.processed} tracks`);
+              tempoLogStateRef.current = {
+                lastLogTime: now,
+                lastProcessed: progress.processed,
+              };
+            }
           },
-          5
+          tempoBatchSize
         )
+          .then((summary) => {
+            logger.info(
+              `Tempo detection summary: processed=${summary.processed}, detected=${summary.detected}, errors=${summary.errors.length}, batchSize=${tempoBatchSize}`
+            );
+          })
           .catch((error: unknown) => {
             // Don't fail the scan if tempo detection fails
             logger.warn("Background tempo detection failed:", error);

@@ -32,12 +32,11 @@
  * ```
  */
 
-import type { TrackRecord, ScanRunRecord } from "@/db/schema";
-import { getAllTracks, getCurrentLibraryRoot } from "@/db/storage";
+import { getCurrentLibraryRoot } from "@/db/storage";
 import { db } from "@/db/schema";
 import type { PlaylistRequest } from "@/types/playlist";
 import type { AppSettings } from "@/lib/settings";
-import { buildGenreMappings, normalizeGenre } from "@/features/library/genre-normalization";
+import { createGenreMappingAccumulator } from "@/features/library/genre-normalization";
 import { applyTempoMappingsToRequest } from "@/lib/tempo-mapping";
 
 export interface GenreCount {
@@ -178,63 +177,26 @@ export async function summarizeLibrary(
   libraryRootId?: string,
   includeArtists: boolean = false
 ): Promise<LibrarySummary> {
-  // Get tracks
-  let tracks: TrackRecord[];
+  let collection = db.tracks.toCollection();
   if (libraryRootId) {
-    tracks = await db.tracks.where("libraryRootId").equals(libraryRootId).toArray();
-  } else {
-    tracks = await getAllTracks();
+    collection = db.tracks.where("libraryRootId").equals(libraryRootId);
   }
 
-  const totalTracks = tracks.length;
+  let totalTracks = 0;
 
   // Genre counts
   const genreMap = new Map<string, number>();
-  for (const track of tracks) {
-    for (const genre of track.tags.genres) {
-      genreMap.set(genre, (genreMap.get(genre) || 0) + 1);
-    }
-  }
-  const genreCounts: GenreCount[] = Array.from(genreMap.entries())
-    .map(([genre, count]) => ({ genre, count }))
-    .sort((a, b) => b.count - a.count);
-
-  // Artist counts (only if privacy allows)
-  let artistCounts: ArtistCount[] | undefined;
-  if (includeArtists) {
-    const artistMap = new Map<string, number>();
-    for (const track of tracks) {
-      const artist = track.tags.artist || "Unknown Artist";
-      artistMap.set(artist, (artistMap.get(artist) || 0) + 1);
-    }
-    artistCounts = Array.from(artistMap.entries())
-      .map(([artist, count]) => ({ artist, count }))
-      .sort((a, b) => b.count - a.count);
-  }
-
-  // Tempo distribution (currently all unknown since BPM not extracted)
+  const artistMap = new Map<string, number>();
   const tempoDistribution: TempoDistribution = {
     slow: 0,
     medium: 0,
     fast: 0,
-    unknown: totalTracks, // All unknown until BPM extraction is added
+    unknown: 0,
   };
-
-  // Duration stats
-  const durations = tracks
-    .map((t) => t.tech?.durationSeconds)
-    .filter((d): d is number => typeof d === "number" && !isNaN(d));
-
-  let durationStats: DurationStats;
-  if (durations.length > 0) {
-    const min = Math.min(...durations);
-    const max = Math.max(...durations);
-    const total = durations.reduce((sum, d) => sum + d, 0);
-    const avg = total / durations.length;
-    durationStats = { min, max, avg, total };
-  } else {
-    durationStats = { min: 0, max: 0, avg: 0, total: 0 };
-  }
+  let durationMin = Number.POSITIVE_INFINITY;
+  let durationMax = 0;
+  let durationTotal = 0;
+  let durationCount = 0;
 
   // Recently added counts (based on updatedAt timestamps)
   const now = Date.now();
@@ -246,12 +208,54 @@ export async function summarizeLibrary(
   let last7DaysCount = 0;
   let last30DaysCount = 0;
 
-  for (const track of tracks) {
+  await collection.each((track) => {
+    totalTracks++;
     const updatedAt = track.updatedAt;
     if (updatedAt >= last24Hours) last24HoursCount++;
     if (updatedAt >= last7Days) last7DaysCount++;
     if (updatedAt >= last30Days) last30DaysCount++;
+
+    for (const genre of track.tags.genres) {
+      genreMap.set(genre, (genreMap.get(genre) || 0) + 1);
+    }
+
+    if (includeArtists) {
+      const artist = track.tags.artist || "Unknown Artist";
+      artistMap.set(artist, (artistMap.get(artist) || 0) + 1);
+    }
+
+    const tempoBucket = getTempoBucket(track.tech?.bpm);
+    tempoDistribution[tempoBucket]++;
+
+    const duration = track.tech?.durationSeconds;
+    if (typeof duration === "number" && !isNaN(duration)) {
+      durationCount++;
+      durationTotal += duration;
+      durationMin = Math.min(durationMin, duration);
+      durationMax = Math.max(durationMax, duration);
+    }
+  });
+
+  const genreCounts: GenreCount[] = Array.from(genreMap.entries())
+    .map(([genre, count]) => ({ genre, count }))
+    .sort((a, b) => b.count - a.count);
+
+  let artistCounts: ArtistCount[] | undefined;
+  if (includeArtists) {
+    artistCounts = Array.from(artistMap.entries())
+      .map(([artist, count]) => ({ artist, count }))
+      .sort((a, b) => b.count - a.count);
   }
+
+  const durationStats: DurationStats =
+    durationCount > 0
+      ? {
+          min: durationMin,
+          max: durationMax,
+          avg: durationTotal / durationCount,
+          total: durationTotal,
+        }
+      : { min: 0, max: 0, avg: 0, total: 0 };
 
   return {
     totalTracks,
@@ -273,16 +277,12 @@ export async function summarizeLibrary(
 export async function buildMatchingIndex(
   libraryRootId?: string
 ): Promise<MatchingIndex> {
-  // Get tracks
-  let tracks: TrackRecord[];
+  let collection = db.tracks.toCollection();
   if (libraryRootId) {
-    tracks = await db.tracks.where("libraryRootId").equals(libraryRootId).toArray();
-  } else {
-    tracks = await getAllTracks();
+    collection = db.tracks.where("libraryRootId").equals(libraryRootId);
   }
 
-  // Build genre normalization mappings
-  const { originalToNormalized, normalizedToOriginals } = buildGenreMappings(tracks);
+  const { normalizeTrackGenres, getMappings } = createGenreMappingAccumulator();
 
   const byGenre = new Map<string, string[]>();
   const byArtist = new Map<string, string[]>();
@@ -306,14 +306,12 @@ export async function buildMatchingIndex(
   byTempoBucket.set("fast", []);
   byTempoBucket.set("unknown", []);
 
-  for (const track of tracks) {
+  await collection.each((track) => {
     const trackFileId = track.trackFileId;
     allTrackIds.add(trackFileId);
 
     // Normalize genres for this track
-    const normalizedGenres = track.tags.genres.map((g) => {
-      return originalToNormalized.get(g) || normalizeGenre(g);
-    });
+    const normalizedGenres = normalizeTrackGenres(track.tags.genres);
 
     // Index by normalized genre (aggregate all original variations)
     for (const normalizedGenre of normalizedGenres) {
@@ -354,7 +352,9 @@ export async function buildMatchingIndex(
       duration,
       tempoBucket, // Calculated from track.tech?.bpm
     });
-  }
+  });
+
+  const { originalToNormalized, normalizedToOriginals } = getMappings();
 
   return {
     byGenre,

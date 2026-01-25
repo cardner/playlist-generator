@@ -172,7 +172,7 @@ export function HelpPanel({ markdown }: { markdown: string }) {
 
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
-  }, [isOpen]);
+  }, [isOpen, sections]);
 
   useEffect(() => {
     if (isOpen) {

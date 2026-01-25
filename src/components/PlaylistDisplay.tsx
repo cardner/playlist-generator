@@ -43,8 +43,8 @@ import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
 import { useRouter } from "next/navigation";
 import type { GeneratedPlaylist, TrackSelection } from "@/features/playlists";
 import type { TrackRecord } from "@/db/schema";
-import { getAllTracks, getTracks, getCurrentLibraryRoot } from "@/db/storage";
-import { db } from "@/db/schema";
+import { getCurrentLibraryRoot } from "@/db/storage";
+import { db, getCompositeId } from "@/db/schema";
 import { PlaylistWhySummary } from "./PlaylistWhySummary";
 import { TrackReasonChips } from "./TrackReasonChips";
 import { PlaylistExport } from "./PlaylistExport";
@@ -390,21 +390,33 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   }, [playlist.id]);
 
   const loadTracks = useCallback(async () => {
-    // Load tracks from current collection
     const root = await getCurrentLibraryRoot();
-    let allTracks;
-    if (root?.id) {
-      const { getTracks } = await import("@/db/storage");
-      allTracks = await getTracks(root.id);
-    } else {
-      allTracks = await getAllTracks();
+    const rootId = root?.id || libraryRootId;
+    const trackFileIds = Array.from(new Set(displayPlaylist.trackFileIds));
+
+    if (trackFileIds.length === 0) {
+      setTracks(new Map());
+      return;
     }
-    const trackMap = new Map();
-    for (const track of allTracks) {
-      trackMap.set(track.trackFileId, track);
+
+    let records: Array<TrackRecord | undefined> = [];
+    if (rootId) {
+      const compositeIds = trackFileIds.map((trackFileId) =>
+        getCompositeId(trackFileId, rootId)
+      );
+      records = await db.tracks.bulkGet(compositeIds);
+    } else {
+      records = await db.tracks.where("trackFileId").anyOf(trackFileIds).toArray();
+    }
+
+    const trackMap = new Map<string, TrackRecord>();
+    for (const track of records) {
+      if (track) {
+        trackMap.set(track.trackFileId, track);
+      }
     }
     setTracks(trackMap);
-  }, []);
+  }, [displayPlaylist.trackFileIds, libraryRootId]);
 
   const loadLibraryRoot = useCallback(async () => {
     const root = await getCurrentLibraryRoot();

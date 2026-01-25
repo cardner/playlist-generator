@@ -9,7 +9,7 @@
 
 import { db } from "./schema";
 import type { TrackRecord } from "./schema";
-import { getNormalizedGenresWithStats, type GenreWithStats } from "@/features/library/genre-normalization";
+import { createGenreStatsAccumulator, type GenreWithStats } from "@/features/library/genre-normalization";
 
 /**
  * Search tracks by query (searches title, artist, album)
@@ -46,22 +46,22 @@ export async function searchTracks(
     collection = db.tracks.where("libraryRootId").equals(libraryRootId);
   }
 
-  const allTracks = await collection.toArray();
+  const results: TrackRecord[] = [];
 
-  const filtered = allTracks.filter((track) => {
+  await collection.each((track) => {
     const title = track.tags.title?.toLowerCase() || "";
     const artist = track.tags.artist?.toLowerCase() || "";
     const album = track.tags.album?.toLowerCase() || "";
 
-    return (
-      title.includes(lowerQuery) ||
-      artist.includes(lowerQuery) ||
-      album.includes(lowerQuery)
-    );
+    if (title.includes(lowerQuery) || artist.includes(lowerQuery) || album.includes(lowerQuery)) {
+      results.push(track);
+      if (limit && results.length >= limit) {
+        return false;
+      }
+    }
   });
 
-  // Apply limit if specified
-  return limit ? filtered.slice(0, limit) : filtered;
+  return results;
 }
 
 /**
@@ -99,16 +99,18 @@ export async function filterTracksByGenre(
     collection = db.tracks.where("libraryRootId").equals(libraryRootId);
   }
 
-  const allTracks = await collection.toArray();
+  const results: TrackRecord[] = [];
 
-  const filtered = allTracks.filter((track) =>
-    track.tags.genres.some(
-      (g) => g.toLowerCase() === lowerGenre
-    )
-  );
+  await collection.each((track) => {
+    if (track.tags.genres.some((g) => g.toLowerCase() === lowerGenre)) {
+      results.push(track);
+      if (limit && results.length >= limit) {
+        return false;
+      }
+    }
+  });
 
-  // Apply limit if specified
-  return limit ? filtered.slice(0, limit) : filtered;
+  return results;
 }
 
 /**
@@ -130,15 +132,14 @@ export async function getAllArtists(libraryRootId?: string): Promise<string[]> {
     collection = db.tracks.where("libraryRootId").equals(libraryRootId) as any;
   }
 
-  const allTracks = await collection.toArray();
   const artistSet = new Set<string>();
   
-  for (const track of allTracks) {
+  await collection.each((track) => {
     const artist = track.tags.artist?.trim();
     if (artist && artist !== "Unknown Artist") {
       artistSet.add(artist);
     }
-  }
+  });
 
   return Array.from(artistSet).sort();
 }
@@ -162,15 +163,14 @@ export async function getAllAlbums(libraryRootId?: string): Promise<string[]> {
     collection = db.tracks.where("libraryRootId").equals(libraryRootId) as any;
   }
 
-  const allTracks = await collection.toArray();
   const albumSet = new Set<string>();
   
-  for (const track of allTracks) {
+  await collection.each((track) => {
     const album = track.tags.album?.trim();
     if (album && album !== "Unknown Album") {
       albumSet.add(album);
     }
-  }
+  });
 
   return Array.from(albumSet).sort();
 }
@@ -194,15 +194,14 @@ export async function getAllTrackTitles(libraryRootId?: string): Promise<string[
     collection = db.tracks.where("libraryRootId").equals(libraryRootId) as any;
   }
 
-  const allTracks = await collection.toArray();
   const titleSet = new Set<string>();
   
-  for (const track of allTracks) {
+  await collection.each((track) => {
     const title = track.tags.title?.trim();
     if (title && title !== "Unknown Title") {
       titleSet.add(title);
     }
-  }
+  });
 
   return Array.from(titleSet).sort();
 }
@@ -430,12 +429,18 @@ export async function searchTracksByArtist(
     collection = db.tracks.where("libraryRootId").equals(libraryRootId);
   }
 
-  const allTracks = await collection.toArray();
-  const filtered = allTracks.filter((track) =>
-    (track.tags.artist || "").toLowerCase().includes(lowerQuery)
-  );
+  const results: TrackRecord[] = [];
 
-  return limit ? filtered.slice(0, limit) : filtered;
+  await collection.each((track) => {
+    if ((track.tags.artist || "").toLowerCase().includes(lowerQuery)) {
+      results.push(track);
+      if (limit && results.length >= limit) {
+        return false;
+      }
+    }
+  });
+
+  return results;
 }
 
 /**
@@ -456,12 +461,18 @@ export async function searchTracksByAlbum(
     collection = db.tracks.where("libraryRootId").equals(libraryRootId);
   }
 
-  const allTracks = await collection.toArray();
-  const filtered = allTracks.filter((track) =>
-    (track.tags.album || "").toLowerCase().includes(lowerQuery)
-  );
+  const results: TrackRecord[] = [];
 
-  return limit ? filtered.slice(0, limit) : filtered;
+  await collection.each((track) => {
+    if ((track.tags.album || "").toLowerCase().includes(lowerQuery)) {
+      results.push(track);
+      if (limit && results.length >= limit) {
+        return false;
+      }
+    }
+  });
+
+  return results;
 }
 
 type TempoQuery = "slow" | "medium" | "fast" | { min: number; max: number };
@@ -488,17 +499,24 @@ export async function searchTracksByTempo(
     collection = db.tracks.where("libraryRootId").equals(libraryRootId);
   }
 
-  const allTracks = await collection.toArray();
-  const filtered = allTracks.filter((track) => {
+  const results: TrackRecord[] = [];
+
+  await collection.each((track) => {
     const bpm = track.tech?.bpm;
     if (typeof tempo === "string") {
-      return getTempoBucket(bpm) === tempo;
+      if (getTempoBucket(bpm) === tempo) {
+        results.push(track);
+      }
+    } else if (typeof bpm === "number" && bpm >= tempo.min && bpm <= tempo.max) {
+      results.push(track);
     }
-    if (typeof bpm !== "number") return false;
-    return bpm >= tempo.min && bpm <= tempo.max;
+
+    if (limit && results.length >= limit) {
+      return false;
+    }
   });
 
-  return limit ? filtered.slice(0, limit) : filtered;
+  return results;
 }
 
 /**
@@ -519,14 +537,18 @@ export async function searchTracksByMood(
     collection = db.tracks.where("libraryRootId").equals(libraryRootId);
   }
 
-  const allTracks = await collection.toArray();
-  const filtered = allTracks.filter((track) =>
-    (track.enhancedMetadata?.mood || []).some((tag) =>
-      tag.toLowerCase().includes(lowerQuery)
-    )
-  );
+  const results: TrackRecord[] = [];
 
-  return limit ? filtered.slice(0, limit) : filtered;
+  await collection.each((track) => {
+    if ((track.enhancedMetadata?.mood || []).some((tag) => tag.toLowerCase().includes(lowerQuery))) {
+      results.push(track);
+      if (limit && results.length >= limit) {
+        return false;
+      }
+    }
+  });
+
+  return results;
 }
 
 /**
@@ -692,14 +714,16 @@ export async function getAllGenres(libraryRootId?: string): Promise<string[]> {
 export async function getAllGenresWithStats(
   libraryRootId?: string
 ): Promise<GenreWithStats[]> {
-  let tracks: TrackRecord[];
+  let collection = db.tracks.toCollection();
 
   if (libraryRootId) {
-    tracks = await db.tracks.where("libraryRootId").equals(libraryRootId).toArray();
-  } else {
-    tracks = await db.tracks.toArray();
+    collection = db.tracks.where("libraryRootId").equals(libraryRootId);
   }
 
-  return getNormalizedGenresWithStats(tracks);
+  const accumulator = createGenreStatsAccumulator();
+  await collection.each((track) => {
+    accumulator.addTrack(track);
+  });
+  return accumulator.finalize();
 }
 

@@ -16,6 +16,7 @@ export interface BatchedParseOptions {
   batchSize?: number; // Files per batch (default: 500)
   concurrency?: number; // Concurrent parsing tasks per batch (default: 3)
   saveAfterEachBatch?: boolean; // Save to IndexedDB after each batch (default: true)
+  collectResults?: boolean; // Keep all results in memory (default: true)
 }
 
 export interface BatchedParseProgress {
@@ -30,6 +31,13 @@ export interface BatchedParseProgress {
 }
 
 export type BatchedParseProgressCallback = (progress: BatchedParseProgress) => void;
+
+export interface BatchedParseResult {
+  results?: MetadataResult[];
+  parsed: number;
+  errors: number;
+  saved: number;
+}
 
 /**
  * Parse metadata for files in batches and save incrementally
@@ -50,19 +58,20 @@ export async function parseMetadataBatched(
   libraryRootId: string,
   onProgress?: BatchedParseProgressCallback,
   options: BatchedParseOptions = {}
-): Promise<MetadataResult[]> {
+): Promise<BatchedParseResult> {
   const {
     batchSize = 500,
     concurrency = 3,
     saveAfterEachBatch = true,
+    collectResults = true,
   } = options;
 
   if (files.length === 0) {
-    return [];
+    return { results: [], parsed: 0, errors: 0, saved: 0 };
   }
 
   const totalBatches = Math.ceil(files.length / batchSize);
-  const allResults: MetadataResult[] = [];
+  const allResults: MetadataResult[] | null = collectResults ? [] : null;
   let totalParsed = 0;
   let totalErrors = 0;
   let totalSaved = 0;
@@ -139,7 +148,9 @@ export async function parseMetadataBatched(
         }
       }
 
-      allResults.push(...batchResults);
+      if (allResults) {
+        allResults.push(...batchResults);
+      }
 
       // Yield control between batches to keep UI responsive
       // Longer delay for larger batches to ensure UI updates
@@ -151,7 +162,9 @@ export async function parseMetadataBatched(
       
       // If saving failed, we still have the parsed results
       // Continue with next batch but log the error
-      allResults.push(...batchResults);
+      if (allResults) {
+        allResults.push(...batchResults);
+      }
       
       // Re-throw quota errors to stop processing
       if (isQuotaExceededError(err)) {
@@ -173,6 +186,11 @@ export async function parseMetadataBatched(
     saved: totalSaved,
   });
 
-  return allResults;
+  return {
+    results: allResults ?? undefined,
+    parsed: totalParsed,
+    errors: totalErrors,
+    saved: totalSaved,
+  };
 }
 

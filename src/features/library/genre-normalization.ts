@@ -418,6 +418,144 @@ export function getNormalizedGenresWithStats(
 }
 
 /**
+ * Create a streaming accumulator for genre statistics.
+ * Useful for large libraries to avoid loading all tracks into memory at once.
+ */
+export function createGenreStatsAccumulator() {
+  const originalToNormalized = new Map<string, string>();
+  const normalizedToOriginals = new Map<string, Set<string>>();
+  const normalizedToTrackCount = new Map<string, number>();
+  const normalizedGenreTracks = new Map<string, Set<string>>();
+  const allNormalizedGenres = new Set<string>();
+  let trackIndex = 0;
+
+  const addTrack = (track: { tags: { genres: string[] }; trackFileId?: string; id?: string }) => {
+    const trackId = track.trackFileId || track.id || `track-${trackIndex++}`;
+
+    for (const originalGenre of track.tags.genres) {
+      if (!originalGenre || !originalGenre.trim()) {
+        continue;
+      }
+
+      const genreParts = splitGenreString(originalGenre);
+
+      for (const genrePart of genreParts) {
+        if (!genrePart || !genrePart.trim()) {
+          continue;
+        }
+
+        let normalized = originalToNormalized.get(genrePart);
+        if (!normalized) {
+          normalized = normalizeGenre(genrePart);
+          const closest = findClosestGenre(normalized, allNormalizedGenres);
+          if (closest && closest !== normalized && allNormalizedGenres.has(closest)) {
+            normalized = closest;
+          } else {
+            allNormalizedGenres.add(normalized);
+          }
+          originalToNormalized.set(genrePart, normalized);
+        }
+
+        if (!normalizedToOriginals.has(normalized)) {
+          normalizedToOriginals.set(normalized, new Set());
+        }
+        normalizedToOriginals.get(normalized)!.add(genrePart);
+
+        if (!normalizedGenreTracks.has(normalized)) {
+          normalizedGenreTracks.set(normalized, new Set());
+        }
+        normalizedGenreTracks.get(normalized)!.add(trackId);
+      }
+    }
+  };
+
+  const finalize = (): GenreWithStats[] => {
+    for (const [normalized, trackSet] of normalizedGenreTracks.entries()) {
+      normalizedToTrackCount.set(normalized, trackSet.size);
+    }
+
+    const genres: GenreWithStats[] = [];
+    for (const [normalized, originals] of normalizedToOriginals.entries()) {
+      const trackCount = normalizedToTrackCount.get(normalized) || 0;
+      genres.push({
+        normalized,
+        original: Array.from(originals).sort(),
+        trackCount,
+      });
+    }
+
+    genres.sort((a, b) => {
+      if (b.trackCount !== a.trackCount) {
+        return b.trackCount - a.trackCount;
+      }
+      return a.normalized.localeCompare(b.normalized);
+    });
+
+    return genres;
+  };
+
+  return { addTrack, finalize };
+}
+
+/**
+ * Create a streaming accumulator for genre normalization mappings.
+ * Useful for building indexes without loading all tracks into memory.
+ */
+export function createGenreMappingAccumulator() {
+  const originalToNormalized = new Map<string, string>();
+  const normalizedToOriginals = new Map<string, Set<string>>();
+  const allNormalizedGenres = new Set<string>();
+
+  const normalizeTrackGenres = (genres: string[]): string[] => {
+    const normalizedGenres: string[] = [];
+
+    for (const originalGenre of genres) {
+      if (!originalGenre || !originalGenre.trim()) {
+        continue;
+      }
+
+      const genreParts = splitGenreString(originalGenre);
+
+      for (const genrePart of genreParts) {
+        if (!genrePart || !genrePart.trim()) {
+          continue;
+        }
+
+        let normalized = originalToNormalized.get(genrePart);
+        if (!normalized) {
+          normalized = normalizeGenre(genrePart);
+          const closest = findClosestGenre(normalized, allNormalizedGenres);
+          if (closest && closest !== normalized && allNormalizedGenres.has(closest)) {
+            normalized = closest;
+          } else {
+            allNormalizedGenres.add(normalized);
+          }
+          originalToNormalized.set(genrePart, normalized);
+        }
+
+        if (!normalizedToOriginals.has(normalized)) {
+          normalizedToOriginals.set(normalized, new Set());
+        }
+        normalizedToOriginals.get(normalized)!.add(genrePart);
+
+        if (!normalizedGenres.includes(normalized)) {
+          normalizedGenres.push(normalized);
+        }
+      }
+    }
+
+    return normalizedGenres;
+  };
+
+  const getMappings = () => ({
+    originalToNormalized,
+    normalizedToOriginals,
+  });
+
+  return { normalizeTrackGenres, getMappings };
+}
+
+/**
  * Normalize an array of genres
  */
 export function normalizeGenres(genres: string[]): string[] {

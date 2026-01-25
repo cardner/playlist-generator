@@ -211,13 +211,22 @@ export async function detectTempoInWorker(
   file: File,
   method: 'autocorrelation' | 'spectral-flux' | 'peak-picking' | 'combined' = 'combined'
 ): Promise<{ bpm: number | null; confidence: number; method: string }> {
+  let arrayBuffer: ArrayBuffer | null = null;
+  let audioBuffer: AudioBuffer | null = null;
+  let channelData: Float32Array | null = null;
+  let sampleRate = 0;
+
   try {
     // Decode audio in main thread (AudioContext not available in Worker)
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const arrayBuffer = await file.arrayBuffer();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-    const channelData = audioBuffer.getChannelData(0);
-    const sampleRate = audioBuffer.sampleRate;
+    arrayBuffer = await file.arrayBuffer();
+    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    channelData = audioBuffer.getChannelData(0);
+    sampleRate = audioBuffer.sampleRate;
+    if (!channelData) {
+      throw new Error("Failed to extract audio channel data");
+    }
+    const channelDataForWorker = channelData;
     
     audioContext.close();
     
@@ -232,7 +241,7 @@ export async function detectTempoInWorker(
     } catch (workerError) {
       // Worker creation failed, use main thread
       logger.debug("Worker not available, using main thread for tempo detection", workerError);
-      const result = analyzeTempo(channelData, sampleRate);
+      const result = analyzeTempo(channelDataForWorker, sampleRate);
       return {
         bpm: result.bpm,
         confidence: result.confidence,
@@ -273,7 +282,7 @@ export async function detectTempoInWorker(
         worker?.terminate();
         // Fallback to main thread on worker error
         logger.debug("Worker error, falling back to main thread");
-        const result = analyzeTempo(channelData, sampleRate);
+        const result = analyzeTempo(channelDataForWorker, sampleRate);
         resolve({
           bpm: result.bpm,
           confidence: result.confidence,
@@ -283,10 +292,10 @@ export async function detectTempoInWorker(
       
       // Transfer channel data to worker (using transferable for performance)
       worker!.postMessage({
-        channelData: channelData,
+        channelData: channelDataForWorker,
         sampleRate,
         method,
-      }, [channelData.buffer]);
+      }, [channelDataForWorker.buffer]);
     });
   } catch (error) {
     logger.error("Failed to detect tempo in worker:", error);
@@ -297,6 +306,11 @@ export async function detectTempoInWorker(
       confidence: bpm ? 0.5 : 0, // Lower confidence for fallback
       method: 'autocorrelation',
     };
+  } finally {
+    // Release references for GC under memory pressure
+    channelData = null;
+    audioBuffer = null;
+    arrayBuffer = null;
   }
 }
 

@@ -24,6 +24,117 @@ import { getLibraryRoot } from "@/db/storage-library-root";
 import { db, getCompositeId } from "@/db/schema";
 import { logger } from "@/lib/logger";
 
+const LOG_THROTTLE_MS = 2000;
+const logStates = new Map<string, { last: number; suppressed: number }>();
+const tempoDecodeFailureSignatures = new Set<string>();
+const MAX_TEMPO_FILE_BYTES = 250 * 1024 * 1024;
+
+const EXTENSION_BLOCKLIST = new Set([
+  "flac",
+  "alac",
+  "wma",
+  "ape",
+  "aiff",
+  "aif",
+  "dsd",
+]);
+
+const EXTENSION_ALLOWLIST = new Set([
+  "mp3",
+  "wav",
+  "ogg",
+  "m4a",
+  "aac",
+  "mp4",
+  "webm",
+]);
+
+function getExtension(name: string): string {
+  const idx = name.lastIndexOf(".");
+  return idx >= 0 ? name.slice(idx + 1).toLowerCase() : "";
+}
+
+function getSignature(file: File): string {
+  const ext = getExtension(file.name ?? "");
+  const type = file.type?.toLowerCase() ?? "";
+  return `${ext}|${type}`;
+}
+
+function canPlayMimeType(type: string): boolean {
+  if (!type || typeof document === "undefined") {
+    return false;
+  }
+  try {
+    const audio = document.createElement("audio");
+    return audio.canPlayType(type) !== "";
+  } catch {
+    return false;
+  }
+}
+
+function isTempoDecodableFile(file: File): boolean {
+  const name = file.name?.toLowerCase() ?? "";
+  const type = file.type?.toLowerCase() ?? "";
+  const ext = getExtension(name);
+  const signature = getSignature(file);
+
+  if (tempoDecodeFailureSignatures.has(signature)) {
+    return false;
+  }
+
+  if (file.size > MAX_TEMPO_FILE_BYTES) {
+    return false;
+  }
+
+  if (ext && EXTENSION_BLOCKLIST.has(ext)) {
+    return false;
+  }
+
+  if (type && !canPlayMimeType(type)) {
+    return false;
+  }
+
+  if (ext && !EXTENSION_ALLOWLIST.has(ext) && !type.startsWith("audio/")) {
+    return false;
+  }
+
+  return true;
+}
+
+function recordTempoDecodeFailure(file: File, error: unknown): void {
+  if (error instanceof DOMException && error.name === "EncodingError") {
+    tempoDecodeFailureSignatures.add(getSignature(file));
+  }
+}
+
+function logThrottled(
+  level: "debug" | "warn" | "error",
+  key: string,
+  message: string,
+  error?: unknown
+): void {
+  const now = Date.now();
+  const state = logStates.get(key) ?? { last: 0, suppressed: 0 };
+
+  if (now - state.last < LOG_THROTTLE_MS) {
+    state.suppressed += 1;
+    logStates.set(key, state);
+    return;
+  }
+
+  const suffix = state.suppressed > 0 ? ` (suppressed ${state.suppressed} similar logs)` : "";
+  logStates.set(key, { last: now, suppressed: 0 });
+  const fullMessage = `${message}${suffix}`;
+
+  if (level === "debug") {
+    logger.debug(fullMessage, error);
+  } else if (level === "warn") {
+    logger.warn(fullMessage, error);
+  } else {
+    logger.error(fullMessage, error);
+  }
+}
+
 /**
  * Detect tempo from iTunes preview sample
  * 
@@ -70,7 +181,7 @@ async function detectTempoFromPreview(
     
     return null;
   } catch (error) {
-    logger.debug(`Failed to detect tempo from iTunes preview:`, error);
+    logThrottled("debug", "tempo-preview", "Failed to detect tempo from iTunes preview:", error);
     return null;
   }
 }
@@ -130,7 +241,12 @@ async function getFileForTrack(track: TrackRecord): Promise<File | null> {
 
     return null;
   } catch (error) {
-    logger.debug(`Failed to get file for track ${track.trackFileId}:`, error);
+    logThrottled(
+      "debug",
+      "file-handle",
+      `Failed to get file for track ${track.trackFileId}:`,
+      error
+    );
     return null;
   }
 }
@@ -234,7 +350,33 @@ export async function enhanceTrackMetadata(
       // Try to load file using File System Access API
       audioFile = await getFileForTrack(track);
       if (!audioFile) {
-        logger.debug(`Cannot detect tempo from local file: file handle not available for ${track.trackFileId}`);
+        logThrottled(
+          "debug",
+          "tempo-local-missing",
+          `Cannot detect tempo from local file: file handle not available for ${track.trackFileId}`
+        );
+      }
+    }
+
+    if (audioFile) {
+      try {
+        if (!isTempoDecodableFile(audioFile)) {
+          logThrottled(
+            "debug",
+            "tempo-skip-codec",
+            `Skipping tempo detection for unsupported codec: ${audioFile.name}`
+          );
+          audioFile = null;
+        }
+      } catch (error) {
+        const fileName = audioFile?.name ?? "unknown-file";
+        logThrottled(
+          "debug",
+          "tempo-codec-check",
+          `Failed to validate codec for ${fileName}`,
+          error
+        );
+        audioFile = null;
       }
     }
 
@@ -248,7 +390,13 @@ export async function enhanceTrackMetadata(
           };
         }
       } catch (error) {
-        logger.warn(`Failed to detect tempo for track ${track.trackFileId}:`, error);
+        recordTempoDecodeFailure(audioFile, error);
+        logThrottled(
+          "warn",
+          "tempo-local-fail",
+          `Failed to detect tempo for track ${track.trackFileId}:`,
+          error
+        );
       }
     }
     
@@ -260,7 +408,12 @@ export async function enhanceTrackMetadata(
           tempoResult = previewResult;
         }
       } catch (error) {
-        logger.debug(`Failed to detect tempo from iTunes preview for track ${track.trackFileId}:`, error);
+        logThrottled(
+          "debug",
+          "tempo-preview-fail",
+          `Failed to detect tempo from iTunes preview for track ${track.trackFileId}:`,
+          error
+        );
       }
     }
     
@@ -285,7 +438,12 @@ export async function enhanceTrackMetadata(
           });
         }
       } catch (error) {
-        logger.warn(`Failed to update tech info with tempo metadata for track ${track.trackFileId}:`, error);
+        logThrottled(
+          "warn",
+          "tempo-update-fail",
+          `Failed to update tech info with tempo metadata for track ${track.trackFileId}:`,
+          error
+        );
       }
     }
 
@@ -304,7 +462,7 @@ export async function enhanceTrackMetadata(
 
     return enhanced;
   } catch (error) {
-    logger.error(`Failed to enhance track ${track.id}:`, error);
+    logThrottled("error", "enhance-track", `Failed to enhance track ${track.id}:`, error);
     throw error;
   }
 }
@@ -402,7 +560,7 @@ export async function enhanceLibraryMetadata(
             trackId: track.id,
             error: errorMessage,
           });
-          logger.error(`Failed to enhance track ${track.id}:`, error);
+          logThrottled("error", "enhance-track-batch", `Failed to enhance track ${track.id}:`, error);
         }
       }
     }
@@ -541,12 +699,13 @@ export async function detectTempoForLibrary(
     const total = tracksNeedingDetection.length;
     logger.info(`Detecting tempo for ${total} tracks missing BPM data`);
 
-    // Process in batches
+    // Process in batches with bounded concurrency
     for (let i = 0; i < tracksNeedingDetection.length; i += batchSize) {
       const batch = tracksNeedingDetection.slice(i, i + batchSize);
-      
-      // Process batch (can be parallel for tempo detection)
-      const promises = batch.map(async (track) => {
+      const concurrency = Math.min(3, batch.length);
+      const inFlight = new Set<Promise<void>>();
+
+      const runTask = async (track: TrackRecord) => {
         try {
           if (onProgress) {
             onProgress({
@@ -559,9 +718,9 @@ export async function detectTempoForLibrary(
 
           // Detect tempo (will try local file, then iTunes preview)
           const tempoResult = await detectTempoForTrack(track);
-          
+
           result.processed++;
-          
+
           if (tempoResult && tempoResult.bpm) {
             result.detected++;
           }
@@ -572,9 +731,21 @@ export async function detectTempoForLibrary(
           });
           result.processed++;
         }
-      });
-      
-      await Promise.all(promises);
+      };
+
+      for (const track of batch) {
+        const task = runTask(track);
+        inFlight.add(task);
+        task.finally(() => inFlight.delete(task));
+
+        if (inFlight.size >= concurrency) {
+          await Promise.race(inFlight);
+        }
+      }
+
+      if (inFlight.size > 0) {
+        await Promise.all(inFlight);
+      }
       
       // Yield to UI thread between batches
       await new Promise(resolve => setTimeout(resolve, 0));
@@ -610,6 +781,14 @@ async function detectTempoForTrack(
   const audioFile = await getFileForTrack(track);
   if (audioFile) {
     try {
+      if (!isTempoDecodableFile(audioFile)) {
+        logThrottled(
+          "debug",
+          "tempo-skip-codec",
+          `Skipping tempo detection for unsupported codec: ${audioFile.name}`
+        );
+        return null;
+      }
       const result = await detectTempoWithConfidence(audioFile, 'combined');
       if (result.bpm) {
         tempoResult = {
@@ -618,7 +797,13 @@ async function detectTempoForTrack(
         };
       }
     } catch (error) {
-      logger.debug(`Failed to detect tempo from local file for track ${track.trackFileId}:`, error);
+      recordTempoDecodeFailure(audioFile, error);
+      logThrottled(
+        "debug",
+        "tempo-local-track",
+        `Failed to detect tempo from local file for track ${track.trackFileId}:`,
+        error
+      );
     }
   }
   
@@ -630,7 +815,12 @@ async function detectTempoForTrack(
         tempoResult = previewResult;
       }
     } catch (error) {
-      logger.debug(`Failed to detect tempo from iTunes preview for track ${track.trackFileId}:`, error);
+      logThrottled(
+        "debug",
+        "tempo-preview-track",
+        `Failed to detect tempo from iTunes preview for track ${track.trackFileId}:`,
+        error
+      );
     }
   }
   
@@ -651,7 +841,12 @@ async function detectTempoForTrack(
         });
       }
     } catch (error) {
-      logger.warn(`Failed to update track with tempo data for ${track.trackFileId}:`, error);
+      logThrottled(
+        "warn",
+        "tempo-update-track",
+        `Failed to update track with tempo data for ${track.trackFileId}:`,
+        error
+      );
     }
   }
   
