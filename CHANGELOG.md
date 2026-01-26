@@ -28,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [0.12.0] - 2026-01-26
+
+### Added
+
+- add scanning and processing resume
+
+### Other Changes
+
+- Merge pull request #13 from cardner/scan-resume
+
 ## [0.11.3] - 2026-01-25
 
 ### Fixed
