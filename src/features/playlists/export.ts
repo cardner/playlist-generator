@@ -57,6 +57,7 @@ export interface PlaylistLocationConfig {
   playlistLocation: "root" | "subfolder";
   pathStrategy: PathStrategy;
   absolutePathPrefix?: string; // Prefix to prepend to relative paths for absolute path generation
+  playlistSubfolderPath?: string; // Optional subfolder path for playlist location
 }
 
 /**
@@ -146,15 +147,23 @@ function normalizePath(path: string): string {
  * @param playlistLocation Where playlist is located ("root" or "subfolder")
  * @returns Path relative to playlist file
  */
-function calculateRelativePath(trackPath: string, playlistLocation: "root" | "subfolder"): string {
+function calculateRelativePath(
+  trackPath: string,
+  playlistLocation: "root" | "subfolder",
+  playlistSubfolderPath?: string
+): string {
   const normalizedTrack = normalizePath(trackPath);
   
   if (playlistLocation === "root") {
     // Playlist is in root, track path is already relative to root
     return normalizedTrack;
   } else {
-    // Playlist is in subfolder (e.g., "playlists/"), need to go up one level
-    return `../${normalizedTrack}`;
+    // Playlist is in subfolder (e.g., "playlists/"), go up for each subfolder level
+    const normalizedSubfolder = normalizePath(playlistSubfolderPath || "");
+    const subfolderSegments = normalizedSubfolder.split("/").filter(Boolean);
+    const depth = Math.max(subfolderSegments.length, 1);
+    const prefix = "../".repeat(depth);
+    return `${prefix}${normalizedTrack}`;
   }
 }
 
@@ -193,7 +202,11 @@ export function getTrackPath(
     switch (strategy) {
       case "relative-to-playlist":
         // Path relative to where playlist file is located
-        const relativeToPlaylist = calculateRelativePath(relativePath, playlistLocation);
+        const relativeToPlaylist = calculateRelativePath(
+          relativePath,
+          playlistLocation,
+          config?.playlistSubfolderPath
+        );
         return {
           path: normalizePath(relativeToPlaylist),
           hasRelativePath: true,

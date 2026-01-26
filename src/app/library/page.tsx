@@ -63,31 +63,31 @@ export default function LibraryPage() {
             // Try to get scan runs for this root ID
             const { getScanRuns } = await import("@/db/storage");
             const scanRuns = await getScanRuns(inferredRootId);
-            const hasSuccessfulScan = scanRuns.some(run => run.finishedAt && run.total > 0);
-            const hasData = allTracks.length > 0 || allFileIndex.length > 0;
+          const hasSuccessfulScan = scanRuns.some(run => run.finishedAt && run.total > 0);
+          const hasData = allTracks.length > 0 || allFileIndex.length > 0;
+          
+          if (hasData || hasSuccessfulScan) {
+            // We have data but no library root record - try to reconstruct it
+            logger.warn("Found tracks/fileIndex but no library root record - attempting reconstruction");
+            setCurrentLibraryRootId(inferredRootId);
+            setHasExistingScans(true);
             
-            if (hasData && hasSuccessfulScan) {
-              // We have data but no library root record - try to reconstruct it
-              logger.warn("Found tracks/fileIndex but no library root record - attempting reconstruction");
-              setCurrentLibraryRootId(inferredRootId);
-              setHasExistingScans(true);
-              
-              // Try to reconstruct the library root from the data
-              const { getSavedLibraryRoot } = await import("@/lib/library-selection");
-              const reconstructedRoot = await getSavedLibraryRoot();
-              
-              if (reconstructedRoot) {
-                setLibraryRoot(reconstructedRoot);
-                // Check permission for the reconstructed root (without requesting)
-                const { checkLibraryPermission } = await import("@/lib/library-selection");
-                const permission = await checkLibraryPermission(reconstructedRoot);
-                setPermissionStatus(permission);
-              } else {
-                logger.warn("Failed to reconstruct library root - components will work with root ID only");
-                // LibraryBrowser and LibrarySummary can still work with just the root ID
-              }
-              return;
+            // Try to reconstruct the library root from the data
+            const { getSavedLibraryRoot } = await import("@/lib/library-selection");
+            const reconstructedRoot = await getSavedLibraryRoot();
+            
+            if (reconstructedRoot) {
+              setLibraryRoot(reconstructedRoot);
+              // Check permission for the reconstructed root (without requesting)
+              const { checkLibraryPermission } = await import("@/lib/library-selection");
+              const permission = await checkLibraryPermission(reconstructedRoot);
+              setPermissionStatus(permission);
+            } else {
+              logger.warn("Failed to reconstruct library root - components will work with root ID only");
+              // LibraryBrowser and LibrarySummary can still work with just the root ID
             }
+            return;
+          }
           }
           
           // No data found
@@ -107,29 +107,25 @@ export default function LibraryPage() {
         const hasSuccessfulScan = scanRuns.some(run => run.finishedAt && run.total > 0);
         const hasData = tracks.length > 0 || fileIndex.length > 0;
         
-        setHasExistingScans(hasData && hasSuccessfulScan);
+        setHasExistingScans(hasData || hasSuccessfulScan);
         setCurrentLibraryRootId(root.id);
         
-        // If we have existing scans, load the saved library root
-        if (hasData && hasSuccessfulScan) {
-          const { getSavedLibraryRoot } = await import("@/lib/library-selection");
-          const savedRoot = await getSavedLibraryRoot();
-          
-          if (savedRoot) {
-            setLibraryRoot(savedRoot);
-            // Check permission for the saved root (without requesting)
-            const { checkLibraryPermission } = await import("@/lib/library-selection");
-            const permission = await checkLibraryPermission(savedRoot);
-            setPermissionStatus(permission);
-          } else {
-            logger.warn("getSavedLibraryRoot returned null");
-          }
+        // Always try to load the saved library root so resumable scans can show
+        const { getSavedLibraryRoot } = await import("@/lib/library-selection");
+        const savedRoot = await getSavedLibraryRoot();
+        
+        if (savedRoot) {
+          setLibraryRoot(savedRoot);
+          // Check permission for the saved root (without requesting)
+          const { checkLibraryPermission } = await import("@/lib/library-selection");
+          const permission = await checkLibraryPermission(savedRoot);
+          setPermissionStatus(permission);
         } else {
-          setHasExistingScans(false);
+          logger.warn("getSavedLibraryRoot returned null");
         }
       } catch (err) {
         logger.error("Failed to check existing scans:", err);
-        setHasExistingScans(false);
+          setHasExistingScans(false);
       }
     }
     checkExistingScans();
@@ -196,6 +192,10 @@ export default function LibraryPage() {
     setBrowserRefresh((prev) => prev + 1);
   };
 
+  const handleProcessingProgress = () => {
+    setBrowserRefresh((prev) => prev + 1);
+  };
+
   return (
     <>
       <div className="mb-4">
@@ -255,6 +255,7 @@ export default function LibraryPage() {
           onNewSelection={handleNewSelection}
           hasExistingScans={hasExistingScans}
           onScanComplete={handleScanComplete}
+          onProcessingProgress={handleProcessingProgress}
           triggerScan={triggerScan}
         />
       </div>

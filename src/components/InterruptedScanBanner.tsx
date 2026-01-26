@@ -15,6 +15,8 @@ export interface InterruptedScanBannerProps {
   isMonitoringReconnection: boolean;
   /** ID of the interrupted scan run */
   interruptedScanRunId: string | null;
+  /** Last scanned path, if available */
+  lastScannedPath?: string | null;
   /** Callback to cancel auto-resume monitoring */
   onCancelAutoResume: () => void;
   /** Callback to manually resume the scan */
@@ -40,6 +42,7 @@ export interface InterruptedScanBannerProps {
 export function InterruptedScanBanner({
   isMonitoringReconnection,
   interruptedScanRunId,
+  lastScannedPath,
   onCancelAutoResume,
   onManualResume,
 }: InterruptedScanBannerProps) {
@@ -71,7 +74,7 @@ export function InterruptedScanBanner({
             {isMonitoringReconnection ? (
               <>
                 <p>
-                  Network drive disconnected during scan. Monitoring for
+                  Scan interrupted by a network drive disconnect. Monitoring for
                   reconnection and will automatically resume when the drive is
                   available again.
                 </p>
@@ -91,6 +94,11 @@ export function InterruptedScanBanner({
                   Previous scan was interrupted. You can resume from where it
                   left off.
                 </p>
+                {lastScannedPath && (
+                  <p className="mt-2 text-xs text-yellow-700">
+                    Last scanned: {lastScannedPath}
+                  </p>
+                )}
                 <div className="mt-3">
                   <button
                     type="button"

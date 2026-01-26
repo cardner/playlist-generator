@@ -12,6 +12,8 @@
  * - settings: Application settings (key-value pairs)
  * - directoryHandles: File System Access API handles (for persistent permissions)
  * - savedPlaylists: Generated playlists saved by the user
+ * - deviceProfiles: Saved USB device sync profiles
+ * - deviceSyncManifests: Sync history for device playlists
  * 
  * Key Design Decisions:
  * - Composite primary keys (trackFileId-libraryRootId) prevent duplicate tracks across collections
@@ -130,7 +132,7 @@ export interface LibraryRootRecord {
 export interface FileIndexRecord {
   /** Composite primary key: `${trackFileId}-${libraryRootId}` */
   id: string;
-  /** Unique identifier for the file (based on name, size, mtime) */
+  /** Unique identifier for the file (based on relative path/name + size) */
   trackFileId: string;
   /** ID of the library root this file belongs to */
   libraryRootId: string;
@@ -346,6 +348,42 @@ export interface ScanCheckpointRecord {
 }
 
 /**
+ * Processing checkpoint record stored in database
+ *
+ * Tracks metadata parsing progress to enable resuming interrupted processing.
+ *
+ * Relationships:
+ * - One-to-one with ScanRunRecord (via scanRunId)
+ * - Many-to-one with LibraryRootRecord (via libraryRootId)
+ *
+ * Indexes:
+ * - Primary key: id (same as scanRunId)
+ * - Index: scanRunId
+ * - Index: libraryRootId
+ * - Index: checkpointAt
+ */
+export interface ProcessingCheckpointRecord {
+  /** Unique identifier (same as scanRunId) */
+  id: string;
+  /** ID of the scan run this checkpoint belongs to */
+  scanRunId: string;
+  /** ID of the library root being processed */
+  libraryRootId: string;
+  /** Total entries scheduled for processing */
+  totalEntries: number;
+  /** Last processed index (0-indexed) */
+  lastProcessedIndex: number;
+  /** Last file path that was processed (for resume context) */
+  lastProcessedPath?: string;
+  /** Number of errors encountered so far */
+  errors: number;
+  /** Timestamp when checkpoint was created (Unix epoch milliseconds) */
+  checkpointAt: number;
+  /** Whether processing was interrupted (true) or in progress (false) */
+  interrupted: boolean;
+}
+
+/**
  * Settings record stored in database
  * 
  * Key-value store for application settings. Used to persist user preferences
@@ -399,6 +437,60 @@ export interface DirectoryHandleRecord {
   id: string;
   /** File System Access API directory handle */
   handle: FileSystemDirectoryHandle;
+}
+
+/**
+ * Device profile record stored in database
+ * 
+ * Represents a saved USB device configuration for playlist sync.
+ */
+export interface DeviceProfileRecord {
+  /** Unique identifier for the device profile */
+  id: string;
+  /** Display name for the device */
+  label: string;
+  /** Reference to directoryHandles store (device root handle) */
+  handleRef: string;
+  /** Playlist format to generate for device */
+  playlistFormat: "m3u" | "pls" | "xspf";
+  /** Device playlist folder relative to root (e.g., "PLAYLISTS") */
+  playlistFolder: string;
+  /** Path strategy to use in playlist files */
+  pathStrategy: "relative-to-playlist" | "relative-to-library-root" | "absolute";
+  /** Optional prefix for absolute path strategy */
+  absolutePathPrefix?: string;
+  /** Timestamp of last successful sync (Unix epoch milliseconds) */
+  lastSyncAt?: number;
+  /** Timestamp when profile was created */
+  createdAt: number;
+  /** Timestamp when profile was last updated */
+  updatedAt: number;
+}
+
+/**
+ * Device sync manifest stored in database
+ * 
+ * Tracks the last sync details for a playlist on a device.
+ */
+export interface DeviceSyncManifestRecord {
+  /** Unique identifier for the manifest */
+  id: string;
+  /** Device profile ID */
+  deviceId: string;
+  /** Playlist ID that was synced */
+  playlistId: string;
+  /** Playlist title at time of sync */
+  playlistTitle: string;
+  /** Playlist file path on device */
+  playlistPath: string;
+  /** Playlist format used */
+  playlistFormat: "m3u" | "pls" | "xspf";
+  /** Track count at time of sync */
+  trackCount: number;
+  /** Config hash for change detection */
+  configHash: string;
+  /** Timestamp of last sync */
+  lastSyncedAt: number;
 }
 
 /**
@@ -520,6 +612,8 @@ export interface SavedPlaylistRecord {
  * - Version 6: Added scanCheckpoints table for resuming interrupted scans
  * - Version 7: Added Spotify import support (spotifyExportMetadata, source, spotifyUri, linkedLocalTrackId fields)
  * - Version 8: Added enhanced metadata support (musicbrainzId, enhancedMetadata, metadataEnhancementDate fields)
+ * - Version 9: Added device profiles and sync manifests
+ * - Version 10: Added processing checkpoints for metadata parsing
  * 
  * @example
  * ```typescript
@@ -550,8 +644,14 @@ export class AppDatabase extends Dexie {
   directoryHandles!: Table<DirectoryHandleRecord, string>;
   /** Saved playlists table (user-saved playlists) */
   savedPlaylists!: Table<SavedPlaylistRecord, string>;
+  /** Device profiles table (USB sync configs) */
+  deviceProfiles!: Table<DeviceProfileRecord, string>;
+  /** Device sync manifests table (sync history) */
+  deviceSyncManifests!: Table<DeviceSyncManifestRecord, string>;
   /** Scan checkpoints table (for resuming interrupted scans) */
   scanCheckpoints!: Table<ScanCheckpointRecord, string>;
+  /** Processing checkpoints table (for resuming metadata parsing) */
+  processingCheckpoints!: Table<ProcessingCheckpointRecord, string>;
 
   constructor() {
     super("ai-playlist-generator");
@@ -754,6 +854,35 @@ export class AppDatabase extends Dexie {
       directoryHandles: "id",
       savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
       scanCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+    });
+
+    // Version 9: Add device profiles and sync manifests
+    this.version(9).stores({
+      libraryRoots: "id, createdAt",
+      fileIndex: "id, trackFileId, libraryRootId, name, extension, updatedAt",
+      tracks: "id, trackFileId, libraryRootId, updatedAt",
+      scanRuns: "id, libraryRootId, startedAt",
+      settings: "key",
+      directoryHandles: "id",
+      savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
+      scanCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+      deviceProfiles: "id, createdAt, updatedAt",
+      deviceSyncManifests: "id, deviceId, playlistId, lastSyncedAt",
+    });
+
+    // Version 10: Add processing checkpoints for resumable metadata parsing
+    this.version(10).stores({
+      libraryRoots: "id, createdAt",
+      fileIndex: "id, trackFileId, libraryRootId, name, extension, updatedAt",
+      tracks: "id, trackFileId, libraryRootId, updatedAt",
+      scanRuns: "id, libraryRootId, startedAt",
+      settings: "key",
+      directoryHandles: "id",
+      savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
+      scanCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+      processingCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+      deviceProfiles: "id, createdAt, updatedAt",
+      deviceSyncManifests: "id, deviceId, playlistId, lastSyncedAt",
     });
   }
 }
