@@ -21,18 +21,26 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import type { LibraryRoot } from "@/lib/library-selection";
+import type { LibraryRoot, LibraryFile } from "@/lib/library-selection";
+import { checkLibraryPermission } from "@/lib/library-selection";
 import type { ScanResult, MetadataResult, MetadataProgressCallback } from "@/features/library";
 import { parseMetadataForFiles } from "@/features/library";
 import { getLibraryFilesForEntries } from "@/features/library/metadata-integration";
-import { saveTrackMetadata, updateScanRun } from "@/db/storage";
+import { saveTrackMetadata, updateScanRun, removeTrackMetadata } from "@/db/storage";
 import { detectTempoForLibrary } from "@/features/library/metadata-enhancement";
 import { isQuotaExceededError, getStorageQuotaInfo } from "@/db/storage-errors";
+import {
+  saveProcessingCheckpoint,
+  loadProcessingCheckpoint,
+  deleteProcessingCheckpoint,
+} from "@/db/storage-processing-checkpoints";
 import { logger } from "@/lib/logger";
 
 export interface UseMetadataParsingOptions {
   /** Callback when parsing completes */
   onParseComplete?: () => void;
+  /** Callback when processing checkpoints update */
+  onProcessingProgress?: () => void;
   /** Scan run ID for updating scan run with error count */
   scanRunId?: string | null;
 }
@@ -69,7 +77,14 @@ export interface UseMetadataParsingReturn {
   handleParseMetadata: (
     result: ScanResult,
     root: LibraryRoot,
-    libraryRootId: string
+    libraryRootId: string,
+    scanRunIdOverride?: string
+  ) => Promise<void>;
+  /** Resume metadata processing from stored checkpoints */
+  handleResumeProcessing: (
+    root: LibraryRoot,
+    libraryRootId: string,
+    scanRunId: string
   ) => Promise<void>;
   /** Clear the current error */
   clearError: () => void;
@@ -83,7 +98,7 @@ export interface UseMetadataParsingReturn {
 export function useMetadataParsing(
   options: UseMetadataParsingOptions = {}
 ): UseMetadataParsingReturn {
-  const { onParseComplete, scanRunId } = options;
+  const { onParseComplete, onProcessingProgress, scanRunId } = options;
 
   const [isParsingMetadata, setIsParsingMetadata] = useState(false);
   const [metadataResults, setMetadataResults] = useState<MetadataResult[] | null>(null);
@@ -104,6 +119,11 @@ export function useMetadataParsing(
     onParseCompleteRef.current = onParseComplete;
   }, [onParseComplete]);
 
+  const onProcessingProgressRef = useRef(onProcessingProgress);
+  useEffect(() => {
+    onProcessingProgressRef.current = onProcessingProgress;
+  }, [onProcessingProgress]);
+
   /**
    * Parse metadata for files from a scan result
    */
@@ -111,23 +131,79 @@ export function useMetadataParsing(
     async (
       result: ScanResult,
       root: LibraryRoot,
-      libraryRootId: string
+      libraryRootId: string,
+      scanRunIdOverride?: string
     ) => {
       if (root.mode !== "handle") {
         return; // Only handle mode supports metadata parsing
       }
 
+      let sortedEntries: typeof result.entries = [];
+      let processedOffset = 0;
+      const activeScanRunId = scanRunIdOverride ?? scanRunId ?? null;
       try {
+        const permission = await checkLibraryPermission(root);
+        if (permission !== "granted") {
+          setError(
+            "Permission required to read library files for metadata parsing. " +
+              "Please re-grant access to your library folder and try again."
+          );
+          return;
+        }
+
         setIsParsingMetadata(true);
+        sortedEntries = sortEntriesForProcessing(
+          result.diff ? [...result.diff.added, ...result.diff.changed] : result.entries
+        );
+        const processingCheckpoint = activeScanRunId
+          ? await loadProcessingCheckpoint(activeScanRunId)
+          : null;
+        const startIndex = processingCheckpoint
+          ? Math.min(processingCheckpoint.lastProcessedIndex + 1, sortedEntries.length)
+          : 0;
+        processedOffset = startIndex;
+        const entriesToParse = sortedEntries.slice(startIndex);
+
+        if (entriesToParse.length === 0) {
+          setMetadataResults([]);
+          setMetadataProgress(null);
+          setIsParsingMetadata(false);
+          if (activeScanRunId) {
+            await deleteProcessingCheckpoint(activeScanRunId);
+          }
+          onParseCompleteRef.current?.();
+          return;
+        }
+
         setMetadataProgress({
-          parsed: 0,
-          total: result.entries.length,
-          errors: 0,
+          parsed: processedOffset,
+          total: sortedEntries.length,
+          errors: processingCheckpoint?.errors ?? 0,
         });
 
-        // Get entries that need metadata parsing (added + changed)
-        // For now, parse all entries (can be optimized to only parse added/changed)
-        const entriesToParse = result.entries;
+        if (activeScanRunId) {
+          await saveProcessingCheckpoint(
+            activeScanRunId,
+            libraryRootId,
+            sortedEntries.length,
+            Math.max(processedOffset - 1, -1),
+            processingCheckpoint?.lastProcessedPath,
+            processingCheckpoint?.errors ?? 0,
+            false
+          );
+          onProcessingProgressRef.current?.();
+        }
+
+        if (result.diff?.removed?.length) {
+          try {
+            await removeTrackMetadata(
+              result.diff.removed.map((entry) => entry.trackFileId),
+              libraryRootId
+            );
+          } catch (removeError) {
+            logger.warn("Failed to remove metadata for deleted tracks:", removeError);
+          }
+        }
 
         // Get LibraryFile objects for these entries
         const libraryFiles = await getLibraryFilesForEntries(root, entriesToParse, libraryRootId);
@@ -136,15 +212,51 @@ export function useMetadataParsing(
           logger.warn(
             "No library files found for entries - cannot parse metadata. This might happen if files were moved or the directory handle is invalid"
           );
+          setError(
+            "Unable to read library files for metadata parsing. " +
+              "Please re-select your library folder and try again."
+          );
           setIsParsingMetadata(false);
           setMetadataProgress(null);
-          // Still notify completion - file index is saved even if metadata parsing fails
-          onParseCompleteRef.current?.();
           return;
         }
 
         // Use batched parsing for large libraries to prevent timeouts
-        const useBatched = libraryFiles.length > 1000;
+        const orderedFiles = reorderLibraryFiles(entriesToParse, libraryFiles);
+        const totalEntries = sortedEntries.length;
+        const useBatched = orderedFiles.length > 1000;
+        let lastSavedIndex = processedOffset - 1;
+        const CHECKPOINT_INTERVAL = 50;
+
+        const saveCheckpointIfNeeded = async (parsedCount: number, errorsCount: number) => {
+          if (!activeScanRunId) {
+            return;
+          }
+          const currentIndex = processedOffset + parsedCount - 1;
+          if (currentIndex < 0) {
+            return;
+          }
+          if (currentIndex - lastSavedIndex < CHECKPOINT_INTERVAL) {
+            return;
+          }
+          lastSavedIndex = currentIndex;
+          const lastProcessedPath =
+            sortedEntries[currentIndex]?.relativePath || sortedEntries[currentIndex]?.name;
+          try {
+            await saveProcessingCheckpoint(
+              activeScanRunId,
+              libraryRootId,
+              totalEntries,
+              currentIndex,
+              lastProcessedPath,
+              errorsCount,
+              false
+            );
+            onProcessingProgressRef.current?.();
+          } catch (checkpointError) {
+            logger.error("Failed to save processing checkpoint:", checkpointError);
+          }
+        };
         let results: MetadataResult[];
         let successCount: number;
         let errorCount: number;
@@ -162,19 +274,20 @@ export function useMetadataParsing(
           const onBatchedProgress = (progress: any) => {
             // Update UI progress state
             setMetadataProgress({
-              parsed: progress.parsed,
-              total: progress.total,
+              parsed: processedOffset + progress.parsed,
+              total: totalEntries,
               errors: progress.errors,
               currentFile: progress.currentFile,
               batch: progress.batch,
               totalBatches: progress.totalBatches,
               estimatedTimeRemaining: progress.estimatedTimeRemaining,
             });
+            void saveCheckpointIfNeeded(progress.parsed, progress.errors);
           };
 
-          const collectResults = libraryFiles.length <= 5000;
+          const collectResults = orderedFiles.length <= 5000;
           const batchedResult = await parseMetadataBatched(
-            libraryFiles,
+            orderedFiles,
             libraryRootId,
             onBatchedProgress,
             {
@@ -208,20 +321,21 @@ export function useMetadataParsing(
         } else {
           // For smaller libraries, use direct parsing (faster)
           // Adjust concurrency based on library size
-          const concurrency = libraryFiles.length > 500 ? 3 : 5;
+          const concurrency = orderedFiles.length > 500 ? 3 : 5;
 
           const onMetadataProgress: MetadataProgressCallback = (progress) => {
             // Update UI progress state
             setMetadataProgress({
-              parsed: progress.parsed,
-              total: progress.total,
+              parsed: processedOffset + progress.parsed,
+              total: totalEntries,
               errors: progress.errors,
               currentFile: progress.currentFile,
             });
+            void saveCheckpointIfNeeded(progress.parsed, progress.errors);
           };
 
           results = await parseMetadataForFiles(
-            libraryFiles,
+            orderedFiles,
             onMetadataProgress,
             concurrency
           );
@@ -268,8 +382,9 @@ export function useMetadataParsing(
         }
 
         // Update scan run with parse error count (for both batched and direct parsing)
-        if (scanRunId) {
-          await updateScanRun(scanRunId, errorCount);
+        if (activeScanRunId) {
+          await updateScanRun(activeScanRunId, errorCount);
+          await deleteProcessingCheckpoint(activeScanRunId);
         }
 
         // Final verification
@@ -291,7 +406,7 @@ export function useMetadataParsing(
         const deviceMemory = typeof navigator !== "undefined" ? (navigator as Navigator & { deviceMemory?: number }).deviceMemory : undefined;
         const tempoBatchSize =
           isStandalone && deviceMemory && deviceMemory <= 4 ? 2 : 5;
-        const isLargeLibrary = libraryFiles.length > 10000;
+        const isLargeLibrary = orderedFiles.length > 10000;
         const isLowMemoryStandalone = isStandalone && deviceMemory && deviceMemory <= 4;
         let shouldDetectTempo = true;
 
@@ -303,7 +418,7 @@ export function useMetadataParsing(
 
         if (!shouldDetectTempo) {
           logger.info(
-            `Tempo detection skipped: standalone=${isStandalone}, deviceMemory=${deviceMemory ?? "unknown"}, librarySize=${libraryFiles.length}`
+            `Tempo detection skipped: standalone=${isStandalone}, deviceMemory=${deviceMemory ?? "unknown"}, librarySize=${orderedFiles.length}`
           );
           setIsDetectingTempo(false);
           setTempoProgress(null);
@@ -356,6 +471,27 @@ export function useMetadataParsing(
         onParseCompleteRef.current?.();
       } catch (err) {
         logger.error("Failed to parse metadata:", err);
+        if (activeScanRunId && sortedEntries.length > 0) {
+          try {
+            const parsedSoFar = metadataProgress?.parsed ?? processedOffset;
+            const lastIndex = Math.min(parsedSoFar - 1, sortedEntries.length - 1);
+            const lastProcessedPath =
+              lastIndex >= 0
+                ? sortedEntries[lastIndex]?.relativePath || sortedEntries[lastIndex]?.name
+                : undefined;
+            await saveProcessingCheckpoint(
+              activeScanRunId,
+              libraryRootId,
+              sortedEntries.length,
+              Math.max(lastIndex, 0),
+              lastProcessedPath,
+              metadataProgress?.errors ?? 0,
+              true
+            );
+          } catch (checkpointError) {
+            logger.error("Failed to save processing checkpoint after error:", checkpointError);
+          }
+        }
         setError(
           `Failed to parse metadata: ${err instanceof Error ? err.message : String(err)}`
         );
@@ -367,7 +503,7 @@ export function useMetadataParsing(
         setMetadataProgress(null); // Clear progress when done
       }
     },
-    [scanRunId] // Removed onParseComplete dependency - using ref instead
+    [scanRunId, metadataProgress] // Removed onParseComplete dependency - using ref instead
   );
 
   /**
@@ -385,6 +521,34 @@ export function useMetadataParsing(
     setError(null);
   }, []);
 
+  const handleResumeProcessing = useCallback(
+    async (root: LibraryRoot, libraryRootId: string, resumeScanRunId: string) => {
+      if (!resumeScanRunId) {
+        return;
+      }
+      const { getFileIndexEntries } = await import("@/db/storage");
+      const entries = await getFileIndexEntries(libraryRootId);
+      const scanResult: ScanResult = {
+        total: entries.length,
+        added: 0,
+        changed: 0,
+        removed: 0,
+        duration: 0,
+        entries: entries.map((entry) => ({
+          trackFileId: entry.trackFileId,
+          relativePath: entry.relativePath,
+          name: entry.name,
+          extension: entry.extension,
+          size: entry.size,
+          mtime: entry.mtime,
+        })),
+      };
+
+      await handleParseMetadata(scanResult, root, libraryRootId, resumeScanRunId);
+    },
+    [handleParseMetadata]
+  );
+
   return {
     isParsingMetadata,
     metadataResults,
@@ -393,8 +557,32 @@ export function useMetadataParsing(
     tempoProgress,
     error,
     handleParseMetadata,
+    handleResumeProcessing,
     clearError,
     clearMetadataResults,
   };
+}
+
+function sortEntriesForProcessing(entries: ScanResult["entries"]): ScanResult["entries"] {
+  return [...entries].sort((a, b) => {
+    const aPath = a.relativePath || a.name;
+    const bPath = b.relativePath || b.name;
+    return aPath.localeCompare(bPath);
+  });
+}
+
+function reorderLibraryFiles(
+  entries: ScanResult["entries"],
+  libraryFiles: LibraryFile[]
+): LibraryFile[] {
+  const fileMap = new Map(libraryFiles.map((file) => [file.trackFileId, file]));
+  const ordered: LibraryFile[] = [];
+  for (const entry of entries) {
+    const file = fileMap.get(entry.trackFileId);
+    if (file) {
+      ordered.push(file);
+    }
+  }
+  return ordered;
 }
 

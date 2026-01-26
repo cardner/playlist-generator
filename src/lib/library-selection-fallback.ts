@@ -120,10 +120,9 @@ export async function* getLibraryFilesFromFileList(
       }
     }
 
-    // Generate unique ID based on relativePath || file.name, size, and mtime
-    // This matches the requirement: hash(relativePath || file.name, file.size, file.lastModified)
+    // Generate stable ID based on relativePath || file.name and size
     const pathForId = relativePath || file.name;
-    const trackFileId = generateFileIdFromPath(pathForId, file.size, file.lastModified);
+    const trackFileId = generateFileIdFromPath(pathForId, file.size);
 
     // Get file extension
     const extension = getFileExtension(file.name);

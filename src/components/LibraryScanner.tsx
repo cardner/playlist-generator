@@ -63,7 +63,8 @@ import { TempoDetectionProgress } from "./TempoDetectionProgress";
 import { InterruptedScanBanner } from "./InterruptedScanBanner";
 import { useLibraryScanning } from "@/hooks/useLibraryScanning";
 import { useMetadataParsing } from "@/hooks/useMetadataParsing";
-import { getInterruptedScans } from "@/db/storage-scan-checkpoints";
+import { getResumableScans } from "@/db/storage-scan-checkpoints";
+import { getInterruptedProcessingCheckpoints } from "@/db/storage-processing-checkpoints";
 import { logger } from "@/lib/logger";
 
 interface LibraryScannerProps {
@@ -73,6 +74,7 @@ interface LibraryScannerProps {
   onScanComplete?: () => void; // Callback when scan completes (for refreshing browser)
   hasExistingScans?: boolean | null; // Whether there are existing scans (null = checking)
   triggerScan?: boolean; // When true, trigger scan immediately
+  onProcessingProgress?: () => void; // Callback when processing checkpoints update
 }
 
 export function LibraryScanner({
@@ -82,11 +84,19 @@ export function LibraryScanner({
   onScanComplete,
   hasExistingScans,
   triggerScan,
+  onProcessingProgress,
 }: LibraryScannerProps) {
   const [currentRootId, setCurrentRootId] = useState<string | null>(null);
   const [isNewSelection, setIsNewSelection] = useState(false);
   const [isInitialMount, setIsInitialMount] = useState(true);
-  const [detectedInterruptedScanRunId, setDetectedInterruptedScanRunId] = useState<string | null>(null);
+  const [detectedResumableScanRunId, setDetectedResumableScanRunId] = useState<string | null>(null);
+  const [detectedResumableLastPath, setDetectedResumableLastPath] = useState<string | null>(null);
+  const [hasCheckedResumable, setHasCheckedResumable] = useState(false);
+  const [processingCheckpoint, setProcessingCheckpoint] = useState<{
+    scanRunId: string;
+    libraryRootId: string;
+    lastProcessedPath?: string;
+  } | null>(null);
 
   // Use hooks for scanning and metadata parsing logic
   const {
@@ -112,7 +122,7 @@ export function LibraryScanner({
     },
   });
 
-  const {
+    const {
     isParsingMetadata,
     metadataResults,
     metadataProgress,
@@ -120,11 +130,75 @@ export function LibraryScanner({
     tempoProgress,
     error: parseError,
     handleParseMetadata,
+      handleResumeProcessing,
     clearError: clearParseError,
   } = useMetadataParsing({
     onParseComplete: onScanComplete,
+    onProcessingProgress,
     scanRunId,
   });
+
+  const renderProcessingResumeBanner = () => {
+    if (
+      !processingCheckpoint ||
+      isParsingMetadata ||
+      metadataResults !== null ||
+      !libraryRoot
+    ) {
+      return null;
+    }
+
+    return (
+      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4 rounded">
+        <div className="flex items-start">
+          <div className="flex-shrink-0">
+            <svg
+              className="h-5 w-5 text-yellow-400"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fillRule="evenodd"
+                d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </div>
+          <div className="ml-3 flex-1">
+            <h3 className="text-sm font-medium text-yellow-800">
+              Processing Interrupted
+            </h3>
+            <div className="mt-2 text-sm text-yellow-700">
+              <p>
+                Metadata processing was interrupted. You can resume from where it
+                left off.
+              </p>
+              {processingCheckpoint.lastProcessedPath && (
+                <p className="mt-2 text-xs text-yellow-700">
+                  Last processed: {processingCheckpoint.lastProcessedPath}
+                </p>
+              )}
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleResumeProcessing(
+                      libraryRoot,
+                      processingCheckpoint.libraryRootId,
+                      processingCheckpoint.scanRunId
+                    )
+                  }
+                  className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
+                >
+                  Resume Processing
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // Wrapper for handleScan that triggers scanning
   const handleScan = useCallback(async () => {
@@ -149,9 +223,11 @@ export function LibraryScanner({
       scanResult &&
       libraryRoot &&
       libraryRootId &&
+      scanRunId &&
       !isParsingMetadata &&
       metadataResults === null &&
-      libraryRoot.mode === "handle"
+      libraryRoot.mode === "handle" &&
+      permissionStatus === "granted"
     ) {
       // Trigger metadata parsing
       handleParseMetadata(scanResult, libraryRoot, libraryRootId).catch((err) => {
@@ -159,7 +235,16 @@ export function LibraryScanner({
         logger.error("Failed to trigger metadata parsing:", err);
       });
     }
-  }, [scanResult, libraryRoot, libraryRootId, isParsingMetadata, metadataResults, handleParseMetadata]);
+  }, [
+    scanResult,
+    libraryRoot,
+    libraryRootId,
+    scanRunId,
+    isParsingMetadata,
+    metadataResults,
+    permissionStatus,
+    handleParseMetadata,
+  ]);
 
   // Get current root ID
   const getRootId = (root: LibraryRoot | null): string | null => {
@@ -175,8 +260,10 @@ export function LibraryScanner({
   // Check for interrupted scans on mount and when library root changes
   useEffect(() => {
     const checkInterruptedScans = async () => {
-      if (!libraryRoot || permissionStatus !== "granted") {
-        setDetectedInterruptedScanRunId(null);
+      if (!libraryRoot) {
+        setDetectedResumableScanRunId(null);
+        setDetectedResumableLastPath(null);
+        setHasCheckedResumable(true);
         return;
       }
 
@@ -195,20 +282,39 @@ export function LibraryScanner({
         );
 
         if (matchingRoot) {
-          const interrupted = await getInterruptedScans(matchingRoot.id);
-          // Use the most recent interrupted scan (last in sorted array)
-          if (interrupted.length > 0) {
-            const mostRecent = interrupted[interrupted.length - 1];
-            setDetectedInterruptedScanRunId(mostRecent.scanRunId);
+          const resumable = await getResumableScans(matchingRoot.id);
+          // Use the most recent resumable scan (last in sorted array)
+          if (resumable.length > 0) {
+            const mostRecent = resumable[resumable.length - 1];
+            setDetectedResumableScanRunId(mostRecent.scanRunId);
+            setDetectedResumableLastPath(mostRecent.lastScannedPath ?? null);
           } else {
-            setDetectedInterruptedScanRunId(null);
+            setDetectedResumableScanRunId(null);
+            setDetectedResumableLastPath(null);
+          }
+          const processing = await getInterruptedProcessingCheckpoints(matchingRoot.id);
+          if (processing.length > 0) {
+            const mostRecentProcessing = processing[processing.length - 1];
+            setProcessingCheckpoint({
+              scanRunId: mostRecentProcessing.scanRunId,
+              libraryRootId: mostRecentProcessing.libraryRootId,
+              lastProcessedPath: mostRecentProcessing.lastProcessedPath,
+            });
+          } else {
+            setProcessingCheckpoint(null);
           }
         } else {
-          setDetectedInterruptedScanRunId(null);
+          setDetectedResumableScanRunId(null);
+          setDetectedResumableLastPath(null);
+          setProcessingCheckpoint(null);
         }
       } catch (error) {
         logger.error("Failed to check for interrupted scans:", error);
-        setDetectedInterruptedScanRunId(null);
+        setDetectedResumableScanRunId(null);
+        setDetectedResumableLastPath(null);
+        setProcessingCheckpoint(null);
+      } finally {
+        setHasCheckedResumable(true);
       }
     };
 
@@ -225,6 +331,7 @@ export function LibraryScanner({
         clearScanResult();
         clearParseError();
         setCurrentRootId(rootId);
+        setHasCheckedResumable(false);
         // If this is a new root (not initial mount), mark as new selection
         if (libraryRoot && !isInitialMount) {
           setIsNewSelection(true);
@@ -260,6 +367,9 @@ export function LibraryScanner({
       libraryRoot.mode === "handle" &&
       !isScanning &&
       !scanResult &&
+      hasCheckedResumable &&
+      !detectedResumableScanRunId &&
+      !processingCheckpoint &&
       rootId === currentRootId &&
       hasExistingScans === false // Only auto-scan if we know there are NO existing scans
     );
@@ -270,7 +380,20 @@ export function LibraryScanner({
       // Trigger scan immediately
       handleScan();
     }
-  }, [isNewSelection, permissionStatus, libraryRoot, isScanning, scanResult, currentRootId, hasExistingScans, triggerScan, handleScan]);
+  }, [
+    isNewSelection,
+    permissionStatus,
+    libraryRoot,
+    isScanning,
+    scanResult,
+    detectedResumableScanRunId,
+    hasCheckedResumable,
+    processingCheckpoint,
+    currentRootId,
+    hasExistingScans,
+    triggerScan,
+    handleScan,
+  ]);
 
   // Note: Auto-scan is handled by the permission effect above
   // handleParseMetadata and handleScan are defined above, before the useEffect
@@ -289,6 +412,16 @@ export function LibraryScanner({
   if (permissionStatus !== "granted") {
     return (
       <div className="">
+        {(isMonitoringReconnection || interruptedScanRunId || detectedResumableScanRunId) && (
+          <InterruptedScanBanner
+            isMonitoringReconnection={isMonitoringReconnection}
+            interruptedScanRunId={interruptedScanRunId || detectedResumableScanRunId}
+            lastScannedPath={interruptedScanRunId ? null : detectedResumableLastPath}
+            onCancelAutoResume={cancelReconnectionMonitoring}
+            onManualResume={handleResumeScan}
+          />
+        )}
+        {renderProcessingResumeBanner()}
         <div className="bg-app-surface rounded-sm border border-app-border p-6">
           <div className="mb-4">
             <p className="text-app-secondary text-xs uppercase tracking-wider mb-1">
@@ -378,10 +511,12 @@ export function LibraryScanner({
           <InterruptedScanBanner
             isMonitoringReconnection={isMonitoringReconnection}
             interruptedScanRunId={interruptedScanRunId}
+            lastScannedPath={null}
             onCancelAutoResume={cancelReconnectionMonitoring}
             onManualResume={handleResumeScan}
           />
         )}
+        {renderProcessingResumeBanner()}
 
         {/* Show folder info */}
         <div className="bg-app-surface rounded-sm border border-app-border p-6">
@@ -414,6 +549,27 @@ export function LibraryScanner({
             </p>
           </div>
         </div>
+
+        {scanResult.migration?.totalMigrated ? (
+          <div className="bg-app-surface rounded-sm border border-app-border p-4">
+            <h4 className="text-app-primary text-sm uppercase tracking-wider mb-2">
+              Migration Diagnostics
+            </h4>
+            <p className="text-app-secondary text-xs mb-2">
+              Migrated {scanResult.migration.totalMigrated} track IDs to the stable scheme.
+            </p>
+            {scanResult.migration.samples.length > 0 && (
+              <div className="text-xs text-app-tertiary space-y-1">
+                {scanResult.migration.samples.map((sample) => (
+                  <div key={sample.from} className="truncate">
+                    {sample.path ? `${sample.path} — ` : ""}
+                    {sample.from} → {sample.to}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : null}
 
         <ScanResults result={scanResult} onRescan={handleRescan} />
         
@@ -487,14 +643,16 @@ export function LibraryScanner({
       <div className="">
         <div className="space-y-4">
           {/* Show interrupted scan banner if applicable */}
-          {(isMonitoringReconnection || interruptedScanRunId || detectedInterruptedScanRunId) && (
+          {(isMonitoringReconnection || interruptedScanRunId || detectedResumableScanRunId) && (
             <InterruptedScanBanner
               isMonitoringReconnection={isMonitoringReconnection}
-              interruptedScanRunId={interruptedScanRunId || detectedInterruptedScanRunId}
+              interruptedScanRunId={interruptedScanRunId || detectedResumableScanRunId}
+              lastScannedPath={interruptedScanRunId ? null : detectedResumableLastPath}
               onCancelAutoResume={cancelReconnectionMonitoring}
               onManualResume={handleResumeScan}
             />
           )}
+          {renderProcessingResumeBanner()}
 
           <div className="bg-app-surface rounded-sm border border-app-border p-6">
             <div className="mb-4">
@@ -547,14 +705,16 @@ export function LibraryScanner({
       <div className="">
         <div className="space-y-4">
           {/* Show interrupted scan banner if applicable */}
-          {(isMonitoringReconnection || interruptedScanRunId || detectedInterruptedScanRunId) && (
+          {(isMonitoringReconnection || interruptedScanRunId || detectedResumableScanRunId) && (
             <InterruptedScanBanner
               isMonitoringReconnection={isMonitoringReconnection}
-              interruptedScanRunId={interruptedScanRunId || detectedInterruptedScanRunId}
+              interruptedScanRunId={interruptedScanRunId || detectedResumableScanRunId}
+              lastScannedPath={interruptedScanRunId ? null : detectedResumableLastPath}
               onCancelAutoResume={cancelReconnectionMonitoring}
               onManualResume={handleResumeScan}
             />
           )}
+          {renderProcessingResumeBanner()}
 
           <div className="bg-app-surface rounded-sm border border-app-border p-6">
             <div className="mb-4">

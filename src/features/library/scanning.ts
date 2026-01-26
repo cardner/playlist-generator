@@ -64,6 +64,15 @@ export interface ScanResult {
   removed: number;
   duration: number; // milliseconds
   entries: FileIndexEntry[];
+  diff?: FileIndexDiff;
+  migration?: {
+    totalMigrated: number;
+    samples: Array<{
+      from: string;
+      to: string;
+      path?: string;
+    }>;
+  };
 }
 
 /**
@@ -113,11 +122,11 @@ function normalizeRelativePath(path: string): string {
 
 /**
  * Generate a stable file ID from file properties
- * Matches the implementation in library-selection.ts
+ * Matches the implementation in library-selection-utils.ts
  * 
  * @param relativePath Relative path or file name
  * @param size File size in bytes
- * @param mtime Last modified time
+ * @param mtime Last modified time (ignored for ID stability)
  * @returns Stable file ID
  */
 export function generateTrackFileId(
@@ -126,8 +135,8 @@ export function generateTrackFileId(
   mtime: number
 ): string {
   // Match the implementation from library-selection.ts
-  // Use file name, size, and last modified time to create ID
-  const hash = `${relativePath}-${size}-${mtime}`;
+  // Use file name and size to create a stable ID
+  const hash = `${relativePath}-${size}`;
   // Simple base64 encoding (matching library-selection.ts)
   return btoa(hash).replace(/[^a-zA-Z0-9]/g, "").substring(0, 32);
 }
@@ -187,9 +196,17 @@ export async function buildFileIndex(
         for await (const libraryFile of getLibraryFiles(root, onDisconnection)) {
           found++;
           currentIndex++;
+          if (checkpoint) {
+            checkpoint.lastScannedIndex = currentIndex;
+          }
 
           // Skip files that were already scanned (from checkpoint)
           if (scannedFileIdsSet.has(libraryFile.trackFileId)) {
+            if (checkpoint && libraryFile.relativePath) {
+              checkpoint.lastScannedPath = libraryFile.relativePath;
+            } else if (checkpoint) {
+              checkpoint.lastScannedPath = libraryFile.file.name;
+            }
             continue;
           }
 
@@ -202,6 +219,9 @@ export async function buildFileIndex(
             
             // Update last scanned path
             lastScannedPath = normalizedRelativePath || libraryFile.file.name;
+            if (checkpoint) {
+              checkpoint.lastScannedPath = lastScannedPath;
+            }
             
             // Use the trackFileId from libraryFile (already generated correctly)
             const entry: FileIndexEntry = {
@@ -215,6 +235,9 @@ export async function buildFileIndex(
 
             index.set(entry.trackFileId, entry);
             scannedFileIdsSet.add(libraryFile.trackFileId);
+            if (checkpoint) {
+              checkpoint.scannedFileIds = scannedFileIdsSet;
+            }
             scanned++;
 
             // Yield control every 50 files to avoid blocking UI
@@ -450,6 +473,7 @@ export async function scanLibrary(
         removed: diff.removed.length,
         duration,
         entries: Array.from(nextIndex.values()),
+        diff,
       };
     },
     {
@@ -499,6 +523,7 @@ export async function scanLibraryFromFileList(
     removed: diff.removed.length,
     duration,
     entries: Array.from(nextIndex.values()),
+    diff,
   };
 }
 

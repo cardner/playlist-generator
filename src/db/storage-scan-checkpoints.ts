@@ -177,6 +177,52 @@ export async function getInterruptedScans(
 }
 
 /**
+ * Get all resumable scans for a library root
+ *
+ * Returns checkpoints that are either explicitly interrupted or belong to
+ * scan runs that were never finished (e.g., reloads/crashes).
+ *
+ * @param libraryRootId - ID of the library root
+ * @returns Promise resolving to array of resumable checkpoint records
+ */
+export async function getResumableScans(
+  libraryRootId: string
+): Promise<ScanCheckpointRecord[]> {
+  try {
+    await db.open();
+    if (!db.scanCheckpoints) {
+      return [];
+    }
+
+    const checkpoints = await db.scanCheckpoints
+      .where("libraryRootId")
+      .equals(libraryRootId)
+      .sortBy("checkpointAt");
+
+    if (checkpoints.length === 0) {
+      return [];
+    }
+
+    const scanRuns = await db.scanRuns
+      .where("libraryRootId")
+      .equals(libraryRootId)
+      .toArray();
+    const runMap = new Map(scanRuns.map((run) => [run.id, run]));
+
+    return checkpoints.filter((checkpoint) => {
+      if (checkpoint.interrupted) {
+        return true;
+      }
+      const run = runMap.get(checkpoint.scanRunId);
+      return !run || !run.finishedAt;
+    });
+  } catch (error) {
+    logger.debug("Could not access scanCheckpoints table:", error);
+    return [];
+  }
+}
+
+/**
  * Clean up old interrupted checkpoints
  * 
  * Deletes interrupted checkpoints older than the specified retention period.

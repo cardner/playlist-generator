@@ -51,23 +51,23 @@ export function normalizeRelativePath(path: string): string {
 }
 
 /**
- * Generate a unique file ID from path, size, and mtime
+ * Generate a stable file ID from path and size
  * 
- * Matches requirement: hash(relativePath || file.name, file.size, file.lastModified)
+ * Uses normalized relative path (or file name) + size to keep identity
+ * stable across rescans/imports while allowing mtime to track changes.
  * Uses a Unicode-safe hash function (btoa can't handle non-ASCII characters)
  * 
  * @param path Relative path or file name
  * @param size File size in bytes
- * @param mtime Last modified time
  * @returns Unique file ID
  * 
  * @example
  * ```typescript
- * const fileId = generateFileIdFromPath("Music/song.mp3", 1024, 1234567890);
+ * const fileId = generateFileIdFromPath("Music/song.mp3", 1024);
  * ```
  */
-export function generateFileIdFromPath(path: string, size: number, mtime: number): string {
-  const hash = `${path}-${size}-${mtime}`;
+export function generateFileIdFromPath(path: string, size: number): string {
+  const hash = `${path}-${size}`;
   
   // Unicode-safe hash function
   // Convert string to bytes using TextEncoder, then hash
@@ -99,7 +99,7 @@ export function generateFileIdFromPath(path: string, size: number, mtime: number
  */
 export function generateFileId(file: File, relativePath?: string): string {
   const pathForId = relativePath || file.name;
-  return generateFileIdFromPath(pathForId, file.size, file.lastModified);
+  return generateFileIdFromPath(pathForId, file.size);
 }
 
 /**
