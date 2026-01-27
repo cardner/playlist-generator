@@ -255,6 +255,7 @@ async function* traverseDirectory(
 
             yield {
               file,
+              handle: fileHandle,
               trackFileId,
               relativePath: normalizedPath,
               extension,

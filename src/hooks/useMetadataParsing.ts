@@ -30,6 +30,11 @@ import { saveTrackMetadata, updateScanRun, removeTrackMetadata } from "@/db/stor
 import { detectTempoForLibrary } from "@/features/library/metadata-enhancement";
 import { isQuotaExceededError, getStorageQuotaInfo } from "@/db/storage-errors";
 import {
+  applySidecarEnhancements,
+  applySidecarToResults,
+  readSidecarMetadataForTracks,
+} from "@/features/library/metadata-sidecar";
+import {
   saveProcessingCheckpoint,
   loadProcessingCheckpoint,
   deleteProcessingCheckpoint,
@@ -85,6 +90,12 @@ export interface UseMetadataParsingReturn {
     root: LibraryRoot,
     libraryRootId: string,
     scanRunId: string
+  ) => Promise<void>;
+  /** Process only unprocessed tracks (fileIndex minus tracks) */
+  handleProcessUnprocessed: (
+    root: LibraryRoot,
+    libraryRootId: string,
+    scanRunId?: string
   ) => Promise<void>;
   /** Clear the current error */
   clearError: () => void;
@@ -223,6 +234,7 @@ export function useMetadataParsing(
 
         // Use batched parsing for large libraries to prevent timeouts
         const orderedFiles = reorderLibraryFiles(entriesToParse, libraryFiles);
+        const tempoTrackFileIds = entriesToParse.map((entry) => entry.trackFileId);
         const totalEntries = sortedEntries.length;
         const useBatched = orderedFiles.length > 1000;
         let lastSavedIndex = processedOffset - 1;
@@ -305,7 +317,7 @@ export function useMetadataParsing(
           if (collectResults) {
             setMetadataResults(results);
           } else {
-            setMetadataResults(null);
+            setMetadataResults([]);
           }
 
           // Verify final count (tracks were saved incrementally during batching)
@@ -340,6 +352,12 @@ export function useMetadataParsing(
             concurrency
           );
 
+          const sidecarMap = await readSidecarMetadataForTracks(
+            libraryRootId,
+            results.map((result) => result.trackFileId)
+          );
+          results = applySidecarToResults(results, sidecarMap);
+
           successCount = results.filter((r) => !r.error && r.tags).length;
           errorCount = results.filter((r) => r.error).length;
 
@@ -354,6 +372,8 @@ export function useMetadataParsing(
                 // Progress callback - UI updates handled by onMetadataProgress
               }
             );
+
+            await applySidecarEnhancements(libraryRootId, sidecarMap);
 
             // Verify data was saved successfully
             const { getTracks } = await import("@/db/storage");
@@ -406,7 +426,8 @@ export function useMetadataParsing(
         const deviceMemory = typeof navigator !== "undefined" ? (navigator as Navigator & { deviceMemory?: number }).deviceMemory : undefined;
         const tempoBatchSize =
           isStandalone && deviceMemory && deviceMemory <= 4 ? 2 : 5;
-        const isLargeLibrary = orderedFiles.length > 10000;
+        const tempoTargetCount = tempoTrackFileIds.length;
+        const isLargeLibrary = (tempoTargetCount || orderedFiles.length) > 10000;
         const isLowMemoryStandalone = isStandalone && deviceMemory && deviceMemory <= 4;
         let shouldDetectTempo = true;
 
@@ -416,9 +437,17 @@ export function useMetadataParsing(
           );
         }
 
+        if (tempoTargetCount === 0) {
+          logger.info("Tempo detection skipped: no new tracks to process.");
+          setIsDetectingTempo(false);
+          setTempoProgress(null);
+          onParseCompleteRef.current?.();
+          return;
+        }
+
         if (!shouldDetectTempo) {
           logger.info(
-            `Tempo detection skipped: standalone=${isStandalone}, deviceMemory=${deviceMemory ?? "unknown"}, librarySize=${orderedFiles.length}`
+            `Tempo detection skipped: standalone=${isStandalone}, deviceMemory=${deviceMemory ?? "unknown"}, librarySize=${tempoTargetCount || orderedFiles.length}`
           );
           setIsDetectingTempo(false);
           setTempoProgress(null);
@@ -451,7 +480,8 @@ export function useMetadataParsing(
               };
             }
           },
-          tempoBatchSize
+          tempoBatchSize,
+          tempoTrackFileIds
         )
           .then((summary) => {
             logger.info(
@@ -549,6 +579,44 @@ export function useMetadataParsing(
     [handleParseMetadata]
   );
 
+  const handleProcessUnprocessed = useCallback(
+    async (root: LibraryRoot, libraryRootId: string, scanRunIdOverride?: string) => {
+      const { getFileIndexEntries, getTracks } = await import("@/db/storage");
+      const [entries, tracks] = await Promise.all([
+        getFileIndexEntries(libraryRootId),
+        getTracks(libraryRootId),
+      ]);
+      const processedIds = new Set(tracks.map((track) => track.trackFileId));
+      const unprocessedEntries = entries.filter(
+        (entry) => !processedIds.has(entry.trackFileId)
+      );
+
+      const scanResult: ScanResult = {
+        total: entries.length,
+        added: 0,
+        changed: 0,
+        removed: 0,
+        duration: 0,
+        entries: unprocessedEntries.map((entry) => ({
+          trackFileId: entry.trackFileId,
+          relativePath: entry.relativePath,
+          name: entry.name,
+          extension: entry.extension,
+          size: entry.size,
+          mtime: entry.mtime,
+        })),
+      };
+
+      await handleParseMetadata(
+        scanResult,
+        root,
+        libraryRootId,
+        scanRunIdOverride
+      );
+    },
+    [handleParseMetadata]
+  );
+
   return {
     isParsingMetadata,
     metadataResults,
@@ -558,6 +626,7 @@ export function useMetadataParsing(
     error,
     handleParseMetadata,
     handleResumeProcessing,
+    handleProcessUnprocessed,
     clearError,
     clearMetadataResults,
   };

@@ -203,6 +203,21 @@ export async function deleteCollection(id: string): Promise<void> {
     const { deleteCheckpointsForLibrary } = await import("./storage-scan-checkpoints");
     await deleteCheckpointsForLibrary(id);
 
+    // Delete all writeback checkpoints for this collection
+    const { deleteWritebackCheckpointsForLibrary } = await import(
+      "./storage-writeback-checkpoints"
+    );
+    await deleteWritebackCheckpointsForLibrary(id);
+
+    // Delete writeback status records for this collection
+    if (db.trackWritebacks) {
+      const writebacks = await db.trackWritebacks.where("libraryRootId").equals(id).toArray();
+      const writebackIds = writebacks.map((record) => record.id);
+      if (writebackIds.length > 0) {
+        await db.trackWritebacks.bulkDelete(writebackIds);
+      }
+    }
+
     // Delete saved playlists for this collection
     const playlists = await db.savedPlaylists.where("libraryRootId").equals(id).toArray();
     const playlistIds = playlists.map(p => p.id);

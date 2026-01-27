@@ -26,6 +26,8 @@ export interface LibraryRoot {
  */
 export interface LibraryFile {
   file: File;
+  /** File handle (handle mode only, required for writeback) */
+  handle?: FileSystemFileHandle;
   trackFileId: string; // Unique identifier for the file
   relativePath?: string; // Relative path from library root (handle mode)
   extension: string; // File extension (lowercase)

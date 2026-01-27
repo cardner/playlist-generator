@@ -63,8 +63,10 @@ import { TempoDetectionProgress } from "./TempoDetectionProgress";
 import { InterruptedScanBanner } from "./InterruptedScanBanner";
 import { useLibraryScanning } from "@/hooks/useLibraryScanning";
 import { useMetadataParsing } from "@/hooks/useMetadataParsing";
+import { useMetadataWriteback } from "@/hooks/useMetadataWriteback";
 import { getResumableScans } from "@/db/storage-scan-checkpoints";
 import { getInterruptedProcessingCheckpoints } from "@/db/storage-processing-checkpoints";
+import { getInterruptedWritebackCheckpoints } from "@/db/storage-writeback-checkpoints";
 import { logger } from "@/lib/logger";
 
 interface LibraryScannerProps {
@@ -96,6 +98,12 @@ export function LibraryScanner({
     scanRunId: string;
     libraryRootId: string;
     lastProcessedPath?: string;
+  } | null>(null);
+  const [unprocessedCount, setUnprocessedCount] = useState<number | null>(null);
+  const [writebackCheckpoint, setWritebackCheckpoint] = useState<{
+    writebackRunId: string;
+    libraryRootId: string;
+    lastWrittenPath?: string;
   } | null>(null);
 
   // Use hooks for scanning and metadata parsing logic
@@ -131,12 +139,19 @@ export function LibraryScanner({
     error: parseError,
     handleParseMetadata,
       handleResumeProcessing,
+      handleProcessUnprocessed,
     clearError: clearParseError,
+    clearMetadataResults,
   } = useMetadataParsing({
     onParseComplete: onScanComplete,
     onProcessingProgress,
     scanRunId,
   });
+
+  const {
+    isWriting: isWritingWriteback,
+    handleResumeWriteback,
+  } = useMetadataWriteback();
 
   const renderProcessingResumeBanner = () => {
     if (
@@ -200,12 +215,124 @@ export function LibraryScanner({
     );
   };
 
+  const renderUnprocessedBanner = () => {
+    if (
+      !libraryRoot ||
+      libraryRoot.mode !== "handle" ||
+      permissionStatus !== "granted" ||
+      unprocessedCount === null ||
+      unprocessedCount === 0
+    ) {
+      return null;
+    }
+
+    return (
+      <div className="bg-blue-500/10 border border-blue-500/20 rounded-sm p-4">
+        <div className="flex items-start gap-3">
+          <div className="size-8 bg-blue-500/20 rounded-sm flex items-center justify-center shrink-0">
+            <svg className="size-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2" />
+            </svg>
+          </div>
+          <div className="flex-1">
+            <h3 className="text-blue-500 font-medium mb-1">Tracks Pending Processing</h3>
+            <p className="text-app-secondary text-sm mb-3">
+              {unprocessedCount} scanned tracks have not been processed yet.
+            </p>
+            <button
+              onClick={() => {
+                clearMetadataResults();
+                clearParseError();
+                if (libraryRootId) {
+                  handleProcessUnprocessed(
+                    libraryRoot,
+                    libraryRootId,
+                    scanRunId || undefined
+                  );
+                }
+              }}
+              disabled={!libraryRootId}
+              className="px-3 py-2 bg-blue-500 text-white rounded-sm text-xs uppercase tracking-wider hover:bg-blue-400 transition-colors"
+            >
+              {libraryRootId ? "Process Pending Tracks" : "Loading Library..."}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderWritebackResumeBanner = () => {
+    if (!writebackCheckpoint || isWritingWriteback || !libraryRoot) {
+      return null;
+    }
+
+    return (
+      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4 rounded">
+        <div className="flex items-start">
+          <div className="flex-shrink-0">
+            <svg
+              className="h-5 w-5 text-yellow-400"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fillRule="evenodd"
+                d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </div>
+          <div className="ml-3 flex-1">
+            <h3 className="text-sm font-medium text-yellow-800">
+              Metadata Sync Interrupted
+            </h3>
+            <div className="mt-2 text-sm text-yellow-700">
+              <p>
+                Metadata sync was interrupted. You can resume from where it
+                left off.
+              </p>
+              {writebackCheckpoint.lastWrittenPath && (
+                <p className="mt-2 text-xs text-yellow-700">
+                  Last synced: {writebackCheckpoint.lastWrittenPath}
+                </p>
+              )}
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleResumeWriteback(
+                      libraryRoot,
+                      writebackCheckpoint.libraryRootId,
+                      writebackCheckpoint.writebackRunId
+                    )
+                  }
+                  className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
+                >
+                  Resume Metadata Sync
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Wrapper for handleScan that triggers scanning
   const handleScan = useCallback(async () => {
+    clearMetadataResults();
+    clearParseError();
     await handleScanInternal();
     // Metadata parsing will be triggered automatically by useEffect below
     // when scanResult becomes available
-  }, [handleScanInternal]);
+  }, [clearMetadataResults, clearParseError, handleScanInternal]);
+
+  const handleRescanWithReset = useCallback(async () => {
+    clearMetadataResults();
+    clearParseError();
+    await handleRescan();
+  }, [clearMetadataResults, clearParseError, handleRescan]);
 
   // Combine errors from scanning and parsing
   const error = scanError || parseError;
@@ -303,16 +430,29 @@ export function LibraryScanner({
           } else {
             setProcessingCheckpoint(null);
           }
+          const writebacks = await getInterruptedWritebackCheckpoints(matchingRoot.id);
+          if (writebacks.length > 0) {
+            const mostRecentWriteback = writebacks[writebacks.length - 1];
+            setWritebackCheckpoint({
+              writebackRunId: mostRecentWriteback.writebackRunId,
+              libraryRootId: mostRecentWriteback.libraryRootId,
+              lastWrittenPath: mostRecentWriteback.lastWrittenPath,
+            });
+          } else {
+            setWritebackCheckpoint(null);
+          }
         } else {
           setDetectedResumableScanRunId(null);
           setDetectedResumableLastPath(null);
           setProcessingCheckpoint(null);
+          setWritebackCheckpoint(null);
         }
       } catch (error) {
         logger.error("Failed to check for interrupted scans:", error);
         setDetectedResumableScanRunId(null);
         setDetectedResumableLastPath(null);
         setProcessingCheckpoint(null);
+        setWritebackCheckpoint(null);
       } finally {
         setHasCheckedResumable(true);
       }
@@ -330,6 +470,7 @@ export function LibraryScanner({
       if (rootId) {
         clearScanResult();
         clearParseError();
+        clearMetadataResults();
         setCurrentRootId(rootId);
         setHasCheckedResumable(false);
         // If this is a new root (not initial mount), mark as new selection
@@ -345,6 +486,32 @@ export function LibraryScanner({
       }
     }
   }, [libraryRoot, currentRootId, onNewSelection, isInitialMount, clearScanResult, clearParseError]);
+
+  useEffect(() => {
+    const updateProcessingStatus = async () => {
+      if (!libraryRootId) {
+        setUnprocessedCount(null);
+        return;
+      }
+      try {
+        const { getFileIndexEntries, getTracks } = await import("@/db/storage");
+        const [entries, tracks] = await Promise.all([
+          getFileIndexEntries(libraryRootId),
+          getTracks(libraryRootId),
+        ]);
+        const processedIds = new Set(tracks.map((track) => track.trackFileId));
+        const missingCount = entries.filter(
+          (entry) => !processedIds.has(entry.trackFileId)
+        ).length;
+        setUnprocessedCount(missingCount);
+      } catch (error) {
+        logger.error("Failed to compute unprocessed tracks:", error);
+        setUnprocessedCount(null);
+      }
+    };
+
+    updateProcessingStatus();
+  }, [libraryRootId, scanResult, metadataResults, isParsingMetadata]);
 
   // Metadata parsing is now handled by useMetadataParsing hook
 
@@ -370,6 +537,7 @@ export function LibraryScanner({
       hasCheckedResumable &&
       !detectedResumableScanRunId &&
       !processingCheckpoint &&
+      (unprocessedCount === null || unprocessedCount === 0) &&
       rootId === currentRootId &&
       hasExistingScans === false // Only auto-scan if we know there are NO existing scans
     );
@@ -389,6 +557,7 @@ export function LibraryScanner({
     detectedResumableScanRunId,
     hasCheckedResumable,
     processingCheckpoint,
+    unprocessedCount,
     currentRootId,
     hasExistingScans,
     triggerScan,
@@ -422,6 +591,8 @@ export function LibraryScanner({
           />
         )}
         {renderProcessingResumeBanner()}
+        {renderUnprocessedBanner()}
+        {renderWritebackResumeBanner()}
         <div className="bg-app-surface rounded-sm border border-app-border p-6">
           <div className="mb-4">
             <p className="text-app-secondary text-xs uppercase tracking-wider mb-1">
@@ -502,7 +673,10 @@ export function LibraryScanner({
   }
 
   if (scanResult) {
-    const isComplete = !isParsingMetadata && metadataResults !== null;
+    const isComplete =
+      !isParsingMetadata &&
+      metadataResults !== null &&
+      (unprocessedCount === null || unprocessedCount === 0);
     
     return (
       <div className="space-y-4 ">
@@ -517,6 +691,8 @@ export function LibraryScanner({
           />
         )}
         {renderProcessingResumeBanner()}
+        {renderUnprocessedBanner()}
+        {renderWritebackResumeBanner()}
 
         {/* Show folder info */}
         <div className="bg-app-surface rounded-sm border border-app-border p-6">
@@ -571,7 +747,7 @@ export function LibraryScanner({
           </div>
         ) : null}
 
-        <ScanResults result={scanResult} onRescan={handleRescan} />
+        <ScanResults result={scanResult} onRescan={handleRescanWithReset} />
         
         {/* Metadata parsing progress is shown via MetadataProgress component above */}
         {/* This section is kept for when parsing completes but results aren't ready yet */}
@@ -608,7 +784,7 @@ export function LibraryScanner({
                     Create Playlist
                   </a>
                   <button
-                    onClick={handleRescan}
+                    onClick={handleRescanWithReset}
                     className="px-4 py-2 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm border border-app-border"
                   >
                     Rescan Library
@@ -653,6 +829,8 @@ export function LibraryScanner({
             />
           )}
           {renderProcessingResumeBanner()}
+          {renderUnprocessedBanner()}
+          {renderWritebackResumeBanner()}
 
           <div className="bg-app-surface rounded-sm border border-app-border p-6">
             <div className="mb-4">
@@ -671,7 +849,7 @@ export function LibraryScanner({
                   </p>
                 </div>
                 <button
-                  onClick={handleScan}
+                  onClick={handleRescanWithReset}
                   disabled={isScanning || hasExistingScans === null}
                   className="px-6 py-3 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
                 >
@@ -715,6 +893,8 @@ export function LibraryScanner({
             />
           )}
           {renderProcessingResumeBanner()}
+          {renderUnprocessedBanner()}
+          {renderWritebackResumeBanner()}
 
           <div className="bg-app-surface rounded-sm border border-app-border p-6">
             <div className="mb-4">

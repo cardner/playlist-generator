@@ -654,12 +654,14 @@ export async function enhanceSelectedTracks(
  * @param libraryRootId - Library root ID to detect tempo for
  * @param onProgress - Optional progress callback
  * @param batchSize - Number of tracks to process per batch (default: 5)
+ * @param trackFileIds - Optional list of track file IDs to limit detection scope
  * @returns Promise resolving to detection result
  */
 export async function detectTempoForLibrary(
   libraryRootId: string,
   onProgress?: (progress: { processed: number; total: number; detected: number; currentTrack?: string }) => void,
-  batchSize: number = 5
+  batchSize: number = 5,
+  trackFileIds?: string[]
 ): Promise<{ processed: number; detected: number; errors: Array<{ trackId: string; error: string }> }> {
   const result = {
     processed: 0,
@@ -673,11 +675,18 @@ export async function detectTempoForLibrary(
       .where("libraryRootId")
       .equals(libraryRootId)
       .toArray();
+
+    const trackFilter = trackFileIds && trackFileIds.length > 0
+      ? new Set(trackFileIds)
+      : null;
+    const scopedTracks = trackFilter
+      ? allTracks.filter((track) => trackFilter.has(track.trackFileId))
+      : allTracks;
     
     // Filter tracks that need tempo detection:
     // - No BPM in tech.bpm
     // - Or BPM exists but no confidence/source (old data)
-    const tracksNeedingDetection = allTracks.filter(track => {
+    const tracksNeedingDetection = scopedTracks.filter(track => {
       if (!track.tech?.bpm) {
         return true; // No BPM at all
       }
@@ -698,6 +707,10 @@ export async function detectTempoForLibrary(
 
     const total = tracksNeedingDetection.length;
     logger.info(`Detecting tempo for ${total} tracks missing BPM data`);
+
+    if (trackFilter && scopedTracks.length === 0) {
+      return result;
+    }
 
     // Process in batches with bounded concurrency
     for (let i = 0; i < tracksNeedingDetection.length; i += batchSize) {
