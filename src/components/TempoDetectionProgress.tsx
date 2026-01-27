@@ -28,6 +28,9 @@ export function TempoDetectionProgress({
     <div className="">
       <div className="bg-app-surface rounded-sm border border-app-border p-8 md:p-12">
         <div className="text-center">
+          <p className="text-app-tertiary text-xs uppercase tracking-wider mb-2">
+            Step 3 of 3
+          </p>
           <div className="flex items-center justify-center gap-3 text-accent-primary mb-6">
             <Loader2 className="size-6 animate-spin" />
             <span className="uppercase tracking-wider text-lg font-medium">

@@ -54,6 +54,15 @@ export {
   updateTracksTempo,
 } from "./storage-tracks";
 
+// Re-export writeback status operations
+export {
+  markTrackWritebackPending,
+  clearTrackWritebackPending,
+  setTrackWritebackError,
+  getPendingWritebacks,
+  getWritebackStatuses,
+} from "./storage-writeback";
+
 // Re-export scan run operations
 export {
   createScanRun,
@@ -108,6 +117,8 @@ export async function clearLibraryData(): Promise<void> {
     db.fileIndex.clear(),
     db.tracks.clear(),
     db.scanRuns.clear(),
+    db.trackWritebacks?.clear?.(),
+    db.writebackCheckpoints?.clear?.(),
     db.directoryHandles.clear(),
   ]);
 }

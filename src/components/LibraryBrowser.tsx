@@ -37,8 +37,8 @@
 "use client";
 
 import { useState, useEffect, useMemo, Fragment, useRef, useCallback } from "react";
-import { Edit2, Play, Pause, Loader2 } from "lucide-react";
-import type { TrackRecord } from "@/db/schema";
+import { Edit2, Play, Pause, Loader2, Clock, AlertTriangle, Check } from "lucide-react";
+import type { TrackRecord, TrackWritebackRecord } from "@/db/schema";
 import {
   getAllTracks,
   getTracks,
@@ -47,6 +47,7 @@ import {
   getAllGenres,
   getAllGenresWithStats,
   clearLibraryData,
+  getWritebackStatuses,
 } from "@/db/storage";
 import { getCurrentLibraryRoot } from "@/db/storage";
 import type { GenreWithStats } from "@/features/library/genre-normalization";
@@ -55,6 +56,8 @@ import { TrackMetadataEditor } from "./TrackMetadataEditor";
 import { InlineAudioPlayer, type InlineAudioPlayerRef } from "./InlineAudioPlayer";
 import { searchTrackSample } from "@/features/audio-preview/platform-searcher";
 import { useAudioPreviewState } from "@/hooks/useAudioPreviewState";
+import { useMetadataWriteback } from "@/hooks/useMetadataWriteback";
+import type { LibraryRoot } from "@/lib/library-selection";
 import { logger } from "@/lib/logger";
 
 type SortField = "title" | "artist" | "duration";
@@ -75,8 +78,12 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
   const [genreMappings, setGenreMappings] = useState<{ originalToNormalized: Map<string, string> } | null>(null);
   const [isLoading, setIsLoading] = useState(false); // Start as false - only load when we have a root
   const [libraryRootId, setLibraryRootId] = useState<string | undefined>();
+  const [libraryRoot, setLibraryRoot] = useState<LibraryRoot | null>(null);
   const [hasLibrary, setHasLibrary] = useState<boolean | null>(null); // null = checking, false = no library, true = has library
   const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
+  const [writebackStatuses, setWritebackStatuses] = useState<Map<string, TrackWritebackRecord>>(
+    new Map()
+  );
 
   // Audio preview state
   const audioPreviewState = useAudioPreviewState();
@@ -94,6 +101,19 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
   } = audioPreviewState;
   const audioRefs = useRef<Map<string, InlineAudioPlayerRef>>(new Map());
 
+  const {
+    isWriting,
+    writebackProgress,
+    error: writebackError,
+    handleWriteback,
+    isValidating,
+    validationResults,
+    validationError,
+    handleValidateWriteback,
+    clearError: clearWritebackError,
+    clearValidation,
+  } = useMetadataWriteback();
+
   // Check if we have a library root before loading
   useEffect(() => {
     async function checkLibrary() {
@@ -101,6 +121,15 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
         const root = await getCurrentLibraryRoot();
         setHasLibrary(!!root);
         setLibraryRootId(root?.id);
+        setLibraryRoot(
+          root
+            ? {
+                mode: root.mode,
+                name: root.name,
+                handleId: root.handleRef,
+              }
+            : null
+        );
       } catch (err) {
         setHasLibrary(false);
       }
@@ -131,6 +160,7 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
       setGenres([]);
       setGenresWithStats([]);
       setGenreMappings(null);
+      setWritebackStatuses(new Map());
       setIsLoading(false);
     }
   }, [refreshTrigger, hasLibrary]);
@@ -195,6 +225,16 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
     });
   }, [tracks, searchQuery, selectedGenre, sortField, sortDirection, genreMappings]);
 
+  const pendingWritebackCount = useMemo(() => {
+    let count = 0;
+    writebackStatuses.forEach((record) => {
+      if (record.pending) {
+        count += 1;
+      }
+    });
+    return count;
+  }, [writebackStatuses]);
+
   async function loadTracks() {
     setIsLoading(true);
     try {
@@ -214,6 +254,11 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
       // Load tracks for the current collection only
       const collectionTracks = await getTracks(root.id);
       setTracks(collectionTracks);
+
+      const writebackRecords = await getWritebackStatuses(root.id);
+      setWritebackStatuses(
+        new Map(writebackRecords.map((record) => [record.trackFileId, record]))
+      );
 
       // Load normalized genres with stats
       const genresStats = await getAllGenresWithStats(root.id);
@@ -249,6 +294,31 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
     } catch (error) {
       logger.error("Failed to clear library:", error);
       alert("Failed to clear library data.");
+    }
+  }
+
+  async function handleWritebackClick() {
+    if (!libraryRoot || !libraryRootId) {
+      return;
+    }
+    try {
+      clearWritebackError();
+      await handleWriteback(libraryRoot, libraryRootId);
+      await loadTracks();
+    } catch (error) {
+      logger.error("Failed to start metadata sync:", error);
+    }
+  }
+
+  async function handleValidateWritebackClick() {
+    if (!libraryRoot || !libraryRootId) {
+      return;
+    }
+    try {
+      clearValidation();
+      await handleValidateWriteback(libraryRoot, libraryRootId);
+    } catch (error) {
+      logger.error("Failed to validate writeback:", error);
     }
   }
 
@@ -475,16 +545,99 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
         </div>
       </div>
 
+      {writebackError && (
+        <div className="bg-red-500/10 border border-red-500/20 rounded-sm p-4 text-sm text-red-500">
+          {writebackError}
+        </div>
+      )}
+
+      {validationError && (
+        <div className="bg-red-500/10 border border-red-500/20 rounded-sm p-4 text-sm text-red-500">
+          {validationError}
+        </div>
+      )}
+
+      {validationResults && (
+        <div className="bg-app-surface rounded-sm border border-app-border p-4 text-sm text-app-secondary">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-app-primary font-medium">Writeback Validation</span>
+            <button
+              type="button"
+              onClick={clearValidation}
+              className="text-xs text-app-tertiary hover:text-app-secondary uppercase tracking-wider"
+            >
+              Clear
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {validationResults.map((result) => (
+              <div
+                key={result.extension}
+                className={`flex items-center justify-between px-3 py-2 rounded-sm border ${
+                  result.success
+                    ? "border-green-500/20 bg-green-500/10 text-green-500"
+                    : "border-red-500/20 bg-red-500/10 text-red-500"
+                }`}
+              >
+                <span className="uppercase text-xs tracking-wider">{result.extension}</span>
+                <span className="text-xs">
+                  {result.success ? "ok" : result.message || "failed"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {writebackProgress && (
+        <div className="bg-app-surface rounded-sm border border-app-border p-4 text-sm text-app-secondary">
+          <div className="flex items-center justify-between">
+            <span>
+              Syncing metadata:{" "}
+              <span className="text-app-primary font-medium">
+                {writebackProgress.processed}/{writebackProgress.total}
+              </span>
+              {writebackProgress.errors > 0 && (
+                <span className="ml-2 text-red-500">
+                  ({writebackProgress.errors} errors)
+                </span>
+              )}
+            </span>
+            {writebackProgress.currentFile && (
+              <span className="text-xs text-app-tertiary truncate max-w-[50%]">
+                {writebackProgress.currentFile}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Track List */}
       <div className="bg-app-surface rounded-sm shadow-2xl p-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-app-primary">Tracks</h2>
-          <button
-            onClick={handleClearLibrary}
-            className="text-xs text-red-500 hover:text-red-400 uppercase tracking-wider"
-          >
-            Clear Library Data
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleWritebackClick}
+              disabled={!pendingWritebackCount || isWriting}
+              className="text-xs text-accent-primary hover:text-accent-hover uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Sync Metadata to Files{pendingWritebackCount ? ` (${pendingWritebackCount})` : ""}
+            </button>
+            <button
+              onClick={handleValidateWritebackClick}
+              disabled={isValidating}
+              className="text-xs text-app-tertiary hover:text-app-secondary uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isValidating ? "Validating..." : "Validate Writeback"}
+            </button>
+            <button
+              onClick={handleClearLibrary}
+              className="text-xs text-red-500 hover:text-red-400 uppercase tracking-wider"
+            >
+              Clear Library Data
+            </button>
+          </div>
         </div>
 
         {filteredTracks.length === 0 ? (
@@ -526,6 +679,14 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
                 {filteredTracks.map((track) => {
                   const isEditing = editingTrackId === track.id;
                   const currentGenres = track.enhancedMetadata?.genres || track.tags.genres || [];
+                  const writebackStatus = writebackStatuses.get(track.trackFileId);
+                  const writebackState = writebackStatus?.pending
+                    ? writebackStatus.lastWritebackError
+                      ? "error"
+                      : "pending"
+                    : writebackStatus?.lastWritebackAt
+                    ? "synced"
+                    : null;
                   
                   return (
                     <Fragment key={track.trackFileId}>
@@ -589,14 +750,42 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
                           )}
                         </td>
                         <td className="py-2 px-4">
-                          <button
-                            onClick={() => setEditingTrackId(isEditing ? null : track.id)}
-                            className="p-1.5 hover:bg-app-surface rounded-sm transition-colors text-app-secondary hover:text-accent-primary"
-                            aria-label="Edit metadata"
-                            title="Edit metadata"
-                          >
-                            <Edit2 className="size-4" />
-                          </button>
+                          <div className="flex items-center gap-2">
+                            {writebackState === "pending" && (
+                              <span title="Metadata sync pending">
+                                <Clock
+                                  className="size-4 text-yellow-500"
+                                  aria-label="Metadata sync pending"
+                                />
+                              </span>
+                            )}
+                            {writebackState === "error" && (
+                              <span
+                                title={writebackStatus?.lastWritebackError || "Metadata sync failed"}
+                              >
+                                <AlertTriangle
+                                  className="size-4 text-red-500"
+                                  aria-label="Metadata sync failed"
+                                />
+                              </span>
+                            )}
+                            {writebackState === "synced" && (
+                              <span title="Metadata synced to file or sidecar">
+                                <Check
+                                  className="size-4 text-green-500"
+                                  aria-label="Metadata synced to file or sidecar"
+                                />
+                              </span>
+                            )}
+                            <button
+                              onClick={() => setEditingTrackId(isEditing ? null : track.id)}
+                              className="p-1.5 hover:bg-app-surface rounded-sm transition-colors text-app-secondary hover:text-accent-primary"
+                              aria-label="Edit metadata"
+                              title="Edit metadata"
+                            >
+                              <Edit2 className="size-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                       {isEditing && (

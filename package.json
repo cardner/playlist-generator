@@ -17,6 +17,8 @@
     "update-changelog": "node scripts/update-changelog.js"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@tanstack/react-virtual": "^3.13.18",
     "@visx/axis": "^3.12.0",
     "@visx/event": "^3.12.0",
@@ -24,6 +26,7 @@
     "@visx/responsive": "^3.12.0",
     "@visx/scale": "^3.12.0",
     "@visx/shape": "^3.12.0",
+    "browser-id3-writer": "^6.3.1",
     "clsx": "^2.1.1",
     "d3-shape": "^3.2.0",
     "dexie": "^4.2.1",

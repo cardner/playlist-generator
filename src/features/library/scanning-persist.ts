@@ -9,6 +9,7 @@ import {
   buildFileIndex,
   diffFileIndex,
   type FileIndex,
+  type FileIndexEntry,
   type ScanResult,
   type ScanProgressCallback,
   type ScanCheckpoint,
@@ -207,7 +208,16 @@ export async function scanLibraryWithPersistence(
     lastScannedPath = checkpoint.lastScannedPath;
 
     // Calculate diff
-    const diff = diffFileIndex(prevIndex, nextIndex);
+    let diff = diffFileIndex(prevIndex, nextIndex);
+    const moveDetection = detectMovedEntries(diff.removed, diff.added);
+    if (moveDetection.moved.length > 0) {
+      await applyMovedTrackIds(libraryRoot.id, moveDetection.moved);
+      diff = {
+        added: moveDetection.added,
+        changed: diff.changed,
+        removed: moveDetection.removed,
+      };
+    }
 
     // Persist changes (with progress tracking for large libraries)
     const nextEntries = Array.from(nextIndex.values());
@@ -376,6 +386,121 @@ async function migrateTrackFileIdsIfNeeded(
   });
 
   return trackIdMap;
+}
+
+function detectMovedEntries(
+  removed: FileIndexEntry[],
+  added: FileIndexEntry[]
+): {
+  moved: Array<{ from: FileIndexEntry; to: FileIndexEntry }>;
+  removed: FileIndexEntry[];
+  added: FileIndexEntry[];
+} {
+  const moved: Array<{ from: FileIndexEntry; to: FileIndexEntry }> = [];
+  const remainingAdded = [...added];
+  const remainingRemoved: FileIndexEntry[] = [];
+  const addedByKey = new Map<string, FileIndexEntry[]>();
+
+  for (const entry of added) {
+    const key = `${entry.size}|${entry.mtime}`;
+    if (!addedByKey.has(key)) {
+      addedByKey.set(key, []);
+    }
+    addedByKey.get(key)!.push(entry);
+  }
+
+  for (const removedEntry of removed) {
+    const key = `${removedEntry.size}|${removedEntry.mtime}`;
+    const candidates = addedByKey.get(key);
+    if (!candidates || candidates.length === 0) {
+      remainingRemoved.push(removedEntry);
+      continue;
+    }
+
+    let match: FileIndexEntry | undefined;
+    if (candidates.length === 1) {
+      match = candidates[0];
+    } else {
+      const nameMatches = candidates.filter((candidate) => candidate.name === removedEntry.name);
+      if (nameMatches.length === 1) {
+        match = nameMatches[0];
+      }
+    }
+
+    if (match) {
+      moved.push({ from: removedEntry, to: match });
+      const index = candidates.indexOf(match);
+      if (index >= 0) {
+        candidates.splice(index, 1);
+      }
+      const remainingIndex = remainingAdded.indexOf(match);
+      if (remainingIndex >= 0) {
+        remainingAdded.splice(remainingIndex, 1);
+      }
+    } else {
+      remainingRemoved.push(removedEntry);
+    }
+  }
+
+  return { moved, removed: remainingRemoved, added: remainingAdded };
+}
+
+async function applyMovedTrackIds(
+  libraryRootId: string,
+  moved: Array<{ from: FileIndexEntry; to: FileIndexEntry }>
+): Promise<void> {
+  if (moved.length === 0) {
+    return;
+  }
+
+  const moveMap = new Map<string, string>();
+  for (const move of moved) {
+    moveMap.set(move.from.trackFileId, move.to.trackFileId);
+  }
+
+  const oldIds = Array.from(moveMap.keys());
+  await db.transaction("rw", [db.fileIndex, db.tracks, db.trackWritebacks], async () => {
+    const fileIndexIds = oldIds.map((id) => getCompositeId(id, libraryRootId));
+    await db.fileIndex.bulkDelete(fileIndexIds);
+
+    const tracksToUpdate = await db.tracks
+      .where("trackFileId")
+      .anyOf(oldIds)
+      .toArray();
+    if (tracksToUpdate.length > 0) {
+      const updatedTracks: TrackRecord[] = tracksToUpdate.map((track) => {
+        const mappedId = moveMap.get(track.trackFileId) ?? track.trackFileId;
+        return {
+          ...track,
+          trackFileId: mappedId,
+          id: getCompositeId(mappedId, track.libraryRootId),
+        };
+      });
+      const oldTrackIds = tracksToUpdate.map((track) => track.id);
+      await db.tracks.bulkPut(updatedTracks);
+      await db.tracks.bulkDelete(oldTrackIds);
+    }
+
+    if (db.trackWritebacks) {
+      const writebacksToUpdate = await db.trackWritebacks
+        .where("trackFileId")
+        .anyOf(oldIds)
+        .toArray();
+      if (writebacksToUpdate.length > 0) {
+        const updatedWritebacks = writebacksToUpdate.map((record) => {
+          const mappedId = moveMap.get(record.trackFileId) ?? record.trackFileId;
+          return {
+            ...record,
+            trackFileId: mappedId,
+            id: getCompositeId(mappedId, record.libraryRootId),
+          };
+        });
+        const oldWritebackIds = writebacksToUpdate.map((record) => record.id);
+        await db.trackWritebacks.bulkPut(updatedWritebacks);
+        await db.trackWritebacks.bulkDelete(oldWritebackIds);
+      }
+    }
+  });
 }
 
 

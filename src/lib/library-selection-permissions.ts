@@ -156,3 +156,35 @@ export async function requestLibraryPermission(
   }
 }
 
+/**
+ * Request write permission for a library root
+ *
+ * IMPORTANT: This must be called in response to a user action.
+ */
+export async function requestLibraryWritePermission(
+  root: LibraryRoot
+): Promise<PermissionStatus> {
+  if (root.mode !== "handle") {
+    return "denied";
+  }
+
+  try {
+    const handleId = root.handleId;
+    if (!handleId) {
+      logger.warn("No handleId found in library root, cannot request write permission");
+      return "prompt";
+    }
+    const handle = await getDirectoryHandle(handleId);
+    if (!handle) {
+      logger.warn(`Directory handle not found for handleId: ${handleId}`);
+      return "prompt";
+    }
+
+    const newStatus = await handle.requestPermission({ mode: "readwrite" });
+    return newStatus;
+  } catch (error) {
+    logger.error("Failed to request write permission:", error);
+    return "denied";
+  }
+}
+

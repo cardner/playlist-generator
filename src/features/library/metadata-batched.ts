@@ -10,6 +10,11 @@ import { parseMetadataForFiles, type MetadataProgressCallback } from "./metadata
 import type { MetadataResult } from "./metadata";
 import { saveTrackMetadata } from "@/db/storage";
 import { isQuotaExceededError, getStorageQuotaInfo } from "@/db/storage-errors";
+import {
+  applySidecarEnhancements,
+  applySidecarToResults,
+  readSidecarMetadataForTracks,
+} from "./metadata-sidecar";
 import { logger } from "@/lib/logger";
 
 export interface BatchedParseOptions {
@@ -108,7 +113,12 @@ export async function parseMetadataBatched(
     };
 
     try {
-      const results = await parseMetadataForFiles(batchFiles, batchOnProgress, concurrency);
+      let results = await parseMetadataForFiles(batchFiles, batchOnProgress, concurrency);
+      const sidecarMap = await readSidecarMetadataForTracks(
+        libraryRootId,
+        results.map((result) => result.trackFileId)
+      );
+      results = applySidecarToResults(results, sidecarMap);
       batchResults.push(...results);
       
       const batchSuccessCount = results.filter((r) => !r.error && r.tags).length;
@@ -129,6 +139,8 @@ export async function parseMetadataBatched(
           );
           
           totalSaved += batchSuccessCount;
+
+          await applySidecarEnhancements(libraryRootId, sidecarMap);
         } catch (err) {
           logger.error(`Error saving batch ${batchNumber}:`, err);
           

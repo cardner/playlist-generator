@@ -118,6 +118,7 @@ export async function getLibraryFilesForEntries(
           if (file.size === entry.size && file.lastModified === entry.mtime) {
             libraryFiles.push({
               file,
+              handle: fileHandle,
               trackFileId: entry.trackFileId,
               relativePath: entry.relativePath,
               extension: entry.extension,

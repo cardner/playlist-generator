@@ -206,7 +206,8 @@ export async function updateTracksTempo(
 export async function updateTrackMetadata(
   trackId: string,
   updates: Partial<EnhancedMetadata>,
-  isManualEdit: boolean = false
+  isManualEdit: boolean = false,
+  options?: { skipWriteback?: boolean }
 ): Promise<void> {
   const existing = await db.tracks.get(trackId);
   if (!existing) {
@@ -238,6 +239,17 @@ export async function updateTrackMetadata(
     enhancedMetadata: mergedEnhanced,
     updatedAt: now,
   });
+
+  if (!options?.skipWriteback) {
+    const { markTrackWritebackPending } = await import("./storage-writeback");
+    const { getWritebackFieldsFromEnhancedUpdates } = await import(
+      "@/features/library/metadata-writeback"
+    );
+    const fields = getWritebackFieldsFromEnhancedUpdates(updates);
+    if (fields.length > 0) {
+      await markTrackWritebackPending(existing.trackFileId, existing.libraryRootId, fields);
+    }
+  }
 }
 
 /**

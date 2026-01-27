@@ -384,6 +384,58 @@ export interface ProcessingCheckpointRecord {
 }
 
 /**
+ * Writeback status record stored in database
+ *
+ * Tracks pending metadata writeback fields and last sync status per track.
+ */
+export interface TrackWritebackRecord {
+  /** Composite primary key: `${trackFileId}-${libraryRootId}` */
+  id: string;
+  /** Track file ID */
+  trackFileId: string;
+  /** Library root ID */
+  libraryRootId: string;
+  /** Pending writeback fields */
+  pendingFields: string[];
+  /** Whether this track has pending writeback */
+  pending: boolean;
+  /** Timestamp of last successful writeback */
+  lastWritebackAt?: number;
+  /** Last writeback error message */
+  lastWritebackError?: string;
+  /** Last writeback target */
+  lastWritebackTarget?: "file" | "sidecar";
+  /** Timestamp when this record was updated */
+  updatedAt: number;
+}
+
+/**
+ * Writeback checkpoint record stored in database
+ *
+ * Tracks writeback progress to enable resuming interrupted writeback runs.
+ */
+export interface WritebackCheckpointRecord {
+  /** Unique identifier (writeback run id) */
+  id: string;
+  /** ID of the writeback run this checkpoint belongs to */
+  writebackRunId: string;
+  /** ID of the library root being processed */
+  libraryRootId: string;
+  /** Total entries scheduled for writeback */
+  totalEntries: number;
+  /** Last written index (0-indexed) */
+  lastWrittenIndex: number;
+  /** Last file path that was written (for resume context) */
+  lastWrittenPath?: string;
+  /** Number of errors encountered so far */
+  errors: number;
+  /** Timestamp when checkpoint was created (Unix epoch milliseconds) */
+  checkpointAt: number;
+  /** Whether writeback was interrupted (true) or is in progress (false) */
+  interrupted: boolean;
+}
+
+/**
  * Settings record stored in database
  * 
  * Key-value store for application settings. Used to persist user preferences
@@ -614,6 +666,7 @@ export interface SavedPlaylistRecord {
  * - Version 8: Added enhanced metadata support (musicbrainzId, enhancedMetadata, metadataEnhancementDate fields)
  * - Version 9: Added device profiles and sync manifests
  * - Version 10: Added processing checkpoints for metadata parsing
+ * - Version 11: Added metadata writeback status and checkpoints
  * 
  * @example
  * ```typescript
@@ -652,6 +705,10 @@ export class AppDatabase extends Dexie {
   scanCheckpoints!: Table<ScanCheckpointRecord, string>;
   /** Processing checkpoints table (for resuming metadata parsing) */
   processingCheckpoints!: Table<ProcessingCheckpointRecord, string>;
+  /** Track writeback status table */
+  trackWritebacks!: Table<TrackWritebackRecord, string>;
+  /** Writeback checkpoints table (for resuming writeback runs) */
+  writebackCheckpoints!: Table<WritebackCheckpointRecord, string>;
 
   constructor() {
     super("ai-playlist-generator");
@@ -881,6 +938,23 @@ export class AppDatabase extends Dexie {
       savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
       scanCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
       processingCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+      deviceProfiles: "id, createdAt, updatedAt",
+      deviceSyncManifests: "id, deviceId, playlistId, lastSyncedAt",
+    });
+
+    // Version 11: Add writeback status and checkpoints
+    this.version(11).stores({
+      libraryRoots: "id, createdAt",
+      fileIndex: "id, trackFileId, libraryRootId, name, extension, updatedAt",
+      tracks: "id, trackFileId, libraryRootId, updatedAt",
+      scanRuns: "id, libraryRootId, startedAt",
+      settings: "key",
+      directoryHandles: "id",
+      savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
+      scanCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+      processingCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+      trackWritebacks: "id, libraryRootId, pending, updatedAt",
+      writebackCheckpoints: "id, writebackRunId, libraryRootId, checkpointAt",
       deviceProfiles: "id, createdAt, updatedAt",
       deviceSyncManifests: "id, deviceId, playlistId, lastSyncedAt",
     });

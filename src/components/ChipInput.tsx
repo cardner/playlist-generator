@@ -40,11 +40,10 @@
 
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { X, AlertCircle, Loader2 } from "lucide-react";
 import type { GenreWithStats } from "@/features/library/genre-normalization";
 import { useDebounce } from "@/lib/hooks/useDebounce";
-import { useVirtualizer } from "@tanstack/react-virtual";
 
 export interface ChipInputProps {
   /** Current array of selected values */
@@ -93,9 +92,6 @@ export function ChipInput({
   const [searchResults, setSearchResults] = useState<string[]>([]);
   const [totalResultsCount, setTotalResultsCount] = useState<number | null>(null);
   
-  // Ref for virtual scrolling container
-  const parentRef = useRef<HTMLDivElement>(null);
-
   // Debounce the input value for async search
   const debouncedInputValue = useDebounce(inputValue, debounceDelay);
 
@@ -202,14 +198,6 @@ export function ChipInput({
     (isAsyncMode && inputValue.trim().length > 0 && inputValue.trim().length < minSearchLength)
   );
 
-  // Virtual scrolling for suggestion list
-  const virtualizer = useVirtualizer({
-    count: filteredSuggestions.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 40, // Estimated height per item (px)
-    overscan: 5, // Render 5 extra items outside viewport for smooth scrolling
-  });
-
   return (
     <div className="space-y-2">
       <div className="relative">
@@ -252,49 +240,25 @@ export function ChipInput({
               </div>
             ) : filteredSuggestions.length > 0 ? (
               <>
-                <div
-                  ref={parentRef}
-                  className="overflow-y-auto max-h-48"
-                  style={{ height: `${Math.min(virtualizer.getTotalSize(), 192)}px` }}
-                >
-                  <div
-                    style={{
-                      height: `${virtualizer.getTotalSize()}px`,
-                      width: '100%',
-                      position: 'relative',
-                    }}
-                  >
-                    {virtualizer.getVirtualItems().map((virtualItem) => {
-                      const suggestion = filteredSuggestions[virtualItem.index];
-                      const trackCount = getTrackCount(suggestion);
-                      return (
-                        <div
-                          key={virtualItem.key}
-                          style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            width: '100%',
-                            height: `${virtualItem.size}px`,
-                            transform: `translateY(${virtualItem.start}px)`,
-                          }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => handleAdd(suggestion)}
-                            className="w-full h-full px-4 py-2 text-left text-app-primary hover:bg-app-hover transition-colors flex items-center justify-between"
-                          >
-                            <span>{suggestion}</span>
-                            {trackCount !== undefined && (
-                              <span className="text-app-tertiary text-xs ml-2">
-                                ({trackCount} {trackCount === 1 ? 'track' : 'tracks'})
-                              </span>
-                            )}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
+                <div className="overflow-y-auto max-h-48">
+                  {filteredSuggestions.map((suggestion) => {
+                    const trackCount = getTrackCount(suggestion);
+                    return (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => handleAdd(suggestion)}
+                        className="w-full px-4 py-2 text-left text-app-primary hover:bg-app-hover transition-colors flex items-center justify-between"
+                      >
+                        <span>{suggestion}</span>
+                        {trackCount !== undefined && (
+                          <span className="text-app-tertiary text-xs ml-2">
+                            ({trackCount} {trackCount === 1 ? "track" : "tracks"})
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
                 {totalResultsCount !== null && filteredSuggestions.length === maxResults && (
                   <div className="px-4 py-2 text-app-tertiary text-xs border-t border-app-border">
