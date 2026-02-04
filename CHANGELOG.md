@@ -30,6 +30,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.0.0] - 2026-02-04
+
+### Breaking Changes
+
+- device sync and improved mood/activity mapping
+
+### Fixed
+
+- fix type error in playlist builder
+
+### Other Changes
+
+- Merge pull request #16 from cardner/usb-sync
+- Merge pull request #15 from cardner/usb-sync
+
 ## [0.13.0] - 2026-01-27
 
 ### Added
