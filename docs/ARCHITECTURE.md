@@ -110,15 +110,19 @@ src/
 │   │   ├── metadata.ts     # Metadata extraction
 │   │   ├── summarization.ts # Library statistics
 │   │   ├── tempo-detection.ts # BPM detection
-│   │   └── genre-normalization.ts # Genre normalization
+│   │   ├── genre-normalization.ts # Genre normalization
+│   │   ├── mood-mapping.ts # Mood tag normalization
+│   │   ├── activity-mapping.ts # Activity tag normalization
+│   │   └── activity-inference.ts # Activity inference (BPM/genres, LLM)
 │   ├── playlists/          # Playlist generation
 │   │   ├── strategy.ts     # LLM strategy generation
-│   │   ├── matching-engine.ts # Track selection
-│   │   ├── scoring.ts      # Track scoring functions
-│   │   ├── track-selection.ts # Selection logic
-│   │   ├── ordering.ts     # Track ordering
+│   │   ├── matching-engine.ts # Track selection (affinity, prefilter)
+│   │   ├── request-normalization.ts # Mood/activity normalization
+│   │   ├── scoring.ts      # Track scoring (genre, tempo, mood, activity, diversity)
+│   │   ├── track-selection.ts # Selection logic (affinity bonus)
+│   │   ├── ordering.ts     # Track ordering (mood/activity transitions)
 │   │   ├── generation.ts   # Generation orchestration
-│   │   ├── validation.ts   # LLM validation
+│   │   ├── validation.ts   # LLM + deterministic validation
 │   │   ├── variants.ts      # Variant generation
 │   │   ├── naming.ts        # Playlist naming
 │   │   └── export.ts        # Export functionality

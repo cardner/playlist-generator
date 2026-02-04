@@ -1,0 +1,18 @@
+#EXTM3U
+# Variant A: plain relative
+Ahmad Jamal/At the Pershing/But Not for Me.m4a
+
+# Variant B: ./ prefix
+./American Football/American Football (LP3)/1-01 - Silhouettes.m4a
+
+# Variant C: URL-encoded spaces
+Anberline/Cities/1-02%20-%20Godspeed.flac
+
+# Variant D: plain relative with ampersand
+Beastie Boys/Licensed to Ill/1-01 - Rhymin & Stealin.flac
+
+# Variant E: plain relative with double dot in filename
+Danger Mouse/The Grey Album/1-01 - P.S.A..flac
+
+# Variant F: plain relative
+Me First and the Gimme Gimmes/Are a Drag/1-01 - Over the Rainbow.flac

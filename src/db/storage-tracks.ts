@@ -293,6 +293,21 @@ export async function updateTrackMood(
 }
 
 /**
+ * Update activity tags for a specific track
+ *
+ * @param trackId - Composite track ID (trackFileId-libraryRootId)
+ * @param activity - Array of activity tag strings
+ * @param isManualEdit - Whether this is a manual edit (default: true)
+ */
+export async function updateTrackActivity(
+  trackId: string,
+  activity: string[],
+  isManualEdit: boolean = true
+): Promise<void> {
+  await updateTrackMetadata(trackId, { activity }, isManualEdit);
+}
+
+/**
  * Update tempo/BPM in enhanced metadata for a specific track
  * 
  * This updates the enhancedMetadata.tempo field. For updating tech.bpm,

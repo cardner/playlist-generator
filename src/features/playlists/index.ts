@@ -31,4 +31,5 @@ export type { TrackLookup, ExportResult } from "./export";
 export { generateVariant, getVariantDescription } from "./variants";
 export type { VariantType, VariantRequest } from "./variants";
 export { generatePlaylistTitle } from "./naming";
+export { buildRemixRequest, remixSavedPlaylist } from "./remix";
 

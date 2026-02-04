@@ -50,7 +50,7 @@ function buildFfmpegMetadataArgs(payload: WritebackPayload): string[] {
     args.push("-metadata", `${key}=${value}`);
   };
 
-  const { tags, bpm, mood, tempoCategory } = payload;
+  const { tags, bpm, mood, activity, tempoCategory } = payload;
   add("title", tags.title);
   add("artist", tags.artist);
   add("album", tags.album);
@@ -73,6 +73,9 @@ function buildFfmpegMetadataArgs(payload: WritebackPayload): string[] {
   const commentParts: string[] = [];
   if (mood?.length) {
     commentParts.push(`mood=${mood.join(", ")}`);
+  }
+  if (activity?.length) {
+    commentParts.push(`activity=${activity.join(", ")}`);
   }
   if (tempoCategory) {
     commentParts.push(`tempo=${tempoCategory}`);
@@ -262,6 +265,7 @@ export async function writeMetadataWithFallback(
       bpm: payload.bpm,
       tempoCategory: payload.tempoCategory,
       mood: payload.mood,
+      activity: payload.activity,
       updatedAt: Date.now(),
     });
     return {

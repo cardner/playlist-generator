@@ -43,6 +43,18 @@ export function TrackExpansionPanel({
               {track.tags.genres.length > 0 ? track.tags.genres.join(", ") : "Unknown"}
             </div>
             <div>
+              <span className="text-app-tertiary">Mood:</span>{" "}
+              {track.enhancedMetadata?.mood?.length
+                ? track.enhancedMetadata.mood.join(", ")
+                : "Unknown"}
+            </div>
+            <div>
+              <span className="text-app-tertiary">Activity:</span>{" "}
+              {track.enhancedMetadata?.activity?.length
+                ? track.enhancedMetadata.activity.join(", ")
+                : "Unknown"}
+            </div>
+            <div>
               <span className="text-app-tertiary">Year:</span> {track.tags.year || "Unknown"}
             </div>
           </div>

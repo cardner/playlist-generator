@@ -44,8 +44,12 @@ import type { FileIndexRecord, TrackRecord } from "@/db/schema";
 export async function scanLibraryWithPersistence(
   root: LibraryRoot,
   onProgress?: ScanProgressCallback,
-  scanRunId?: string // Optional: resume from existing scan run
-): Promise<{ result: ScanResult; libraryRoot: LibraryRootRecord }> {
+  scanRunId?: string, // Optional: resume from existing scan run
+  options?: {
+    signal?: AbortSignal;
+    onScanRunCreated?: (scanRunId: string) => void;
+  }
+): Promise<{ result: ScanResult; libraryRoot: LibraryRootRecord; scanRunId: string }> {
   const startTime = Date.now();
 
   // Save or get library root
@@ -89,6 +93,7 @@ export async function scanLibraryWithPersistence(
     // Start new scan
     scanRun = await createScanRun(libraryRoot.id, 0, 0, 0, 0);
   }
+  options?.onScanRunCreated?.(scanRun.id);
 
   const checkpoint: ScanCheckpoint = {
     scannedFileIds,
@@ -199,7 +204,8 @@ export async function scanLibraryWithPersistence(
       root,
       enhancedProgress,
       checkpoint,
-      handleDisconnection
+      handleDisconnection,
+      options?.signal
     );
     
     // Update tracking variables from checkpoint after scanning completes
@@ -256,7 +262,7 @@ export async function scanLibraryWithPersistence(
     await updateScanRun(scanRun.id, 0);
     await deleteCheckpoint(scanRun.id);
 
-    return { result, libraryRoot };
+    return { result, libraryRoot, scanRunId: scanRun.id };
   } catch (error) {
     // Save checkpoint for resume on unexpected failures
     try {

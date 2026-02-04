@@ -17,7 +17,8 @@ export type WritebackField =
   | "trackNo"
   | "discNo"
   | "tempo"
-  | "mood";
+  | "mood"
+  | "activity";
 
 export type WritebackTarget = "file" | "sidecar";
 
@@ -26,6 +27,7 @@ export interface WritebackPayload {
   bpm?: number;
   tempoCategory?: "slow" | "medium" | "fast";
   mood?: string[];
+  activity?: string[];
 }
 
 export function buildWritebackPayload(track: TrackRecord): WritebackPayload {
@@ -35,6 +37,7 @@ export function buildWritebackPayload(track: TrackRecord): WritebackPayload {
   const tempoCategory =
     typeof enhanced?.tempo === "string" ? enhanced.tempo : undefined;
   const mood = enhanced?.mood?.length ? enhanced.mood : undefined;
+  const activity = enhanced?.activity?.length ? enhanced.activity : undefined;
   const genres = enhanced?.genres?.length ? enhanced.genres : tags.genres;
 
   return {
@@ -50,6 +53,7 @@ export function buildWritebackPayload(track: TrackRecord): WritebackPayload {
     bpm,
     tempoCategory,
     mood,
+    activity,
   };
 }
 
@@ -60,6 +64,7 @@ export function getWritebackFieldsFromEnhancedUpdates(
   if (updates.genres !== undefined) fields.push("genres");
   if (updates.tempo !== undefined) fields.push("tempo");
   if (updates.mood !== undefined) fields.push("mood");
+  if (updates.activity !== undefined) fields.push("activity");
   return fields;
 }
 

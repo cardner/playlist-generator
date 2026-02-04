@@ -51,6 +51,7 @@ The built-in agent is deterministic and fast. The LLM agent can provide more nua
 - **Fill missing tags**: Ensure Artist, Album, Title, and Genre are present for better results.
 - **Consistent genres**: Prefer a few well-defined genres over many near-duplicates.
 - **Clean track titles**: Remove clutter like file suffixes or non-song annotations.
+- **Mood and activity tags**: Run metadata enhancement to infer mood and activity from BPM and genres when tags are missing. Better tags improve playlist matching.
 
 ## Collections: import and export
 - **Export**: In the collections manager, export a collection to JSON for backup or transfer.
@@ -63,6 +64,15 @@ The built-in agent is deterministic and fast. The LLM agent can provide more nua
 - **Relative to library root** is useful for portable libraries.
 - If you see path warnings, relink your library root so relative paths can be rebuilt.
 - When exporting to media servers (e.g., Jellyfin/Plex), set the media library path and network path options to match your server.
+
+## Tips & tricks
+
+### USB device sync write access
+- If a device is read-only, unplug and reconnect it, then confirm it mounts as a writable drive.
+- Some devices use MTP/PTP; these cannot be written by the browser. Use the companion app or export formats instead.
+- Use the **Check write access** button in Device Sync to confirm the mount is writable before syncing.
+- macOS: Check Finder Get Info and Disk Utility to confirm the volume is not read-only.
+- Windows: Check the drive properties and ensure the device is not write-protected.
 
 ## Music discovery tips
 - **Start with a tight seed**: Select a few representative genres, artists, or albums.

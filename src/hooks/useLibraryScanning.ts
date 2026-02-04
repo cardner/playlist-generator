@@ -29,6 +29,7 @@ import { scanLibraryWithPersistence } from "@/features/library/scanning-persist"
 import { NetworkDriveDisconnectedError, isNetworkDriveDisconnectedError } from "@/features/library/network-drive-errors";
 import { ReconnectionMonitor } from "@/features/library/reconnection-monitor";
 import { getDirectoryHandle } from "@/lib/library-selection-fs-api";
+import { deleteCheckpoint } from "@/db/storage-scan-checkpoints";
 import { logger } from "@/lib/logger";
 
 export interface UseLibraryScanningOptions {
@@ -75,6 +76,10 @@ export interface UseLibraryScanningReturn {
   clearScanResult: () => void;
   /** Cancel reconnection monitoring */
   cancelReconnectionMonitoring: () => void;
+  /** Pause an in-progress scan */
+  pauseScan: () => void;
+  /** Stop an in-progress scan */
+  stopScan: () => void;
 }
 
 /**
@@ -93,6 +98,8 @@ export function useLibraryScanning(
   const [scanRunId, setScanRunId] = useState<string | null>(null);
   const [isMonitoringReconnection, setIsMonitoringReconnection] = useState(false);
   const [interruptedScanRunId, setInterruptedScanRunId] = useState<string | null>(null);
+  const scanAbortControllerRef = useRef<AbortController | null>(null);
+  const scanCancelModeRef = useRef<"pause" | "stop" | null>(null);
 
   // Use ref for callback to avoid recreating handleScan when callback changes
   const onScanCompleteRef = useRef(onScanComplete);
@@ -106,6 +113,32 @@ export function useLibraryScanning(
   // Store handleResumeScan ref to avoid circular dependency
   const handleResumeScanRef = useRef<((scanRunId: string) => Promise<void>) | null>(null);
 
+  const cancelScan = useCallback(
+    async (mode: "pause" | "stop") => {
+      if (!scanAbortControllerRef.current) {
+        return;
+      }
+      scanCancelModeRef.current = mode;
+      scanAbortControllerRef.current.abort();
+      if (mode === "stop" && scanRunId) {
+        try {
+          await deleteCheckpoint(scanRunId);
+        } catch (error) {
+          logger.warn("Failed to delete scan checkpoint after stop", error);
+        }
+      }
+    },
+    [scanRunId]
+  );
+
+  const pauseScan = useCallback(() => {
+    void cancelScan("pause");
+  }, [cancelScan]);
+
+  const stopScan = useCallback(() => {
+    void cancelScan("stop");
+  }, [cancelScan]);
+
   /**
    * Start scanning the library
    */
@@ -117,6 +150,9 @@ export function useLibraryScanning(
     setIsScanning(true);
     setError(null);
     setScanProgress({ found: 0, scanned: 0 });
+    scanCancelModeRef.current = null;
+    const abortController = new AbortController();
+    scanAbortControllerRef.current = abortController;
 
     const onProgress: ScanProgressCallback = (progress) => {
       setScanProgress(progress);
@@ -127,7 +163,15 @@ export function useLibraryScanning(
       let rootId: string;
 
       if (libraryRoot.mode === "handle") {
-        const scanResult = await scanLibraryWithPersistence(libraryRoot, onProgress);
+        const scanResult = await scanLibraryWithPersistence(
+          libraryRoot,
+          onProgress,
+          undefined,
+          {
+            signal: abortController.signal,
+            onScanRunCreated: (id) => setScanRunId(id),
+          }
+        );
         result = scanResult.result;
         rootId = scanResult.libraryRoot.id;
         setLibraryRootId(rootId);
@@ -151,7 +195,16 @@ export function useLibraryScanning(
       onScanCompleteRef.current?.();
     } catch (err) {
       // Handle network drive disconnection
-      if (isNetworkDriveDisconnectedError(err)) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setIsMonitoringReconnection(false);
+        if (scanCancelModeRef.current === "pause") {
+          setInterruptedScanRunId(scanRunId);
+        } else if (scanCancelModeRef.current === "stop") {
+          setInterruptedScanRunId(null);
+          setScanResult(null);
+          setScanRunId(null);
+        }
+      } else if (isNetworkDriveDisconnectedError(err)) {
         logger.warn("Network drive disconnected during scan", err);
         setInterruptedScanRunId(err.scanRunId);
         setIsMonitoringReconnection(true);
@@ -222,8 +275,9 @@ export function useLibraryScanning(
     } finally {
       setIsScanning(false);
       setScanProgress(null);
+      scanAbortControllerRef.current = null;
     }
-  }, [libraryRoot, permissionStatus]); // Removed onScanComplete dependency - using ref instead
+  }, [libraryRoot, permissionStatus, scanRunId]); // Removed onScanComplete dependency - using ref instead
 
   /**
    * Resume an interrupted scan from a checkpoint
@@ -279,6 +333,9 @@ export function useLibraryScanning(
     setError(null);
     setScanProgress({ found: 0, scanned: 0 });
     setInterruptedScanRunId(null);
+    scanCancelModeRef.current = null;
+    const abortController = new AbortController();
+    scanAbortControllerRef.current = abortController;
 
     const onProgress: ScanProgressCallback = (progress) => {
       setScanProgress(progress);
@@ -288,7 +345,11 @@ export function useLibraryScanning(
       const scanResult = await scanLibraryWithPersistence(
         libraryRoot,
         onProgress,
-        resumeScanRunId
+        resumeScanRunId,
+        {
+          signal: abortController.signal,
+          onScanRunCreated: (id) => setScanRunId(id),
+        }
       );
       const result = scanResult.result;
       const rootId = scanResult.libraryRoot.id;
@@ -307,6 +368,16 @@ export function useLibraryScanning(
       
       onScanCompleteRef.current?.();
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        if (scanCancelModeRef.current === "pause") {
+          setInterruptedScanRunId(resumeScanRunId);
+        } else if (scanCancelModeRef.current === "stop") {
+          setInterruptedScanRunId(null);
+          setScanResult(null);
+          setScanRunId(null);
+        }
+        return;
+      }
       // Re-throw disconnection errors to trigger monitoring again
       if (isNetworkDriveDisconnectedError(err)) {
         throw err;
@@ -334,6 +405,7 @@ export function useLibraryScanning(
     } finally {
       setIsScanning(false);
       setScanProgress(null);
+      scanAbortControllerRef.current = null;
     }
   }, [libraryRoot, permissionStatus]);
 
@@ -396,6 +468,8 @@ export function useLibraryScanning(
     clearError,
     clearScanResult,
     cancelReconnectionMonitoring,
+    pauseScan,
+    stopScan,
   };
 }
 

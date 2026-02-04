@@ -5,15 +5,34 @@
 import { db } from "./schema";
 import type { SavedPlaylistRecord } from "./schema";
 import type { GeneratedPlaylist } from "@/features/playlists";
+import type { PlaylistRequest } from "@/types/playlist";
+
+/**
+ * Remove sensitive request fields before storage.
+ */
+function sanitizeRequestForStorage(request?: PlaylistRequest): PlaylistRequest | undefined {
+  if (!request) return undefined;
+  if (!request.llmConfig) return request;
+  const { apiKey, ...rest } = request.llmConfig;
+  return {
+    ...request,
+    llmConfig: Object.keys(rest).length > 0 ? rest : undefined,
+  };
+}
 
 /**
  * Convert GeneratedPlaylist to SavedPlaylistRecord
  */
-function playlistToRecord(playlist: GeneratedPlaylist, libraryRootId?: string): SavedPlaylistRecord {
+function playlistToRecord(
+  playlist: GeneratedPlaylist,
+  libraryRootId?: string,
+  request?: PlaylistRequest
+): SavedPlaylistRecord {
   return {
     id: playlist.id,
     title: playlist.title,
     description: playlist.description,
+    request: sanitizeRequestForStorage(request),
     trackFileIds: playlist.trackFileIds,
     summary: {
       genreMix: playlist.summary.genreMix instanceof Map
@@ -114,9 +133,10 @@ function recordToPlaylist(record: SavedPlaylistRecord): GeneratedPlaylist {
  */
 export async function savePlaylist(
   playlist: GeneratedPlaylist,
-  libraryRootId?: string
+  libraryRootId?: string,
+  request?: PlaylistRequest
 ): Promise<void> {
-  const record = playlistToRecord(playlist, libraryRootId);
+  const record = playlistToRecord(playlist, libraryRootId, request);
   await db.savedPlaylists.put(record);
 }
 
@@ -125,9 +145,15 @@ export async function savePlaylist(
  */
 export async function updatePlaylist(
   playlist: GeneratedPlaylist,
-  libraryRootId?: string
+  libraryRootId?: string,
+  request?: PlaylistRequest
 ): Promise<void> {
-  const record = playlistToRecord(playlist, libraryRootId);
+  let resolvedRequest = request;
+  if (!resolvedRequest) {
+    const existing = await db.savedPlaylists.get(playlist.id);
+    resolvedRequest = existing?.request;
+  }
+  const record = playlistToRecord(playlist, libraryRootId, resolvedRequest);
   await db.savedPlaylists.put(record);
 }
 
@@ -140,6 +166,14 @@ export async function getSavedPlaylist(id: string): Promise<GeneratedPlaylist | 
     return null;
   }
   return recordToPlaylist(record);
+}
+
+/**
+ * Get a saved playlist request by ID
+ */
+export async function getSavedPlaylistRequest(id: string): Promise<PlaylistRequest | undefined> {
+  const record = await db.savedPlaylists.get(id);
+  return record?.request;
 }
 
 /**
@@ -202,14 +236,48 @@ export async function getPlaylistCollectionId(id: string): Promise<string | unde
 export async function getAllSavedPlaylistsWithCollections(): Promise<Array<{
   playlist: GeneratedPlaylist;
   collectionId?: string;
+  request?: PlaylistRequest;
 }>> {
   const records = await db.savedPlaylists
     .orderBy("updatedAt")
     .reverse()
     .toArray();
-  return records.map(record => ({
-    playlist: recordToPlaylist(record),
-    collectionId: record.libraryRootId,
-  }));
+  const results: Array<{
+    playlist: GeneratedPlaylist;
+    collectionId?: string;
+    request?: PlaylistRequest;
+  }> = [];
+  for (const record of records) {
+    let collectionId = record.libraryRootId;
+    if (!collectionId && record.trackFileIds.length > 0) {
+      const tracks = await db.tracks
+        .where("trackFileId")
+        .anyOf(record.trackFileIds)
+        .toArray();
+      const counts = new Map<string, number>();
+      for (const track of tracks) {
+        if (!track.libraryRootId) continue;
+        counts.set(track.libraryRootId, (counts.get(track.libraryRootId) ?? 0) + 1);
+      }
+      let bestId: string | undefined;
+      let bestCount = 0;
+      for (const [id, count] of counts.entries()) {
+        if (count > bestCount) {
+          bestId = id;
+          bestCount = count;
+        }
+      }
+      if (bestId) {
+        collectionId = bestId;
+        await db.savedPlaylists.update(record.id, { libraryRootId: bestId });
+      }
+    }
+    results.push({
+      playlist: recordToPlaylist(record),
+      collectionId,
+      request: record.request,
+    });
+  }
+  return results;
 }
 

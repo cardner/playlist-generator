@@ -12,6 +12,7 @@ import { db } from "@/db/schema";
 import type { TrackRecord } from "@/db/schema";
 import { logger } from "@/lib/logger";
 import { applyTempoMappingsToRequest } from "@/lib/tempo-mapping";
+import { normalizePlaylistRequest } from "./request-normalization";
 
 // Re-export types from matching engine
 export type {
@@ -34,12 +35,14 @@ export async function generatePlaylistFromStrategy(
   seed?: string,
   excludeTrackIds?: string[]
 ): Promise<GeneratedPlaylist> {
-  const normalizedRequest = applyTempoMappingsToRequest({
+  const normalizedRequest = normalizePlaylistRequest(
+    applyTempoMappingsToRequest({
     ...request,
     mood: [...request.mood],
     activity: [...request.activity],
     tempo: { ...request.tempo },
-  });
+  })
+  );
   // Get all tracks
   let allTracks: TrackRecord[];
   if (libraryRootId) {
@@ -297,5 +300,14 @@ export async function generatePlaylistFromStrategy(
     }
   }
 
-  return playlist;
+  try {
+    const { validatePlaylistDeterministic } = await import("./validation");
+    return {
+      ...playlist,
+      validation: validatePlaylistDeterministic(normalizedRequest, playlist),
+    };
+  } catch (error) {
+    logger.warn("Deterministic validation failed:", error);
+    return playlist;
+  }
 }

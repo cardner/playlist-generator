@@ -137,13 +137,19 @@ src/
 │   │   ├── scanning.ts   # File scanning
 │   │   ├── metadata.ts   # Metadata extraction
 │   │   ├── summarization.ts  # Library summaries
-│   │   └── tempo-detection.ts  # BPM detection
+│   │   ├── tempo-detection.ts  # BPM detection
+│   │   ├── mood-mapping.ts   # Mood tag normalization
+│   │   ├── activity-mapping.ts  # Activity tag normalization
+│   │   └── activity-inference.ts  # Activity inference (BPM/genres, LLM)
 │   ├── playlists/        # Playlist generation
 │   │   ├── strategy.ts   # Strategy generation
-│   │   ├── matching-engine.ts  # Track selection
+│   │   ├── matching-engine.ts  # Track selection (affinity, prefilter)
+│   │   ├── request-normalization.ts  # Mood/activity normalization
+│   │   ├── scoring.ts    # Track scoring (genre, tempo, mood, activity)
+│   │   ├── track-selection.ts  # Selection logic (affinity bonus)
 │   │   ├── generation.ts  # Playlist orchestration
-│   │   ├── validation.ts  # LLM validation
-│   │   └── ordering.ts   # Track ordering
+│   │   ├── validation.ts  # LLM + deterministic validation
+│   │   └── ordering.ts   # Track ordering (mood/activity transitions)
 │   ├── discovery/        # Music discovery
 │   └── audio-preview/    # Audio preview
 │       ├── platform-searcher.ts  # Multi-platform search
@@ -425,9 +431,12 @@ If the LLM returns invalid JSON or doesn't match the schema, the app automatical
 ### 🎼 Playlist Generation
 
 - **Intelligent Matching**: Deterministic algorithm for track selection based on user preferences
+- **Mood & Activity Matching**: Tracks scored by mood and activity tags; inferred from BPM/genres when missing
+- **Request Normalization**: User input (e.g. "chill", "gym") mapped to canonical categories for consistent matching
+- **Affinity Bonus**: Tracks from suggested artists or similar genres receive scoring bonuses
 - **LLM-Enhanced Generation**: Optional LLM integration for sophisticated playlist strategies
 - **Track Refinement**: LLM-based semantic re-scoring of candidate tracks
-- **Playlist Validation**: Post-generation validation to verify playlists meet requirements
+- **Playlist Validation**: Post-generation validation (LLM or deterministic) with issues and suggestions
 - **Human-Readable Explanations**: Natural language explanations for playlist choices
 - **Flow Arc Editing**: Customize playlist energy flow (warmup, build, peak, cooldown sections)
 - **Music Discovery**: Discover new tracks similar to your library (optional)
@@ -452,6 +461,7 @@ If the LLM returns invalid JSON or doesn't match the schema, the app automatical
 
 - **Tempo Detection**: LLM-based BPM detection for tracks missing metadata
 - **Genre Normalization**: Automatic genre normalization and mapping
+- **Mood & Activity Inference**: Rule-based (BPM + genres) and optional LLM-based activity tagging
 - **Track Reasoning**: See why each track was selected with detailed explanations
 - **Playlist Variants**: Generate variations of existing playlists
 - **Track Reordering**: Drag and drop to reorder tracks in playlists
@@ -537,9 +547,11 @@ Music discovery uses MusicBrainz API (no API key required for basic usage):
 - ✅ Audio preview (local files, YouTube, Spotify)
 - ✅ Music discovery feature
 - ✅ Flow arc editor
-- ✅ Playlist validation and explanation
+- ✅ Playlist validation and explanation (LLM + deterministic)
 - ✅ Tempo detection for missing BPM data
 - ✅ Track reasoning and explanations
+- ✅ Mood and activity matching with inference
+- ✅ Request normalization and affinity scoring
 
 ## Data Storage
 

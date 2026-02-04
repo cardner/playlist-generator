@@ -233,6 +233,146 @@ export async function validatePlaylistWithLLM(
 }
 
 /**
+ * Validates a playlist without calling an LLM.
+ * Computes scores from genre, tempo, mood, activity, length, and diversity.
+ * Adds issues/suggestions when many tracks lack mood/activity tags.
+ * Use when LLM validation is disabled or fails.
+ *
+ * @param request - Original playlist request
+ * @param playlist - Generated playlist with track selections
+ * @returns PlaylistValidation with scores, issues, strengths, and suggestions
+ */
+export function validatePlaylistDeterministic(
+  request: PlaylistRequest,
+  playlist: GeneratedPlaylist
+): PlaylistValidation {
+  const selections = playlist.trackSelections || [];
+  const average = (values: number[]) =>
+    values.length === 0 ? 0 : values.reduce((sum, v) => sum + v, 0) / values.length;
+
+  const genreScore = average(selections.map((s) => s.genreMatch ?? 0));
+  const tempoScore = average(selections.map((s) => s.tempoMatch ?? 0));
+  const moodScore = average(selections.map((s) => s.moodMatch ?? 0.5));
+  const activityScore = average(selections.map((s) => s.activityMatch ?? 0.5));
+  const diversityScore = average(selections.map((s) => s.diversity ?? 0));
+
+  let lengthScore = 0.5;
+  if (request.length.type === "tracks") {
+    const target = request.length.value;
+    const diff = Math.abs(playlist.trackFileIds.length - target);
+    lengthScore = diff === 0 ? 1 : diff <= 1 ? 0.7 : 0.3;
+  } else {
+    const targetSeconds = request.length.value * 60;
+    const diffRatio = Math.abs(playlist.totalDuration - targetSeconds) / Math.max(targetSeconds, 1);
+    lengthScore = diffRatio <= 0.05 ? 1 : diffRatio <= 0.15 ? 0.7 : 0.3;
+  }
+
+  const overallScore =
+    (genreScore + tempoScore + moodScore + activityScore + lengthScore + diversityScore) / 6;
+
+  const issues: string[] = [];
+  const strengths: string[] = [];
+  const suggestions: string[] = [];
+
+  const moodUnknownCount = selections.filter((s) =>
+    s.reasons?.some(
+      (r) => r.type === "mood_match" && r.explanation.toLowerCase().includes("unknown")
+    )
+  ).length;
+  const activityUnknownCount = selections.filter((s) =>
+    s.reasons?.some(
+      (r) => r.type === "activity_match" && r.explanation.toLowerCase().includes("unknown")
+    )
+  ).length;
+  const moodUnknownRatio = selections.length > 0 ? moodUnknownCount / selections.length : 0;
+  const activityUnknownRatio = selections.length > 0 ? activityUnknownCount / selections.length : 0;
+
+  if (moodScore < 0.5 && request.mood.length > 0) {
+    issues.push("Mood alignment is weak based on available tags.");
+  } else if (moodScore >= 0.75 && request.mood.length > 0) {
+    strengths.push("Strong mood alignment across selected tracks.");
+  }
+
+  if (activityScore < 0.5 && request.activity.length > 0) {
+    issues.push("Activity alignment is weak based on available tags.");
+  } else if (activityScore >= 0.75 && request.activity.length > 0) {
+    strengths.push("Strong activity alignment across selected tracks.");
+  }
+
+  if (moodUnknownRatio > 0.5) {
+    issues.push("Many tracks lack mood tags; mood matching may be limited.");
+    suggestions.push("Run metadata enhancement to infer mood tags for more accurate matches.");
+  }
+
+  if (activityUnknownRatio > 0.5) {
+    issues.push("Many tracks lack activity tags; activity matching may be limited.");
+    suggestions.push("Run metadata enhancement to infer activity tags for more accurate matches.");
+  }
+
+  if (tempoScore < 0.5 && (request.tempo.bucket || request.tempo.bpmRange)) {
+    issues.push("Tempo alignment appears inconsistent.");
+  } else if (tempoScore >= 0.75) {
+    strengths.push("Tempo alignment is consistent.");
+  }
+
+  if (genreScore < 0.5 && request.genres.length > 0) {
+    issues.push("Genre alignment is weaker than expected.");
+  } else if (genreScore >= 0.75) {
+    strengths.push("Genre alignment is strong.");
+  }
+
+  if (lengthScore < 0.5) {
+    issues.push("Playlist length deviates from the requested target.");
+  } else if (lengthScore >= 0.75) {
+    strengths.push("Playlist length is close to the requested target.");
+  }
+
+  if (diversityScore >= 0.75) {
+    strengths.push("Good artist/genre diversity for the surprise level.");
+  }
+
+  return {
+    isValid: overallScore >= 0.6,
+    score: Math.max(0, Math.min(1, overallScore)),
+    requirementCoverage: {
+      genres: {
+        met: genreScore >= 0.5,
+        score: Math.max(0, Math.min(1, genreScore)),
+        explanation: "Deterministic estimate based on genre matches.",
+      },
+      mood: {
+        met: moodScore >= 0.5,
+        score: Math.max(0, Math.min(1, moodScore)),
+        explanation: "Deterministic estimate based on mood tags.",
+      },
+      activity: {
+        met: activityScore >= 0.5,
+        score: Math.max(0, Math.min(1, activityScore)),
+        explanation: "Deterministic estimate based on activity tags.",
+      },
+      tempo: {
+        met: tempoScore >= 0.5,
+        score: Math.max(0, Math.min(1, tempoScore)),
+        explanation: "Deterministic estimate based on tempo matching.",
+      },
+      length: {
+        met: lengthScore >= 0.5,
+        score: Math.max(0, Math.min(1, lengthScore)),
+        explanation: "Deterministic estimate based on playlist length.",
+      },
+      diversity: {
+        met: diversityScore >= 0.5,
+        score: Math.max(0, Math.min(1, diversityScore)),
+        explanation: "Deterministic estimate based on diversity scoring.",
+      },
+    },
+    issues,
+    strengths,
+    suggestions,
+  };
+}
+
+/**
  * Generate human-readable explanation for playlist
  */
 export async function generatePlaylistExplanation(

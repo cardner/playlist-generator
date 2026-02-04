@@ -89,11 +89,11 @@ export function LibraryScanner({
   onProcessingProgress,
 }: LibraryScannerProps) {
   const [currentRootId, setCurrentRootId] = useState<string | null>(null);
-  const [isNewSelection, setIsNewSelection] = useState(false);
   const [isInitialMount, setIsInitialMount] = useState(true);
   const [detectedResumableScanRunId, setDetectedResumableScanRunId] = useState<string | null>(null);
   const [detectedResumableLastPath, setDetectedResumableLastPath] = useState<string | null>(null);
   const [hasCheckedResumable, setHasCheckedResumable] = useState(false);
+  const [autoProcessEnabled, setAutoProcessEnabled] = useState(false);
   const [processingCheckpoint, setProcessingCheckpoint] = useState<{
     scanRunId: string;
     libraryRootId: string;
@@ -122,6 +122,8 @@ export function LibraryScanner({
     clearError: clearScanError,
     clearScanResult,
     cancelReconnectionMonitoring,
+    pauseScan,
+    stopScan,
   } = useLibraryScanning({
     libraryRoot,
     permissionStatus,
@@ -142,6 +144,10 @@ export function LibraryScanner({
       handleProcessUnprocessed,
     clearError: clearParseError,
     clearMetadataResults,
+    pauseProcessing,
+    stopProcessing,
+    pauseTempoDetection,
+    stopTempoDetection,
   } = useMetadataParsing({
     onParseComplete: onScanComplete,
     onProcessingProgress,
@@ -323,6 +329,7 @@ export function LibraryScanner({
   const handleScan = useCallback(async () => {
     clearMetadataResults();
     clearParseError();
+    setAutoProcessEnabled(true);
     await handleScanInternal();
     // Metadata parsing will be triggered automatically by useEffect below
     // when scanResult becomes available
@@ -331,8 +338,27 @@ export function LibraryScanner({
   const handleRescanWithReset = useCallback(async () => {
     clearMetadataResults();
     clearParseError();
+    setAutoProcessEnabled(true);
     await handleRescan();
   }, [clearMetadataResults, clearParseError, handleRescan]);
+
+  const handleManualResumeScan = useCallback(
+    async (resumeScanRunId: string) => {
+      setAutoProcessEnabled(true);
+      await handleResumeScan(resumeScanRunId);
+    },
+    [handleResumeScan]
+  );
+
+  const handlePauseProcessing = useCallback(() => {
+    setAutoProcessEnabled(false);
+    pauseProcessing();
+  }, [pauseProcessing]);
+
+  const handleStopProcessing = useCallback(() => {
+    setAutoProcessEnabled(false);
+    stopProcessing();
+  }, [stopProcessing]);
 
   // Combine errors from scanning and parsing
   const error = scanError || parseError;
@@ -353,6 +379,7 @@ export function LibraryScanner({
       scanRunId &&
       !isParsingMetadata &&
       metadataResults === null &&
+      autoProcessEnabled &&
       libraryRoot.mode === "handle" &&
       permissionStatus === "granted"
     ) {
@@ -369,6 +396,7 @@ export function LibraryScanner({
     scanRunId,
     isParsingMetadata,
     metadataResults,
+    autoProcessEnabled,
     permissionStatus,
     handleParseMetadata,
   ]);
@@ -473,9 +501,9 @@ export function LibraryScanner({
         clearMetadataResults();
         setCurrentRootId(rootId);
         setHasCheckedResumable(false);
+        setAutoProcessEnabled(false);
         // If this is a new root (not initial mount), mark as new selection
         if (libraryRoot && !isInitialMount) {
-          setIsNewSelection(true);
           onNewSelection?.();
         }
       } else if (libraryRoot === null && currentRootId !== null) {
@@ -485,7 +513,15 @@ export function LibraryScanner({
         clearParseError();
       }
     }
-  }, [libraryRoot, currentRootId, onNewSelection, isInitialMount, clearScanResult, clearParseError]);
+  }, [
+    libraryRoot,
+    currentRootId,
+    onNewSelection,
+    isInitialMount,
+    clearScanResult,
+    clearParseError,
+    clearMetadataResults,
+  ]);
 
   useEffect(() => {
     const updateProcessingStatus = async () => {
@@ -515,20 +551,13 @@ export function LibraryScanner({
 
   // Metadata parsing is now handled by useMetadataParsing hook
 
-  // When permission becomes granted for a new selection, trigger scan
-  // BUT only if there are no existing scans (to prevent auto-scanning on page load)
+  // Trigger scan only when explicitly requested by parent
   useEffect(() => {
     const rootId = getRootId(libraryRoot);
 
-    // Trigger scan if:
-    // 1. triggerScan prop is true (explicit trigger from parent)
-    // OR
-    // 2. It's a new selection (user explicitly selected a folder)
-    //    AND there are no existing scans
-    //    AND permission is granted
-    //    AND all other conditions are met
-    const shouldTriggerScan = triggerScan || (
-      isNewSelection &&
+    // Trigger scan if the parent explicitly requested it
+    const shouldTriggerScan =
+      !!triggerScan &&
       libraryRoot &&
       permissionStatus === "granted" &&
       libraryRoot.mode === "handle" &&
@@ -539,17 +568,13 @@ export function LibraryScanner({
       !processingCheckpoint &&
       (unprocessedCount === null || unprocessedCount === 0) &&
       rootId === currentRootId &&
-      hasExistingScans === false // Only auto-scan if we know there are NO existing scans
-    );
+      hasExistingScans === false; // Only auto-scan if we know there are NO existing scans
 
     if (shouldTriggerScan) {
-      // Reset flag first to prevent duplicate scans
-      setIsNewSelection(false);
       // Trigger scan immediately
       handleScan();
     }
   }, [
-    isNewSelection,
     permissionStatus,
     libraryRoot,
     isScanning,
@@ -587,7 +612,7 @@ export function LibraryScanner({
             interruptedScanRunId={interruptedScanRunId || detectedResumableScanRunId}
             lastScannedPath={interruptedScanRunId ? null : detectedResumableLastPath}
             onCancelAutoResume={cancelReconnectionMonitoring}
-            onManualResume={handleResumeScan}
+            onManualResume={handleManualResumeScan}
           />
         )}
         {renderProcessingResumeBanner()}
@@ -636,7 +661,13 @@ export function LibraryScanner({
 
   // Show metadata parsing progress if we're processing files
   if (isParsingMetadata && metadataProgress) {
-    return <MetadataProgress {...metadataProgress} />;
+    return (
+      <MetadataProgress
+        {...metadataProgress}
+        onPause={handlePauseProcessing}
+        onStop={handleStopProcessing}
+      />
+    );
   }
 
   // Show tempo detection progress if running
@@ -647,13 +678,21 @@ export function LibraryScanner({
         total={tempoProgress.total}
         detected={tempoProgress.detected}
         currentTrack={tempoProgress.currentTrack}
+        onPause={pauseTempoDetection}
+        onStop={stopTempoDetection}
       />
     );
   }
 
   // Show scanning progress if we're scanning files
   if (isScanning) {
-    return <ScanProgress {...(scanProgress || { found: 0, scanned: 0 })} />;
+    return (
+      <ScanProgress
+        {...(scanProgress || { found: 0, scanned: 0 })}
+        onPause={pauseScan}
+        onStop={stopScan}
+      />
+    );
   }
 
   if (error) {
@@ -687,7 +726,7 @@ export function LibraryScanner({
             interruptedScanRunId={interruptedScanRunId}
             lastScannedPath={null}
             onCancelAutoResume={cancelReconnectionMonitoring}
-            onManualResume={handleResumeScan}
+            onManualResume={handleManualResumeScan}
           />
         )}
         {renderProcessingResumeBanner()}
@@ -825,7 +864,7 @@ export function LibraryScanner({
               interruptedScanRunId={interruptedScanRunId || detectedResumableScanRunId}
               lastScannedPath={interruptedScanRunId ? null : detectedResumableLastPath}
               onCancelAutoResume={cancelReconnectionMonitoring}
-              onManualResume={handleResumeScan}
+              onManualResume={handleManualResumeScan}
             />
           )}
           {renderProcessingResumeBanner()}
@@ -889,7 +928,7 @@ export function LibraryScanner({
               interruptedScanRunId={interruptedScanRunId || detectedResumableScanRunId}
               lastScannedPath={interruptedScanRunId ? null : detectedResumableLastPath}
               onCancelAutoResume={cancelReconnectionMonitoring}
-              onManualResume={handleResumeScan}
+              onManualResume={handleManualResumeScan}
             />
           )}
           {renderProcessingResumeBanner()}

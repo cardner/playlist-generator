@@ -2,19 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getAllSavedPlaylistsWithCollections, deleteSavedPlaylist } from "@/db/playlist-storage";
+import { getAllSavedPlaylistsWithCollections, deleteSavedPlaylist, savePlaylist } from "@/db/playlist-storage";
 import type { GeneratedPlaylist } from "@/features/playlists";
 import { PlaylistDisplay } from "@/components/PlaylistDisplay";
-import { Music, Trash2, Loader2, AlertCircle, Database } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Music, Trash2, Loader2, AlertCircle, Database, Shuffle } from "lucide-react";
 import { getCollection, getCurrentCollectionId } from "@/db/storage";
-import type { LibraryRootRecord } from "@/db/schema";
 import { logger } from "@/lib/logger";
+import type { PlaylistRequest } from "@/types/playlist";
+import { SavePlaylistDialog } from "@/components/SavePlaylistDialog";
+import { remixSavedPlaylist } from "@/features/playlists";
 
 interface PlaylistWithCollection {
   playlist: GeneratedPlaylist;
   collectionId?: string;
   collectionName?: string;
+  request?: PlaylistRequest;
 }
 
 export default function SavedPlaylistsPage() {
@@ -25,6 +27,8 @@ export default function SavedPlaylistsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentCollectionId, setCurrentCollectionId] = useState<string | null>(null);
+  const [remixTarget, setRemixTarget] = useState<PlaylistWithCollection | null>(null);
+  const [isRemixing, setIsRemixing] = useState(false);
 
   useEffect(() => {
     loadPlaylists();
@@ -89,6 +93,45 @@ export default function SavedPlaylistsPage() {
   function handleSelectPlaylist(playlist: GeneratedPlaylist, collectionId?: string) {
     setSelectedPlaylist(playlist);
     setSelectedPlaylistCollectionId(collectionId);
+  }
+
+  const storePlaylistInSessionStorage = (updated: GeneratedPlaylist) => {
+    const serializable = {
+      ...updated,
+      summary: {
+        ...updated.summary,
+        genreMix: Object.fromEntries(updated.summary.genreMix),
+        tempoMix: Object.fromEntries(updated.summary.tempoMix),
+        artistMix: Object.fromEntries(updated.summary.artistMix),
+      },
+    };
+    sessionStorage.setItem("generated-playlist", JSON.stringify(serializable));
+  };
+
+  async function handleRemixConfirm(options: { title: string; description?: string }) {
+    if (!remixTarget) return;
+    setIsRemixing(true);
+    try {
+      const { playlist: remixed, request } = await remixSavedPlaylist({
+        playlist: remixTarget.playlist,
+        storedRequest: remixTarget.request,
+        libraryRootId: remixTarget.collectionId,
+        title: options.title,
+        description: options.description,
+      });
+      await savePlaylist(remixed, remixTarget.collectionId, request);
+      storePlaylistInSessionStorage(remixed);
+      sessionStorage.setItem("playlist-request", JSON.stringify(request));
+      setSelectedPlaylist(remixed);
+      setSelectedPlaylistCollectionId(remixTarget.collectionId);
+      await loadPlaylists();
+    } catch (err) {
+      logger.error("Failed to remix playlist:", err);
+      alert("Failed to remix playlist");
+    } finally {
+      setIsRemixing(false);
+      setRemixTarget(null);
+    }
   }
 
   function formatDate(timestamp: number): string {
@@ -197,16 +240,28 @@ export default function SavedPlaylistsPage() {
                       {playlist.description}
                     </p>
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(playlist.id);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:bg-red-500/10 rounded-sm transition-all shrink-0"
-                    title="Delete playlist"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRemixTarget(item);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-2 text-accent-primary hover:bg-accent-primary/10 rounded-sm transition-all"
+                      title="Remix playlist"
+                    >
+                      <Shuffle className="size-4" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(playlist.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:bg-red-500/10 rounded-sm transition-all"
+                      title="Delete playlist"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
                 </div>
                 {item.collectionName && (
                   <div className="flex items-center gap-1.5 mb-3">
@@ -236,7 +291,21 @@ export default function SavedPlaylistsPage() {
           })}
         </div>
       )}
+
+      <SavePlaylistDialog
+        isOpen={!!remixTarget}
+        defaultTitle={remixTarget ? `${remixTarget.playlist.title} (Remix)` : "Remix Playlist"}
+        defaultDescription={remixTarget?.playlist.description}
+        onClose={() => setRemixTarget(null)}
+        onConfirm={handleRemixConfirm}
+        defaultMode="remix"
+        modeOptions={["remix"]}
+        titleText="Remix Playlist"
+        confirmLabel={isRemixing ? "Remixing..." : "Remix"}
+        confirmDisabled={isRemixing}
+      />
     </div>
   );
 }
+
 

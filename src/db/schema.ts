@@ -40,6 +40,7 @@
 import Dexie, { type Table } from "dexie";
 import type { LibraryRootMode } from "@/lib/library-selection";
 import type { NormalizedTags, TechInfo, EnhancedMetadata } from "@/features/library/metadata";
+import type { PlaylistRequest } from "@/types/playlist";
 import { logger } from "@/lib/logger";
 
 /**
@@ -501,8 +502,10 @@ export interface DeviceProfileRecord {
   id: string;
   /** Display name for the device */
   label: string;
+  /** Device type for preset behavior */
+  deviceType?: "generic" | "walkman" | "zune" | "ipod" | "jellyfin";
   /** Reference to directoryHandles store (device root handle) */
-  handleRef: string;
+  handleRef?: string;
   /** Playlist format to generate for device */
   playlistFormat: "m3u" | "pls" | "xspf";
   /** Device playlist folder relative to root (e.g., "PLAYLISTS") */
@@ -511,11 +514,59 @@ export interface DeviceProfileRecord {
   pathStrategy: "relative-to-playlist" | "relative-to-library-root" | "absolute";
   /** Optional prefix for absolute path strategy */
   absolutePathPrefix?: string;
+  /** Optional Jellyfin container library prefix (e.g. /media/music) */
+  containerLibraryPrefix?: string;
+  /** Jellyfin export mode */
+  jellyfinExportMode?: "download" | "library-root";
+  /** Optional USB vendor ID (for WebUSB detection) */
+  usbVendorId?: number;
+  /** Optional USB product ID (for WebUSB detection) */
+  usbProductId?: number;
+  /** Optional USB serial number (for WebUSB detection) */
+  usbSerialNumber?: string;
+  /** Optional USB product name (for UI) */
+  usbProductName?: string;
+  /** Optional USB manufacturer name (for UI) */
+  usbManufacturerName?: string;
+  /** Optional iPod model name (from libgpod/device info) */
+  ipodModelName?: string;
+  /** Optional iPod generation name (from libgpod/device info) */
+  ipodGenerationName?: string;
+  /** Optional iPod model number string */
+  ipodModelNumber?: string;
+  /** Whether iPod requires encryption setup (FirewireGuid) */
+  ipodRequiresEncryption?: boolean;
   /** Timestamp of last successful sync (Unix epoch milliseconds) */
   lastSyncAt?: number;
   /** Timestamp when profile was created */
   createdAt: number;
   /** Timestamp when profile was last updated */
+  updatedAt: number;
+}
+
+/**
+ * Device file index record stored in database
+ *
+ * Stores resolved device paths for faster re-sync and path validation.
+ */
+export interface DeviceFileIndexRecord {
+  /** Unique identifier: `${deviceId}-${matchKey}` */
+  id: string;
+  /** Device profile ID */
+  deviceId: string;
+  /** Match key: `${filename}|${size}|${mtime}` */
+  matchKey: string;
+  /** Resolved device-relative path */
+  relativePath: string;
+  /** Optional content hash for improved reliability */
+  contentHash?: string;
+  /** Original filename */
+  name: string;
+  /** File size in bytes */
+  size: number;
+  /** Last modified time (Unix epoch milliseconds) */
+  mtime: number;
+  /** Timestamp when this record was last updated */
   updatedAt: number;
 }
 
@@ -593,6 +644,8 @@ export interface SavedPlaylistRecord {
   title: string;
   /** Playlist description */
   description: string;
+  /** Original request parameters used to generate this playlist (no API keys) */
+  request?: PlaylistRequest;
   /** Array of trackFileIds in playlist order */
   trackFileIds: string[];
   /** Summary statistics for the playlist */
@@ -667,6 +720,7 @@ export interface SavedPlaylistRecord {
  * - Version 9: Added device profiles and sync manifests
  * - Version 10: Added processing checkpoints for metadata parsing
  * - Version 11: Added metadata writeback status and checkpoints
+ * - Version 12: Added device file index cache + device profile fields
  * 
  * @example
  * ```typescript
@@ -701,6 +755,8 @@ export class AppDatabase extends Dexie {
   deviceProfiles!: Table<DeviceProfileRecord, string>;
   /** Device sync manifests table (sync history) */
   deviceSyncManifests!: Table<DeviceSyncManifestRecord, string>;
+  /** Device file index cache (path mapping) */
+  deviceFileIndex!: Table<DeviceFileIndexRecord, string>;
   /** Scan checkpoints table (for resuming interrupted scans) */
   scanCheckpoints!: Table<ScanCheckpointRecord, string>;
   /** Processing checkpoints table (for resuming metadata parsing) */
@@ -957,6 +1013,24 @@ export class AppDatabase extends Dexie {
       writebackCheckpoints: "id, writebackRunId, libraryRootId, checkpointAt",
       deviceProfiles: "id, createdAt, updatedAt",
       deviceSyncManifests: "id, deviceId, playlistId, lastSyncedAt",
+    });
+
+    // Version 12: Add device file index cache + device profile fields
+    this.version(12).stores({
+      libraryRoots: "id, createdAt",
+      fileIndex: "id, trackFileId, libraryRootId, name, extension, updatedAt",
+      tracks: "id, trackFileId, libraryRootId, updatedAt",
+      scanRuns: "id, libraryRootId, startedAt",
+      settings: "key",
+      directoryHandles: "id",
+      savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
+      scanCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+      processingCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+      trackWritebacks: "id, libraryRootId, pending, updatedAt",
+      writebackCheckpoints: "id, writebackRunId, libraryRootId, checkpointAt",
+      deviceProfiles: "id, createdAt, updatedAt",
+      deviceSyncManifests: "id, deviceId, playlistId, lastSyncedAt",
+      deviceFileIndex: "id, deviceId, matchKey, contentHash, updatedAt",
     });
   }
 }

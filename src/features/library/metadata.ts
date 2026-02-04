@@ -367,6 +367,8 @@ export interface EnhancedMetadata {
   tempo?: number | "slow" | "medium" | "fast";
   /** Mood tags (manual edits or future acoustic analysis) */
   mood?: string[];
+  /** Activity tags (manual edits or inferred from audio/metadata) */
+  activity?: string[];
   /** Additional tags from MusicBrainz */
   musicbrainzTags?: string[];
   /** Timestamp when manual edits were last made */

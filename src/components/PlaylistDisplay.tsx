@@ -198,6 +198,7 @@ function ChipInput({
 import {
   getStrategy,
   generatePlaylistFromStrategy,
+  remixSavedPlaylist,
 } from "@/features/playlists";
 import type { PlaylistRequest } from "@/types/playlist";
 import { getCurrentLibrarySummary } from "@/features/library/summarization";
@@ -207,6 +208,7 @@ import {
   updatePlaylist as updateSavedPlaylist,
   updatePlaylistMetadata,
   isPlaylistSaved,
+  getSavedPlaylistRequest,
 } from "@/db/playlist-storage";
 import { SavePlaylistDialog } from "./SavePlaylistDialog";
 
@@ -240,6 +242,8 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   const [expandedTrackId, setExpandedTrackId] = useState<string | null>(null);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [isSavingChanges, setIsSavingChanges] = useState(false);
+  const [showRemixDialog, setShowRemixDialog] = useState(false);
+  const [isRemixing, setIsRemixing] = useState(false);
   const [variantError, setVariantError] = useState<{
     title: string;
     message: string;
@@ -441,6 +445,16 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       // Ignore parsing errors
     }
   }, []);
+
+  const getRequestFromSessionStorage = (): PlaylistRequest | undefined => {
+    const stored = sessionStorage.getItem("playlist-request");
+    if (!stored) return undefined;
+    try {
+      return JSON.parse(stored) as PlaylistRequest;
+    } catch {
+      return undefined;
+    }
+  };
 
   // Load suggestions for inline editor
   useEffect(() => {
@@ -1001,13 +1015,14 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   const handleSaveEdits = async (options: { mode: "override" | "remix"; title: string; description?: string }) => {
     setIsSavingChanges(true);
     try {
+      const storedRequest = getRequestFromSessionStorage();
       if (options.mode === "override") {
         const updated: GeneratedPlaylist = {
           ...editedPlaylist,
           title: options.title,
           description: options.description ?? editedPlaylist.description,
         };
-        await updateSavedPlaylist(updated, libraryRootId);
+        await updateSavedPlaylist(updated, libraryRootId, storedRequest);
         setPlaylist(updated);
         markClean(updated);
         setIsSaved(true);
@@ -1021,7 +1036,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
           description: options.description ?? editedPlaylist.description,
           createdAt: Date.now(),
         };
-        await savePlaylist(remixed, libraryRootId);
+        await savePlaylist(remixed, libraryRootId, storedRequest);
         setPlaylist(remixed);
         markClean(remixed);
         setIsSaved(true);
@@ -1073,12 +1088,42 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
         ...playlist, 
         customEmoji: customEmoji 
       };
-      await savePlaylist(playlistToSave, libraryRootId);
+      const storedRequest = getRequestFromSessionStorage();
+      await savePlaylist(playlistToSave, libraryRootId, storedRequest);
       setIsSaved(true);
     } catch (error) {
       logger.error("Failed to save playlist:", error);
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleRemix(options: { title: string; description?: string }) {
+    setIsRemixing(true);
+    try {
+      const sessionRequest = getRequestFromSessionStorage();
+      const storedRequest =
+        sessionRequest ?? (await getSavedPlaylistRequest(playlist.id));
+      const targetLibraryRootId = playlistCollectionId ?? libraryRootId;
+      const { playlist: remixed, request } = await remixSavedPlaylist({
+        playlist,
+        storedRequest,
+        libraryRootId: targetLibraryRootId,
+        title: options.title,
+        description: options.description,
+      });
+      await savePlaylist(remixed, targetLibraryRootId, request);
+      setPlaylist(remixed);
+      markClean(remixed);
+      setIsSaved(true);
+      storePlaylistInSessionStorage(remixed);
+      sessionStorage.setItem("playlist-request", JSON.stringify(request));
+    } catch (error) {
+      logger.error("Failed to remix playlist:", error);
+      alert("Failed to remix playlist. Please try again.");
+    } finally {
+      setIsRemixing(false);
+      setShowRemixDialog(false);
     }
   }
 
@@ -1433,18 +1478,28 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [expandedTrackId, handleToggleEditMode, handleRemoveTrack, isDirty, isEditMode]);
 
-  // Parse request from sessionStorage with defaults
-  const storedRequest = sessionStorage.getItem("playlist-request");
-  const request = storedRequest 
-    ? JSON.parse(storedRequest)
-    : {
-        genres: [],
-        mood: [],
-        activity: [],
-        length: { type: "tracks" as const, value: 0 },
-        tempo: {},
-        surprise: 0,
-      };
+  const [storedRequest, setStoredRequest] = useState<PlaylistRequest | null>(null);
+
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem("playlist-request");
+      if (stored) {
+        setStoredRequest(JSON.parse(stored) as PlaylistRequest);
+      }
+    } catch {
+      setStoredRequest(null);
+    }
+  }, []);
+
+  // Parse request with defaults (avoid sessionStorage during render)
+  const request = storedRequest ?? {
+    genres: [],
+    mood: [],
+    activity: [],
+    length: { type: "tracks" as const, value: 0 },
+    tempo: {},
+    surprise: 0,
+  };
   
   // Ensure arrays exist
   const safeRequest = {
@@ -1567,6 +1622,16 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                         ))}
                       </div>
                     )}
+                    {displayPlaylist.validation.suggestions.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {displayPlaylist.validation.suggestions.map((suggestion, idx) => (
+                          <div key={idx} className="flex items-start gap-2 text-sm text-app-tertiary">
+                            <Sparkles className="size-4 mt-0.5 flex-shrink-0" />
+                            <span>{suggestion}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
                 
@@ -1648,6 +1713,25 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                   <>
                     <Save className="size-4" />
                     Save Playlist
+                  </>
+                )}
+              </button>
+            )}
+            {!isEditMode && isSaved && (
+              <button
+                onClick={() => setShowRemixDialog(true)}
+                disabled={isRemixing}
+                className="flex items-center gap-2 px-4 py-2 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors disabled:opacity-50 text-sm border border-app-border"
+              >
+                {isRemixing ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Remixing...
+                  </>
+                ) : (
+                  <>
+                    <Shuffle className="size-4" />
+                    Remix
                   </>
                 )}
               </button>
@@ -2072,6 +2156,21 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
         defaultDescription={editedPlaylist.description || displayPlaylist.description}
         onClose={() => setShowSaveDialog(false)}
         onConfirm={handleSaveEdits}
+      />
+
+      <SavePlaylistDialog
+        isOpen={showRemixDialog}
+        defaultTitle={`${displayPlaylist.title} (Remix)`}
+        defaultDescription={displayPlaylist.description}
+        onClose={() => setShowRemixDialog(false)}
+        onConfirm={(options) =>
+          handleRemix({ title: options.title, description: options.description })
+        }
+        defaultMode="remix"
+        modeOptions={["remix"]}
+        titleText="Remix Playlist"
+        confirmLabel="Remix"
+        confirmDisabled={isRemixing}
       />
 
       {/* Export Section */}
