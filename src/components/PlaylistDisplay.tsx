@@ -984,6 +984,8 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
         reasons: [],
         genreMatch: 0,
         tempoMatch: 0,
+        moodMatch: 0.5,
+        activityMatch: 0.5,
         durationFit: 0,
         diversity: 0,
         surprise: 0,
