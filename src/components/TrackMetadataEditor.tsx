@@ -19,7 +19,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Save, X, Edit2, Music, Heart, Gauge } from "lucide-react";
+import { Save, X, Edit2, Music, Heart, Gauge, Activity } from "lucide-react";
 import type { TrackRecord } from "@/db/schema";
 import type { EnhancedMetadata } from "@/features/library/metadata";
 import { ChipInput } from "./ChipInput";
@@ -58,12 +58,28 @@ const MOOD_SUGGESTIONS = [
   "Dark",
 ];
 
+const ACTIVITY_SUGGESTIONS = [
+  "Workout",
+  "Running",
+  "Study",
+  "Work",
+  "Commute",
+  "Cooking",
+  "Party",
+  "Dance",
+  "Relaxing",
+  "Meditation",
+  "Reading",
+  "Sleep",
+];
+
 /**
  * Get current metadata values from track, prioritizing manual edits
  */
 function getCurrentMetadata(track: TrackRecord): {
   genres: string[];
   mood: string[];
+  activity: string[];
   tempo: number | "slow" | "medium" | "fast" | undefined;
 } {
   const enhanced = track.enhancedMetadata;
@@ -72,9 +88,10 @@ function getCurrentMetadata(track: TrackRecord): {
   // Prioritize enhanced metadata, fall back to tags
   const genres = enhanced?.genres || tags.genres || [];
   const mood = enhanced?.mood || [];
+  const activity = enhanced?.activity || [];
   const tempo = enhanced?.tempo || track.tech?.bpm;
 
-  return { genres, mood, tempo };
+  return { genres, mood, activity, tempo };
 }
 
 /**
@@ -94,6 +111,7 @@ export function TrackMetadataEditor({
   const { editTrack, saveEdits, cancelEdit, isEditing, updateEdits } = useTrackMetadataEditor();
   const [localGenres, setLocalGenres] = useState<string[]>([]);
   const [localMood, setLocalMood] = useState<string[]>([]);
+  const [localActivity, setLocalActivity] = useState<string[]>([]);
   const [localTempo, setLocalTempo] = useState<string>("");
   const [tempoMode, setTempoMode] = useState<"bpm" | "category">("bpm");
   const [tempoError, setTempoError] = useState<string>("");
@@ -106,6 +124,7 @@ export function TrackMetadataEditor({
   useEffect(() => {
     setLocalGenres(currentMetadata.genres);
     setLocalMood(currentMetadata.mood);
+    setLocalActivity(currentMetadata.activity);
     
     // Initialize tempo based on type
     const tempo = currentMetadata.tempo;
@@ -177,6 +196,7 @@ export function TrackMetadataEditor({
       const edits: Partial<EnhancedMetadata> = {
         genres: localGenres,
         mood: localMood,
+        activity: localActivity,
       };
 
       if (localTempo.trim()) {
@@ -211,6 +231,7 @@ export function TrackMetadataEditor({
     cancelEdit();
     setLocalGenres(currentMetadata.genres);
     setLocalMood(currentMetadata.mood);
+    setLocalActivity(currentMetadata.activity);
     const tempo = currentMetadata.tempo;
     if (tempo === undefined) {
       setLocalTempo("");
@@ -228,6 +249,7 @@ export function TrackMetadataEditor({
 
   const genresManuallyEdited = isManuallyEdited(track, "genres");
   const moodManuallyEdited = isManuallyEdited(track, "mood");
+  const activityManuallyEdited = isManuallyEdited(track, "activity");
   const tempoManuallyEdited = isManuallyEdited(track, "tempo");
 
   if (!inline) {
@@ -302,6 +324,24 @@ export function TrackMetadataEditor({
             placeholder="Add mood tags..."
             suggestions={MOOD_SUGGESTIONS}
             icon={<Heart className="size-4" />}
+          />
+        </div>
+
+        {/* Activity */}
+        <div>
+          <label className="flex items-center gap-2 text-app-primary mb-2 text-sm font-medium">
+            <Activity className="size-4 text-accent-primary" />
+            <span>Activity</span>
+            {activityManuallyEdited && (
+              <span className="text-xs text-accent-primary">(Manually edited)</span>
+            )}
+          </label>
+          <ChipInput
+            values={localActivity}
+            onChange={setLocalActivity}
+            placeholder="Add activity tags..."
+            suggestions={ACTIVITY_SUGGESTIONS}
+            icon={<Activity className="size-4" />}
           />
         </div>
 

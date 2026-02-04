@@ -207,6 +207,8 @@ export default function LibraryPage() {
             setIsNewSelection(true);
             // Explicitly set to false (not null) so LibraryScanner shows scan button immediately
             setHasExistingScans(false);
+            setTriggerScan(true);
+            setTimeout(() => setTriggerScan(false), 100);
           }}
           onPermissionStatus={(status) => {
             setPermissionStatus(status);

@@ -23,6 +23,7 @@ import { getFileIndexEntries } from "@/db/storage";
 import { getLibraryRoot } from "@/db/storage-library-root";
 import { db, getCompositeId } from "@/db/schema";
 import { logger } from "@/lib/logger";
+import { inferActivityFromTrack } from "./activity-inference";
 
 const LOG_THROTTLE_MS = 2000;
 const logStates = new Map<string, { last: number; suppressed: number }>();
@@ -447,11 +448,22 @@ export async function enhanceTrackMetadata(
       }
     }
 
+    // 3. Infer activity tags if missing and not manually set
+    const manualFields = track.enhancedMetadata?.manualFields || [];
+    const hasManualActivity = manualFields.includes("activity");
+    if (!hasManualActivity && !(track.enhancedMetadata?.activity?.length)) {
+      const inferredActivity = inferActivityFromTrack(track);
+      if (inferredActivity.length > 0) {
+        enhanced.activity = inferredActivity;
+        hasEnhancements = true;
+      }
+    }
+
     if (!hasEnhancements) {
       return null;
     }
 
-    // 3. Update track in database
+    // 4. Update track in database
     await updateTrackMetadata(track.id, enhanced, false); // false = not manual edit
     
     // Also update metadataEnhancementDate and musicbrainzId
@@ -661,7 +673,8 @@ export async function detectTempoForLibrary(
   libraryRootId: string,
   onProgress?: (progress: { processed: number; total: number; detected: number; currentTrack?: string }) => void,
   batchSize: number = 5,
-  trackFileIds?: string[]
+  trackFileIds?: string[],
+  signal?: AbortSignal
 ): Promise<{ processed: number; detected: number; errors: Array<{ trackId: string; error: string }> }> {
   const result = {
     processed: 0,
@@ -670,6 +683,9 @@ export async function detectTempoForLibrary(
   };
 
   try {
+    if (signal?.aborted) {
+      throw new DOMException("Tempo detection aborted", "AbortError");
+    }
     // Get tracks without BPM (or with low confidence BPM)
     const allTracks = await db.tracks
       .where("libraryRootId")
@@ -714,12 +730,18 @@ export async function detectTempoForLibrary(
 
     // Process in batches with bounded concurrency
     for (let i = 0; i < tracksNeedingDetection.length; i += batchSize) {
+      if (signal?.aborted) {
+        throw new DOMException("Tempo detection aborted", "AbortError");
+      }
       const batch = tracksNeedingDetection.slice(i, i + batchSize);
       const concurrency = Math.min(3, batch.length);
       const inFlight = new Set<Promise<void>>();
 
       const runTask = async (track: TrackRecord) => {
         try {
+          if (signal?.aborted) {
+            return;
+          }
           if (onProgress) {
             onProgress({
               processed: result.processed,
@@ -767,6 +789,10 @@ export async function detectTempoForLibrary(
     logger.info(`Tempo detection complete: ${result.detected}/${result.processed} tracks detected`);
     return result;
   } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      logger.info("Tempo detection aborted by user");
+      return result;
+    }
     logger.error("Failed to detect tempo for library:", error);
     result.errors.push({
       trackId: "unknown",

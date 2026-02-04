@@ -41,9 +41,21 @@ import { normalizeGenre } from "@/features/library/genre-normalization";
 import { logger } from "@/lib/logger";
 import { scoreTrack, refineTrackSelectionWithLLM } from "./track-selection";
 import { generatePlaylistSummary } from "./summary";
+import { mapMoodTagsToCategories } from "@/features/library/mood-mapping";
+import { mapActivityTagsToCategories } from "@/features/library/activity-mapping";
+import { inferActivityFromTrack } from "@/features/library/activity-inference";
 
 export interface TrackReason {
-  type: "genre_match" | "tempo_match" | "duration_fit" | "diversity" | "surprise" | "constraint";
+  type:
+    | "genre_match"
+    | "tempo_match"
+    | "mood_match"
+    | "activity_match"
+    | "duration_fit"
+    | "diversity"
+    | "surprise"
+    | "constraint"
+    | "affinity";
   explanation: string;
   score: number;
 }
@@ -55,6 +67,8 @@ export interface TrackSelection {
   reasons: TrackReason[];
   genreMatch: number;
   tempoMatch: number;
+  moodMatch: number;
+  activityMatch: number;
   durationFit: number;
   diversity: number;
   surprise: number;
@@ -125,6 +139,83 @@ class SeededRandom {
   }
 }
 
+/** Returns canonical mood categories for a track (from tags or tempo fallback). */
+function getMappedMoodTags(track: TrackRecord): string[] {
+  return mapMoodTagsToCategories(track.enhancedMetadata?.mood || []);
+}
+
+/** Returns canonical activity categories for a track (from tags or inference). */
+function getMappedActivityTags(track: TrackRecord): string[] {
+  const mapped = mapActivityTagsToCategories(track.enhancedMetadata?.activity || []);
+  if (mapped.length > 0) {
+    return mapped;
+  }
+  return inferActivityFromTrack(track);
+}
+
+/**
+ * Context of artists and genres related to user suggestions.
+ * Used to give affinity bonuses to tracks from suggested artists or similar genres.
+ */
+interface AffinityContext {
+  artists: Set<string>;
+  genres: Set<string>;
+}
+
+function normalizeKey(value?: string): string {
+  return value?.toLowerCase().trim() || "";
+}
+
+/**
+ * Builds affinity context from suggested artists/albums/tracks.
+ * Includes similar artists from track metadata. Used to seed candidate pools
+ * and apply affinity bonuses during scoring.
+ */
+function buildAffinityContext(request: PlaylistRequest, allTracks: TrackRecord[]): AffinityContext {
+  const context: AffinityContext = {
+    artists: new Set<string>(),
+    genres: new Set<string>(),
+  };
+
+  const suggestedArtists = (request.suggestedArtists || []).map(normalizeKey).filter(Boolean);
+  const suggestedAlbums = (request.suggestedAlbums || []).map(normalizeKey).filter(Boolean);
+  const suggestedTracks = (request.suggestedTracks || []).map(normalizeKey).filter(Boolean);
+
+  for (const artist of suggestedArtists) {
+    context.artists.add(artist);
+  }
+
+  for (const track of allTracks) {
+    const artistKey = normalizeKey(track.tags.artist);
+    const albumKey = normalizeKey(track.tags.album);
+    const titleKey = normalizeKey(track.tags.title);
+
+    const isSuggestedArtist = artistKey && suggestedArtists.includes(artistKey);
+    const isSuggestedAlbum = albumKey && suggestedAlbums.includes(albumKey);
+    const isSuggestedTrack = titleKey && suggestedTracks.includes(titleKey);
+
+    if (isSuggestedArtist || isSuggestedAlbum || isSuggestedTrack) {
+      if (artistKey) {
+        context.artists.add(artistKey);
+      }
+      for (const genre of track.tags.genres) {
+        const normalized = normalizeGenre(genre).toLowerCase();
+        if (normalized) {
+          context.genres.add(normalized);
+        }
+      }
+      for (const similar of track.enhancedMetadata?.similarArtists || []) {
+        const similarKey = normalizeKey(similar);
+        if (similarKey) {
+          context.artists.add(similarKey);
+        }
+      }
+    }
+  }
+
+  return context;
+}
+
 
 /**
  * Generate playlist with deterministic track selection
@@ -182,6 +273,7 @@ export async function generatePlaylist(
 
   // Get candidate tracks
   const candidateIds = new Set<string>();
+  const affinityContext = buildAffinityContext(request, allTracks);
 
   // Start with required genres or requested genres
   const genresToMatch =
@@ -197,6 +289,16 @@ export async function generatePlaylist(
   } else {
     // No genre filter - use all tracks
     index.allTrackIds.forEach((id) => candidateIds.add(id));
+  }
+
+  // Seed candidate pool with affinity artists (suggested or similar)
+  if (affinityContext.artists.size > 0) {
+    for (const track of allTracks) {
+      const artistKey = normalizeKey(track.tags.artist);
+      if (artistKey && affinityContext.artists.has(artistKey)) {
+        candidateIds.add(track.trackFileId);
+      }
+    }
   }
 
   // Remove excluded genres
@@ -242,6 +344,38 @@ export async function generatePlaylist(
     candidateIds.clear();
     for (const id of filteredIds) {
       candidateIds.add(id);
+    }
+  }
+
+  // Filter by mood/activity when tags are available (balanced mode)
+  if ((request.mood.length > 0 || request.activity.length > 0) && candidateIds.size > 0) {
+    const filteredIds = new Set<string>();
+    for (const trackId of candidateIds) {
+      const track = allTracks.find((t) => t.trackFileId === trackId);
+      if (!track) continue;
+
+      const moodTags = getMappedMoodTags(track);
+      const activityTags = getMappedActivityTags(track);
+
+      const moodPass =
+        request.mood.length === 0 ||
+        moodTags.length === 0 ||
+        moodTags.some((m) => request.mood.includes(m));
+      const activityPass =
+        request.activity.length === 0 ||
+        activityTags.length === 0 ||
+        activityTags.some((a) => request.activity.includes(a));
+
+      if (moodPass && activityPass) {
+        filteredIds.add(trackId);
+      }
+    }
+
+    if (filteredIds.size > 0) {
+      candidateIds.clear();
+      for (const id of filteredIds) {
+        candidateIds.add(id);
+      }
     }
   }
 
@@ -327,7 +461,8 @@ export async function generatePlaylist(
       selected.map((s) => s.track),
       currentDuration,
       targetDurationSeconds,
-      remainingSlots
+      remainingSlots,
+      affinityContext
     );
     selected.push(selection);
     currentDuration += track.tech?.durationSeconds || 180;
@@ -390,7 +525,8 @@ export async function generatePlaylist(
           selected.map((s) => s.track),
           currentDuration,
           targetDurationSeconds,
-          remainingSlots
+          remainingSlots,
+          affinityContext
         )
       );
 

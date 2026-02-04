@@ -40,6 +40,14 @@ import { ThemeToggle } from "./ThemeToggle";
 import { Logo } from "./Logo";
 import { InstallPromptButton } from "./InstallPromptButton";
 
+const NAV_ITEMS = [
+  { href: "/", label: "Home" },
+  { href: "/library", label: "Library" },
+  { href: "/device-sync", label: "Device Sync" },
+  { href: "/playlists/new", label: "New Playlist" },
+  { href: "/playlists/saved", label: "Saved Playlists" },
+];
+
 /**
  * Main navigation component
  * 
@@ -50,13 +58,9 @@ import { InstallPromptButton } from "./InstallPromptButton";
 export function Navigation() {
   const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
 
-  const navItems = [
-    { href: "/", label: "Home" },
-    { href: "/library", label: "Library" },
-    { href: "/playlists/new", label: "New Playlist" },
-    { href: "/playlists/saved", label: "Saved Playlists" },
-  ];
+  const navItems = NAV_ITEMS;
 
   // Prevent body scroll when mobile menu is open
   useEffect(() => {
@@ -69,6 +73,11 @@ export function Navigation() {
       document.body.style.overflow = "";
     };
   }, [isMobileMenuOpen]);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -100,7 +109,8 @@ export function Navigation() {
           
           {/* Desktop Navigation - centered, hidden on mobile */}
           <div className="hidden md:flex items-center justify-center flex-1 gap-2">
-            {navItems.map((item) => {
+            {isHydrated &&
+              navItems.map((item) => {
               const isActive = pathname === item.href;
               return (
                 <Link
@@ -114,8 +124,8 @@ export function Navigation() {
                 >
                   {item.label}
                 </Link>
-              );
-            })}
+                );
+              })}
           </div>
           
           {/* Right side: Theme toggle (desktop) or Menu button (mobile) */}
@@ -164,7 +174,8 @@ export function Navigation() {
             {/* Menu Items */}
             <div className="flex-1 flex flex-col py-8 px-4">
               <nav className="flex flex-col space-y-2">
-                {navItems.map((item) => {
+                {isHydrated &&
+                  navItems.map((item) => {
                   const isActive = pathname === item.href;
                   return (
                     <Link

@@ -7,6 +7,11 @@ interface SavePlaylistDialogProps {
   defaultDescription?: string;
   onClose: () => void;
   onConfirm: (options: { mode: "override" | "remix"; title: string; description?: string }) => void;
+  defaultMode?: "override" | "remix";
+  modeOptions?: Array<"override" | "remix">;
+  titleText?: string;
+  confirmLabel?: string;
+  confirmDisabled?: boolean;
 }
 
 export function SavePlaylistDialog({
@@ -15,17 +20,24 @@ export function SavePlaylistDialog({
   defaultDescription,
   onClose,
   onConfirm,
+  defaultMode = "override",
+  modeOptions = ["override", "remix"],
+  titleText = "Save Playlist",
+  confirmLabel = "Save",
+  confirmDisabled = false,
 }: SavePlaylistDialogProps) {
-  const [mode, setMode] = useState<"override" | "remix">("override");
+  const initialMode =
+    modeOptions.includes(defaultMode) ? defaultMode : modeOptions[0];
+  const [mode, setMode] = useState<"override" | "remix">(initialMode);
   const [title, setTitle] = useState(defaultTitle);
   const [description, setDescription] = useState(defaultDescription || "");
 
   useEffect(() => {
     if (!isOpen) return;
-    setMode("override");
+    setMode(initialMode);
     setTitle(defaultTitle);
     setDescription(defaultDescription || "");
-  }, [isOpen, defaultTitle, defaultDescription]);
+  }, [isOpen, defaultTitle, defaultDescription, initialMode]);
 
   useEffect(() => {
     if (mode === "remix" && title === defaultTitle) {
@@ -42,7 +54,7 @@ export function SavePlaylistDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
       <div className="w-full max-w-lg bg-app-surface rounded-sm border border-app-border shadow-2xl">
         <div className="flex items-center justify-between px-6 py-4 border-b border-app-border">
-          <h3 className="text-app-primary text-lg font-semibold">Save Playlist</h3>
+          <h3 className="text-app-primary text-lg font-semibold">{titleText}</h3>
           <button
             onClick={onClose}
             className="p-2 text-app-secondary hover:text-app-primary transition-colors"
@@ -53,24 +65,30 @@ export function SavePlaylistDialog({
         </div>
 
         <div className="p-6 space-y-4">
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-app-primary text-sm">
-              <input
-                type="radio"
-                checked={mode === "override"}
-                onChange={() => setMode("override")}
-              />
-              Save as override
-            </label>
-            <label className="flex items-center gap-2 text-app-primary text-sm">
-              <input
-                type="radio"
-                checked={mode === "remix"}
-                onChange={() => setMode("remix")}
-              />
-              Save as remixed copy
-            </label>
-          </div>
+          {modeOptions.length > 1 && (
+            <div className="space-y-2">
+              {modeOptions.includes("override") && (
+                <label className="flex items-center gap-2 text-app-primary text-sm">
+                  <input
+                    type="radio"
+                    checked={mode === "override"}
+                    onChange={() => setMode("override")}
+                  />
+                  Save as override
+                </label>
+              )}
+              {modeOptions.includes("remix") && (
+                <label className="flex items-center gap-2 text-app-primary text-sm">
+                  <input
+                    type="radio"
+                    checked={mode === "remix"}
+                    onChange={() => setMode("remix")}
+                  />
+                  Save as remixed copy
+                </label>
+              )}
+            </div>
+          )}
 
           <div className="space-y-3">
             <div>
@@ -103,10 +121,11 @@ export function SavePlaylistDialog({
           </button>
           <button
             onClick={() => onConfirm({ mode, title: title.trim() || defaultTitle, description: description.trim() })}
-            className="flex items-center gap-2 px-4 py-2 bg-accent-primary text-white rounded-sm text-sm hover:bg-accent-hover transition-colors"
+            disabled={confirmDisabled}
+            className="flex items-center gap-2 px-4 py-2 bg-accent-primary text-white rounded-sm text-sm hover:bg-accent-hover transition-colors disabled:opacity-50"
           >
             <Check className="size-4" />
-            Save
+            {confirmLabel}
           </button>
         </div>
       </div>

@@ -21,6 +21,7 @@ const SEARCH_TYPES: Array<{ value: TrackSearchType; label: string; placeholder: 
   { value: "genre", label: "Genre", placeholder: "Search genre..." },
   { value: "tempo", label: "Tempo", placeholder: "Search tempo (slow, medium, fast, 120)" },
   { value: "mood", label: "Mood", placeholder: "Search mood (happy, calm, energetic)" },
+  { value: "activity", label: "Activity", placeholder: "Search activity (workout, study, commute)" },
 ];
 
 export function MultiCriteriaTrackSearch({

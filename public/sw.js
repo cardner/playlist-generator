@@ -1,4 +1,4 @@
-const VERSION = "v1";
+const VERSION = "v2";
 const STATIC_CACHE = `static-${VERSION}`;
 const RUNTIME_CACHE = `runtime-${VERSION}`;
 
@@ -47,6 +47,10 @@ function isAssetRequest(requestUrl) {
   );
 }
 
+function isNextStatic(requestUrl) {
+  return requestUrl.pathname.startsWith("/_next/static/");
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") {
@@ -59,6 +63,24 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const responseClone = response.clone();
+          caches.open(RUNTIME_CACHE).then((cache) => {
+            cache.put(request, responseClone);
+          });
+          return response;
+        })
+        .catch(async () => {
+          const cached = await caches.match(request);
+          return cached || caches.match("/");
+        })
+    );
+    return;
+  }
+
+  if (isNextStatic(requestUrl)) {
     event.respondWith(
       fetch(request)
         .then((response) => {

@@ -10,11 +10,16 @@ import {
   searchTracksByTempo,
 } from "@/db/storage";
 import { getAllTracks, getTracks } from "@/db/storage";
-import { updateTrackMood } from "@/db/storage-tracks";
+import { updateTrackActivity, updateTrackMood } from "@/db/storage-tracks";
 import { inferTrackMoodWithLLM } from "@/features/library/mood-inference";
 import { mapMoodTagsToCategories, normalizeMoodCategory } from "@/features/library/mood-mapping";
+import { inferTrackActivityWithLLM } from "@/features/library/activity-inference";
+import {
+  mapActivityTagsToCategories,
+  normalizeActivityCategory,
+} from "@/features/library/activity-mapping";
 
-export type TrackSearchType = "track" | "artist" | "album" | "genre" | "tempo" | "mood";
+export type TrackSearchType = "track" | "artist" | "album" | "genre" | "tempo" | "mood" | "activity";
 
 interface TrackSearchParams {
   query: string;
@@ -26,6 +31,8 @@ interface TrackSearchParams {
 
 const mappedMoodCache = new Map<string, string[]>();
 let moodMappingWarm = false;
+const mappedActivityCache = new Map<string, string[]>();
+let activityMappingWarm = false;
 
 function warmMoodMappingCache(tracks: TrackRecord[]) {
   if (moodMappingWarm) return;
@@ -43,6 +50,22 @@ function warmMoodMappingCache(tracks: TrackRecord[]) {
   }, 0);
 }
 
+function warmActivityMappingCache(tracks: TrackRecord[]) {
+  if (activityMappingWarm) return;
+  activityMappingWarm = true;
+
+  setTimeout(() => {
+    for (const track of tracks) {
+      const tags = track.enhancedMetadata?.activity || [];
+      if (tags.length === 0) continue;
+      const mapped = mapActivityTagsToCategories(tags);
+      if (mapped.length > 0) {
+        mappedActivityCache.set(track.trackFileId, mapped);
+      }
+    }
+  }, 0);
+}
+
 function getMappedMoodsForTrack(track: TrackRecord): string[] {
   const cached = mappedMoodCache.get(track.trackFileId);
   if (cached) return cached;
@@ -51,6 +74,18 @@ function getMappedMoodsForTrack(track: TrackRecord): string[] {
   const mapped = mapMoodTagsToCategories(tags);
   if (mapped.length > 0) {
     mappedMoodCache.set(track.trackFileId, mapped);
+  }
+  return mapped;
+}
+
+function getMappedActivitiesForTrack(track: TrackRecord): string[] {
+  const cached = mappedActivityCache.get(track.trackFileId);
+  if (cached) return cached;
+  const tags = track.enhancedMetadata?.activity || [];
+  if (tags.length === 0) return [];
+  const mapped = mapActivityTagsToCategories(tags);
+  if (mapped.length > 0) {
+    mappedActivityCache.set(track.trackFileId, mapped);
   }
   return mapped;
 }
@@ -145,6 +180,71 @@ async function searchByMood(
   return mappedMatches.slice(0, limit);
 }
 
+async function searchByActivity(
+  query: string,
+  limit: number,
+  libraryRootId?: string,
+  llmConfig?: LLMConfig
+): Promise<TrackRecord[]> {
+  const normalizedActivity = normalizeActivityCategory(query);
+  if (!normalizedActivity) {
+    return [];
+  }
+
+  const allTracks = libraryRootId ? await getTracks(libraryRootId) : await getAllTracks();
+  warmActivityMappingCache(allTracks);
+
+  const mappedMatches: TrackRecord[] = [];
+  for (const track of allTracks) {
+    const mapped = getMappedActivitiesForTrack(track);
+    if (mapped.includes(normalizedActivity)) {
+      mappedMatches.push(track);
+    }
+    if (mappedMatches.length >= limit) {
+      return mappedMatches.slice(0, limit);
+    }
+  }
+
+  if (!llmConfig || !llmConfig.apiKey || !llmConfig.provider) {
+    return mappedMatches.slice(0, limit);
+  }
+
+  const remainingSlots = limit - mappedMatches.length;
+  if (remainingSlots <= 0) {
+    return mappedMatches.slice(0, limit);
+  }
+
+  const candidates = allTracks.filter((track) => getMappedActivitiesForTrack(track).length === 0);
+  for (const track of candidates) {
+    if (mappedMatches.length >= limit) break;
+
+    const inference = await inferTrackActivityWithLLM(track, llmConfig.provider, llmConfig.apiKey);
+    if (!inference || inference.activity.length === 0) {
+      continue;
+    }
+
+    const mapped = inference.activity
+      .map((activity) => normalizeActivityCategory(activity))
+      .filter((activity): activity is string => !!activity);
+
+    if (mapped.length === 0) {
+      continue;
+    }
+
+    mappedActivityCache.set(track.trackFileId, mapped);
+    if (mapped.includes(normalizedActivity)) {
+      mappedMatches.push(track);
+    }
+
+    if (!track.enhancedMetadata?.activity || track.enhancedMetadata.activity.length === 0) {
+      const trackId = getCompositeId(track.trackFileId, track.libraryRootId);
+      await updateTrackActivity(trackId, mapped, false);
+    }
+  }
+
+  return mappedMatches.slice(0, limit);
+}
+
 export async function searchTracksByCriteria({
   query,
   type,
@@ -168,6 +268,8 @@ export async function searchTracksByCriteria({
     }
     case "mood":
       return searchByMood(query, limit, libraryRootId, llmConfig);
+    case "activity":
+      return searchByActivity(query, limit, libraryRootId, llmConfig);
     default:
       return [];
   }

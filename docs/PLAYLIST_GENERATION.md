@@ -9,8 +9,10 @@ This document provides a comprehensive guide to how the AI Playlist Generator cr
 - [Strategy System](#strategy-system)
 - [Matching Algorithm](#matching-algorithm)
 - [Scoring System](#scoring-system)
+- [Mood and Activity](#mood-and-activity)
 - [Track Selection](#track-selection)
 - [Ordering and Flow Arc](#ordering-and-flow-arc)
+- [Deterministic Validation](#deterministic-validation)
 - [Constraints](#constraints)
 - [Discovery Mode](#discovery-mode)
 - [LLM Integration](#llm-integration)
@@ -99,9 +101,13 @@ interface PlaylistStrategy {
 }
 ```
 
-### 3. Track Filtering
+### 3. Request Normalization
 
-Filters candidate tracks based on constraints:
+Before matching, mood and activity lists are normalized to canonical categories via `request-normalization`. This maps user input (e.g. "chill", "gym") to categories like "Relaxing" and "Workout" for consistent matching.
+
+### 4. Track Filtering
+
+Filters candidate tracks based on constraints. When mood or activity is requested, tracks with no matching tags may be deprioritized (balanced prefilter) rather than excluded entirely.
 
 ```typescript
 // Filter by required genres
@@ -126,7 +132,7 @@ if (request.tempo.bucket) {
 }
 ```
 
-### 4. Track Scoring
+### 5. Track Scoring
 
 Each candidate track is scored using multiple factors:
 
@@ -140,7 +146,7 @@ const score = (
 ) + suggestionBonus;
 ```
 
-### 5. Track Selection
+### 6. Track Selection
 
 Selects top-scoring tracks with optional LLM refinement:
 
@@ -163,7 +169,7 @@ if (useLLMRefinement) {
 }
 ```
 
-### 6. Summary Generation
+### 7. Summary Generation
 
 Generates statistics about the playlist:
 
@@ -189,7 +195,7 @@ const ordered = orderTracks(selections, strategy, request, matchingIndex);
 // Returns: { tracks: [...], arc: { warmup: 3, build: 5, peak: 4, cooldown: 3 } }
 ```
 
-### 8. Discovery Integration
+### 9. Discovery Integration
 
 If discovery mode is enabled, integrates discovery tracks:
 
@@ -293,7 +299,15 @@ To ensure determinism:
 
 ## Scoring System
 
-Tracks are scored using multiple factors:
+Tracks are scored using multiple factors. The built-in agent uses deterministic scoring; the LLM agent can optionally refine scores.
+
+### Mood Match (0-1)
+
+Tracks are scored by comparing their mood tags (or tempo-inferred moods when tags are missing) against requested moods. Uses `mood-mapping` for canonical categories. Unknown mood yields a neutral 0.5.
+
+### Activity Match (0-1)
+
+Tracks are scored by comparing their activity tags (or inferred activities from BPM/genres when tags are missing) against requested activities. Uses `activity-mapping` and `activity-inference` for canonical categories. Unknown activity yields a neutral 0.5.
 
 ### Genre Match (0-1)
 
@@ -374,6 +388,8 @@ function calculateDurationFit(track, targetDuration, currentDuration, remainingS
 
 ### Diversity (0-1)
 
+Diversity scoring includes penalties for repeated artists, genres, moods, and activities. Light penalties (0.9x) apply when mood or activity tags repeat in the last few tracks.
+
 ```typescript
 function calculateDiversity(track, previousTracks, strategy) {
   let score = 1.0;
@@ -416,16 +432,33 @@ function calculateSurprise(track, requestedGenres, previousTracks, index, surpri
 }
 ```
 
+### Affinity Bonus
+
+Tracks from suggested artists, albums, or similar genres receive an affinity bonus (up to 0.15). This encourages playlists that include related artists when the user suggests specific artists or tracks.
+
+## Mood and Activity
+
+Mood and activity are first-class criteria for playlist matching:
+
+- **Request normalization**: User input (e.g. "chill", "gym") is normalized to canonical categories via `request-normalization` before matching.
+- **Track tags**: Tracks can have `enhancedMetadata.mood` and `enhancedMetadata.activity` arrays. These are inferred during metadata enhancement (from BPM and genres) or set manually.
+- **Fallback inference**: When a track has no activity tags, `activity-inference` infers from BPM (tempo bucket) and genres (e.g. ambient → relaxing, edm → party).
+- **Mood fallback**: When a track has no mood tags, tempo bucket maps to default moods (e.g. slow → calm, fast → energetic).
+- **Scoring**: Both mood and activity contribute to the final score. Unknown tags yield a neutral 0.5.
+- **Ordering**: Transition scoring considers mood and activity continuity for smoother flow.
+
 ### Final Score
 
 ```typescript
 const finalScore = (
   genreMatch * weights.genreMatch +
   tempoMatch * weights.tempoMatch +
+  moodMatch * weights.moodMatch +
+  activityMatch * weights.activityMatch +
   durationFit * weights.durationFit +
   diversity * weights.diversity +
   surprise * weights.surprise
-) + suggestionBonus;
+) + suggestionBonus + affinityBonus;
 ```
 
 ## Track Selection
@@ -519,7 +552,14 @@ Tracks are ordered using a flow arc concept:
 
 ### Transition Scoring
 
-Tracks are scored for how well they transition from the previous track:
+Tracks are scored for how well they transition from the previous track. The scoring considers:
+
+- **Artist/album**: Heavy penalty for same artist back-to-back; moderate penalty for same album
+- **Genre**: Light bonus for genre continuity, slight penalty for genre change
+- **Mood**: Bonus for mood continuity, slight penalty for mood shift (when tags available)
+- **Activity**: Bonus for activity continuity, slight penalty for activity shift (when tags available)
+- **Tempo**: Bonus for adjacent tempo transitions (e.g. slow→medium), penalty for jumps
+- **Year**: Slight bonus for similar era, slight penalty for large era jumps
 
 ```typescript
 function calculateTransitionScore(current, previous, index) {
@@ -539,6 +579,12 @@ function calculateTransitionScore(current, previous, index) {
   if (hasSharedGenre(current, previous)) {
     score *= 1.1; // Light bonus
   }
+  
+  // Mood/activity continuity (when tags available)
+  if (hasMoodOverlap(current, previous)) score *= 1.05;
+  else score *= 0.95;
+  if (hasActivityOverlap(current, previous)) score *= 1.05;
+  else score *= 0.95;
   
   // Tempo progression bonus
   const tempoProgression = calculateTempoProgression(current, previous);
@@ -659,6 +705,10 @@ if (request.discoveryMode) {
   }
 }
 ```
+
+## Deterministic Validation
+
+When LLM validation is disabled or fails, the app uses `validatePlaylistDeterministic`. It computes scores from genre, tempo, mood, activity, length, and diversity matches. It also adds issues and suggestions when many tracks lack mood or activity tags, recommending metadata enhancement for better matching.
 
 ## LLM Integration
 

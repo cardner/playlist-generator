@@ -101,6 +101,14 @@ export interface UseMetadataParsingReturn {
   clearError: () => void;
   /** Clear the metadata results */
   clearMetadataResults: () => void;
+  /** Pause metadata processing */
+  pauseProcessing: () => void;
+  /** Stop metadata processing */
+  stopProcessing: () => void;
+  /** Pause tempo detection */
+  pauseTempoDetection: () => void;
+  /** Stop tempo detection */
+  stopTempoDetection: () => void;
 }
 
 /**
@@ -123,6 +131,10 @@ export function useMetadataParsing(
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const tempoLogStateRef = useRef({ lastLogTime: 0, lastProcessed: 0 });
+  const parseAbortControllerRef = useRef<AbortController | null>(null);
+  const parseCancelModeRef = useRef<"pause" | "stop" | null>(null);
+  const tempoAbortControllerRef = useRef<AbortController | null>(null);
+  const tempoCancelModeRef = useRef<"pause" | "stop" | null>(null);
 
   // Use ref for callback to avoid recreating handleParseMetadata when callback changes
   const onParseCompleteRef = useRef(onParseComplete);
@@ -148,6 +160,10 @@ export function useMetadataParsing(
       if (root.mode !== "handle") {
         return; // Only handle mode supports metadata parsing
       }
+
+      const abortController = new AbortController();
+      parseAbortControllerRef.current = abortController;
+      parseCancelModeRef.current = null;
 
       let sortedEntries: typeof result.entries = [];
       let processedOffset = 0;
@@ -283,6 +299,7 @@ export function useMetadataParsing(
           const batchSize = libraryFiles.length > 10000 ? 500 : 1000;
           const concurrency = libraryFiles.length > 5000 ? 2 : 3;
 
+          let lastSavedCount = processingCheckpoint?.lastProcessedIndex ?? 0;
           const onBatchedProgress = (progress: any) => {
             // Update UI progress state
             setMetadataProgress({
@@ -295,6 +312,10 @@ export function useMetadataParsing(
               estimatedTimeRemaining: progress.estimatedTimeRemaining,
             });
             void saveCheckpointIfNeeded(progress.parsed, progress.errors);
+            if (progress.saved > lastSavedCount) {
+              lastSavedCount = progress.saved;
+              onProcessingProgressRef.current?.();
+            }
           };
 
           const collectResults = orderedFiles.length <= 5000;
@@ -307,6 +328,7 @@ export function useMetadataParsing(
               concurrency,
               saveAfterEachBatch: true, // Save incrementally
               collectResults,
+              signal: abortController.signal,
             }
           );
 
@@ -349,7 +371,8 @@ export function useMetadataParsing(
           results = await parseMetadataForFiles(
             orderedFiles,
             onMetadataProgress,
-            concurrency
+            concurrency,
+            abortController.signal
           );
 
           const sidecarMap = await readSidecarMetadataForTracks(
@@ -372,6 +395,7 @@ export function useMetadataParsing(
                 // Progress callback - UI updates handled by onMetadataProgress
               }
             );
+            onProcessingProgressRef.current?.();
 
             await applySidecarEnhancements(libraryRootId, sidecarMap);
 
@@ -458,6 +482,9 @@ export function useMetadataParsing(
         setIsDetectingTempo(true);
         setTempoProgress({ processed: 0, total: 0, detected: 0 });
 
+        const tempoAbortController = new AbortController();
+        tempoAbortControllerRef.current = tempoAbortController;
+        tempoCancelModeRef.current = null;
         detectTempoForLibrary(
           libraryRootId,
           (progress: { processed: number; total: number; detected: number; currentTrack?: string }) => {
@@ -481,7 +508,8 @@ export function useMetadataParsing(
             }
           },
           tempoBatchSize,
-          tempoTrackFileIds
+          tempoTrackFileIds,
+          tempoAbortController.signal
         )
           .then((summary) => {
             logger.info(
@@ -494,12 +522,41 @@ export function useMetadataParsing(
           })
           .finally(() => {
             setIsDetectingTempo(false);
+            tempoAbortControllerRef.current = null;
           });
 
         // Notify parent that scan and data persistence is complete
         // This will trigger refresh of LibrarySummary and LibraryBrowser
         onParseCompleteRef.current?.();
       } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          if (activeScanRunId && sortedEntries.length > 0) {
+            const parsedSoFar = metadataProgress?.parsed ?? processedOffset;
+            const lastIndex = Math.min(parsedSoFar - 1, sortedEntries.length - 1);
+            const lastProcessedPath =
+              lastIndex >= 0
+                ? sortedEntries[lastIndex]?.relativePath || sortedEntries[lastIndex]?.name
+                : undefined;
+            try {
+              if (parseCancelModeRef.current === "stop") {
+                await deleteProcessingCheckpoint(activeScanRunId);
+              } else {
+                await saveProcessingCheckpoint(
+                  activeScanRunId,
+                  libraryRootId,
+                  sortedEntries.length,
+                  Math.max(lastIndex, 0),
+                  lastProcessedPath,
+                  metadataProgress?.errors ?? 0,
+                  true
+                );
+              }
+            } catch (checkpointError) {
+              logger.error("Failed to save processing checkpoint after cancel:", checkpointError);
+            }
+          }
+          return;
+        }
         logger.error("Failed to parse metadata:", err);
         if (activeScanRunId && sortedEntries.length > 0) {
           try {
@@ -531,6 +588,7 @@ export function useMetadataParsing(
       } finally {
         setIsParsingMetadata(false);
         setMetadataProgress(null); // Clear progress when done
+        parseAbortControllerRef.current = null;
       }
     },
     [scanRunId, metadataProgress] // Removed onParseComplete dependency - using ref instead
@@ -549,6 +607,38 @@ export function useMetadataParsing(
   const clearMetadataResults = useCallback(() => {
     setMetadataResults(null);
     setError(null);
+  }, []);
+
+  const pauseProcessing = useCallback(() => {
+    if (!parseAbortControllerRef.current) {
+      return;
+    }
+    parseCancelModeRef.current = "pause";
+    parseAbortControllerRef.current.abort();
+  }, []);
+
+  const stopProcessing = useCallback(() => {
+    if (!parseAbortControllerRef.current) {
+      return;
+    }
+    parseCancelModeRef.current = "stop";
+    parseAbortControllerRef.current.abort();
+  }, []);
+
+  const pauseTempoDetection = useCallback(() => {
+    if (!tempoAbortControllerRef.current) {
+      return;
+    }
+    tempoCancelModeRef.current = "pause";
+    tempoAbortControllerRef.current.abort();
+  }, []);
+
+  const stopTempoDetection = useCallback(() => {
+    if (!tempoAbortControllerRef.current) {
+      return;
+    }
+    tempoCancelModeRef.current = "stop";
+    tempoAbortControllerRef.current.abort();
   }, []);
 
   const handleResumeProcessing = useCallback(
@@ -629,6 +719,10 @@ export function useMetadataParsing(
     handleProcessUnprocessed,
     clearError,
     clearMetadataResults,
+    pauseProcessing,
+    stopProcessing,
+    pauseTempoDetection,
+    stopTempoDetection,
   };
 }
 

@@ -38,7 +38,7 @@
 "use client";
 
 import type { TrackReason } from "@/features/playlists";
-import { Music, TrendingUp, Clock, Sparkles, Users, Zap } from "lucide-react";
+import { Music, TrendingUp, Clock, Sparkles, Users, Zap, Heart, Activity, Link } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface TrackReasonChipsProps {
@@ -49,21 +49,27 @@ interface TrackReasonChipsProps {
 const REASON_ICONS = {
   genre_match: Music,
   tempo_match: TrendingUp,
+  mood_match: Heart,
+  activity_match: Activity,
   duration_fit: Clock,
   diversity: Users,
   surprise: Sparkles,
   constraint: Zap,
   ordering: TrendingUp,
+  affinity: Link,
 };
 
 const REASON_COLORS = {
   genre_match: "bg-blue-500/10 text-blue-500 border-blue-500/20",
   tempo_match: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+  mood_match: "bg-rose-500/10 text-rose-500 border-rose-500/20",
+  activity_match: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
   duration_fit: "bg-green-500/10 text-green-500 border-green-500/20",
   diversity: "bg-orange-500/10 text-orange-500 border-orange-500/20",
   surprise: "bg-pink-500/10 text-pink-500 border-pink-500/20",
   constraint: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
   ordering: "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
+  affinity: "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
 };
 
 export function TrackReasonChips({

@@ -14,6 +14,13 @@ import type { PlaylistStrategy } from "./strategy";
 import type { MatchingIndex } from "@/features/library/summarization";
 import { normalizeGenre } from "@/features/library/genre-normalization";
 import type { TrackReason } from "./matching-engine";
+import { mapMoodTagsToCategories, normalizeMoodCategory } from "@/features/library/mood-mapping";
+import { TEMPO_BUCKET_MOODS } from "@/lib/tempo-mapping";
+import {
+  mapActivityTagsToCategories,
+  normalizeActivityCategory,
+} from "@/features/library/activity-mapping";
+import { inferActivityFromTrack } from "@/features/library/activity-inference";
 
 /**
  * Calculate genre match score (hard/soft matching)
@@ -196,6 +203,149 @@ export function calculateTempoMatch(
 }
 
 /**
+ * Calculate mood match score (0-1).
+ *
+ * Compares track mood tags (or tempo-inferred moods when tags are missing) against
+ * requested moods. Uses mood-mapping for canonical categories. Returns 0.5 when
+ * mood is unknown (neutral).
+ *
+ * @param track - Track with enhancedMetadata.mood or tempo bucket
+ * @param request - Playlist request with mood array
+ * @param matchingIndex - Index with tempo bucket metadata
+ * @returns Score (0-1) and reasons
+ */
+export function calculateMoodMatch(
+  track: TrackRecord,
+  request: PlaylistRequest,
+  matchingIndex: MatchingIndex
+): { score: number; reasons: TrackReason[] } {
+  const reasons: TrackReason[] = [];
+  if (!request.mood || request.mood.length === 0) {
+    return { score: 1, reasons };
+  }
+
+  const requested = request.mood
+    .map((m) => normalizeMoodCategory(m))
+    .filter((m): m is string => !!m);
+
+  if (requested.length === 0) {
+    return { score: 1, reasons };
+  }
+
+  let mapped = mapMoodTagsToCategories(track.enhancedMetadata?.mood || []);
+  if (mapped.length === 0) {
+    const tempoBucket = matchingIndex.trackMetadata.get(track.trackFileId)?.tempoBucket;
+    if (tempoBucket && tempoBucket !== "unknown") {
+      mapped = mapMoodTagsToCategories(TEMPO_BUCKET_MOODS[tempoBucket] || []);
+    }
+  }
+
+  if (mapped.length === 0) {
+    return {
+      score: 0.5,
+      reasons: [
+        {
+          type: "mood_match",
+          explanation: "Mood unknown (neutral match)",
+          score: 0.5,
+        },
+      ],
+    };
+  }
+
+  const matched = mapped.filter((m) => requested.includes(m));
+  if (matched.length > 0) {
+    const score = matched.length / requested.length;
+    reasons.push({
+      type: "mood_match",
+      explanation: `Matches mood: ${matched.join(", ")}`,
+      score,
+    });
+    return { score, reasons };
+  }
+
+  return {
+    score: 0.2,
+    reasons: [
+      {
+        type: "mood_match",
+        explanation: "Mood mismatch",
+        score: 0.2,
+      },
+    ],
+  };
+}
+
+/**
+ * Calculate activity match score (0-1).
+ *
+ * Compares track activity tags (or inferred activities from BPM/genres when tags
+ * are missing) against requested activities. Uses activity-mapping for canonical
+ * categories. Returns 0.5 when activity is unknown (neutral).
+ *
+ * @param track - Track with enhancedMetadata.activity or inferrable BPM/genres
+ * @param request - Playlist request with activity array
+ * @returns Score (0-1) and reasons
+ */
+export function calculateActivityMatch(
+  track: TrackRecord,
+  request: PlaylistRequest
+): { score: number; reasons: TrackReason[] } {
+  const reasons: TrackReason[] = [];
+  if (!request.activity || request.activity.length === 0) {
+    return { score: 1, reasons };
+  }
+
+  const requested = request.activity
+    .map((a) => normalizeActivityCategory(a))
+    .filter((a): a is string => !!a);
+
+  if (requested.length === 0) {
+    return { score: 1, reasons };
+  }
+
+  let mapped = mapActivityTagsToCategories(track.enhancedMetadata?.activity || []);
+  if (mapped.length === 0) {
+    mapped = inferActivityFromTrack(track);
+  }
+
+  if (mapped.length === 0) {
+    return {
+      score: 0.5,
+      reasons: [
+        {
+          type: "activity_match",
+          explanation: "Activity unknown (neutral match)",
+          score: 0.5,
+        },
+      ],
+    };
+  }
+
+  const matched = mapped.filter((a) => requested.includes(a));
+  if (matched.length > 0) {
+    const score = matched.length / requested.length;
+    reasons.push({
+      type: "activity_match",
+      explanation: `Matches activity: ${matched.join(", ")}`,
+      score,
+    });
+    return { score, reasons };
+  }
+
+  return {
+    score: 0.2,
+    reasons: [
+      {
+        type: "activity_match",
+        explanation: "Activity mismatch",
+        score: 0.2,
+      },
+    ],
+  };
+}
+
+/**
  * Calculate duration fit score
  * 
  * Scores tracks based on how well their duration fits the remaining
@@ -314,6 +464,44 @@ export function calculateDiversity(
 
   if (hasRecentGenre) {
     score *= 0.7; // Light penalty for recent genre
+  }
+
+  // Mood diversity (light penalty for repeats)
+  const recentMoodTags = new Set<string>();
+  const recentActivityTags = new Set<string>();
+  const recentForMoodActivity = previousTracks.slice(-3);
+  for (const prev of recentForMoodActivity) {
+    const moods = mapMoodTagsToCategories(prev.enhancedMetadata?.mood || []);
+    moods.forEach((m) => recentMoodTags.add(m));
+    const activities = mapActivityTagsToCategories(prev.enhancedMetadata?.activity || []);
+    if (activities.length === 0) {
+      inferActivityFromTrack(prev).forEach((a) => recentActivityTags.add(a));
+    } else {
+      activities.forEach((a) => recentActivityTags.add(a));
+    }
+  }
+
+  const currentMoodTags = mapMoodTagsToCategories(track.enhancedMetadata?.mood || []);
+  if (currentMoodTags.length > 0 && currentMoodTags.some((m) => recentMoodTags.has(m))) {
+    score *= 0.9;
+    reasons.push({
+      type: "diversity",
+      explanation: "Mood repeated recently",
+      score: 0.9,
+    });
+  }
+
+  let currentActivityTags = mapActivityTagsToCategories(track.enhancedMetadata?.activity || []);
+  if (currentActivityTags.length === 0) {
+    currentActivityTags = inferActivityFromTrack(track);
+  }
+  if (currentActivityTags.length > 0 && currentActivityTags.some((a) => recentActivityTags.has(a))) {
+    score *= 0.9;
+    reasons.push({
+      type: "diversity",
+      explanation: "Activity repeated recently",
+      score: 0.9,
+    });
   }
 
   // Album diversity (bonus)

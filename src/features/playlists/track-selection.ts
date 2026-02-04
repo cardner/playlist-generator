@@ -16,11 +16,23 @@ import type { TrackSelection, TrackReason } from "./matching-engine";
 import {
   calculateGenreMatch,
   calculateTempoMatch,
+  calculateMoodMatch,
+  calculateActivityMatch,
   calculateDurationFit,
   calculateDiversity,
   calculateSurprise,
 } from "./scoring";
 import { logger } from "@/lib/logger";
+
+/**
+ * Context of artists and genres related to user suggestions.
+ * Passed to scoreTrack() to apply affinity bonuses for tracks from suggested
+ * artists or similar genres (e.g. "Related to suggested artist: X").
+ */
+export interface AffinityContext {
+  artists: Set<string>;
+  genres: Set<string>;
+}
 
 /**
  * Score a track comprehensively
@@ -37,6 +49,7 @@ import { logger } from "@/lib/logger";
  * @param currentDuration - Current playlist duration in seconds
  * @param targetDuration - Target playlist duration in seconds
  * @param remainingSlots - Number of remaining track slots
+ * @param affinityContext - Optional context of suggested artists/genres for affinity bonus
  * @returns Complete track selection with score and reasons
  * 
  * @example
@@ -61,7 +74,8 @@ export function scoreTrack(
   previousTracks: TrackRecord[],
   currentDuration: number,
   targetDuration: number,
-  remainingSlots: number
+  remainingSlots: number,
+  affinityContext?: AffinityContext
 ): TrackSelection {
   const weights = strategy.scoringWeights;
 
@@ -78,6 +92,8 @@ export function scoreTrack(
     strategy,
     matchingIndex
   );
+  const moodMatch = calculateMoodMatch(track, request, matchingIndex);
+  const activityMatch = calculateActivityMatch(track, request);
   const durationFit = calculateDurationFit(
     track,
     targetDuration,
@@ -136,24 +152,62 @@ export function scoreTrack(
     }
   }
 
+  // Affinity bonus for related artists/genres
+  let affinityBonus = 0;
+  const affinityReasons: TrackReason[] = [];
+  if (affinityContext && (affinityContext.artists.size > 0 || affinityContext.genres.size > 0)) {
+    const artist = track.tags.artist?.toLowerCase().trim();
+    if (artist && affinityContext.artists.has(artist)) {
+      affinityBonus += 0.1;
+      affinityReasons.push({
+        type: "affinity",
+        explanation: `Related to suggested artist: ${track.tags.artist}`,
+        score: 0.1,
+      });
+    }
+
+    const normalizedGenres =
+      matchingIndex.trackMetadata.get(track.trackFileId)?.normalizedGenres ||
+      track.tags.genres;
+    const hasGenreAffinity = normalizedGenres.some((g) =>
+      affinityContext.genres.has(g.toLowerCase())
+    );
+    if (hasGenreAffinity) {
+      affinityBonus += 0.05;
+      affinityReasons.push({
+        type: "affinity",
+        explanation: "Related to suggested genres/artists",
+        score: 0.05,
+      });
+    }
+
+    affinityBonus = Math.min(0.15, affinityBonus);
+  }
+
   // Combine all reasons
   const reasons: TrackReason[] = [
     ...genreMatch.reasons,
     ...tempoMatch.reasons,
+    ...moodMatch.reasons,
+    ...activityMatch.reasons,
     ...durationFit.reasons,
     ...diversity.reasons,
     ...surprise.reasons,
     ...suggestionReasons,
+    ...affinityReasons,
   ];
 
   // Calculate weighted score with suggestion bonus
   const score =
     genreMatch.score * weights.genreMatch +
     tempoMatch.score * weights.tempoMatch +
+    moodMatch.score * weights.moodMatch +
+    activityMatch.score * weights.activityMatch +
     durationFit.score * 0.15 + // Duration fit weight
     diversity.score * weights.diversity +
     surprise.score * (request.surprise * 0.1) + // Surprise weight scales with surprise level
-    suggestionBonus; // Add suggestion bonus (can push score above 1.0)
+    suggestionBonus +
+    affinityBonus; // Add bonuses (can push score above 1.0)
 
   return {
     trackFileId: track.trackFileId,
@@ -162,6 +216,8 @@ export function scoreTrack(
     reasons,
     genreMatch: genreMatch.score,
     tempoMatch: tempoMatch.score,
+    moodMatch: moodMatch.score,
+    activityMatch: activityMatch.score,
     durationFit: durationFit.score,
     diversity: diversity.score,
     surprise: surprise.score,
@@ -483,7 +539,14 @@ export function buildRefinementPrompt(
 
   const candidatesList = candidates.map((candidate, idx) => {
     const track = candidate.track;
-    return `${idx + 1}. "${track.tags.title}" by ${track.tags.artist} (${track.tags.genres.join(", ")}) - ${Math.round((track.tech?.durationSeconds || 180) / 60)}:${String(Math.round((track.tech?.durationSeconds || 180) % 60)).padStart(2, "0")}`;
+    const moodTags = track.enhancedMetadata?.mood?.length
+      ? track.enhancedMetadata.mood.join(", ")
+      : "Unknown";
+    const activityTags = track.enhancedMetadata?.activity?.length
+      ? track.enhancedMetadata.activity.join(", ")
+      : "Unknown";
+    const bpm = track.tech?.bpm ? `${track.tech.bpm} BPM` : "Unknown";
+    return `${idx + 1}. "${track.tags.title}" by ${track.tags.artist} (${track.tags.genres.join(", ")}) - ${Math.round((track.tech?.durationSeconds || 180) / 60)}:${String(Math.round((track.tech?.durationSeconds || 180) % 60)).padStart(2, "0")} | BPM: ${bpm} | Mood: ${moodTags} | Activity: ${activityTags}`;
   }).join("\n");
 
   return `You are evaluating music tracks for playlist inclusion. Given the user's request and track metadata, score each track (0-1) and explain why it matches or doesn't match semantically.

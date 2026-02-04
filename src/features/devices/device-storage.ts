@@ -3,7 +3,11 @@
  */
 
 import { db } from "@/db/schema";
-import type { DeviceProfileRecord, DeviceSyncManifestRecord } from "@/db/schema";
+import type {
+  DeviceProfileRecord,
+  DeviceSyncManifestRecord,
+  DeviceFileIndexRecord,
+} from "@/db/schema";
 
 export type DeviceProfileInput = Omit<
   DeviceProfileRecord,
@@ -21,11 +25,24 @@ export async function saveDeviceProfile(input: DeviceProfileInput): Promise<Devi
   const record: DeviceProfileRecord = {
     id,
     label: input.label,
-    handleRef: input.handleRef,
+    deviceType: input.deviceType ?? existing?.deviceType,
+    handleRef: input.handleRef ?? existing?.handleRef,
     playlistFormat: input.playlistFormat,
     playlistFolder: input.playlistFolder,
     pathStrategy: input.pathStrategy,
     absolutePathPrefix: input.absolutePathPrefix,
+    containerLibraryPrefix:
+      input.containerLibraryPrefix ?? existing?.containerLibraryPrefix,
+    jellyfinExportMode: input.jellyfinExportMode ?? existing?.jellyfinExportMode,
+    usbVendorId: input.usbVendorId ?? existing?.usbVendorId,
+    usbProductId: input.usbProductId ?? existing?.usbProductId,
+    usbSerialNumber: input.usbSerialNumber ?? existing?.usbSerialNumber,
+    usbProductName: input.usbProductName ?? existing?.usbProductName,
+    usbManufacturerName: input.usbManufacturerName ?? existing?.usbManufacturerName,
+    ipodModelName: input.ipodModelName ?? existing?.ipodModelName,
+    ipodGenerationName: input.ipodGenerationName ?? existing?.ipodGenerationName,
+    ipodModelNumber: input.ipodModelNumber ?? existing?.ipodModelNumber,
+    ipodRequiresEncryption: input.ipodRequiresEncryption ?? existing?.ipodRequiresEncryption,
     lastSyncAt: input.lastSyncAt ?? existing?.lastSyncAt,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
@@ -47,11 +64,46 @@ export async function deleteDeviceProfile(id: string): Promise<void> {
   await db.deviceProfiles.delete(id);
 }
 
+export async function deleteDeviceProfileWithManifests(id: string): Promise<void> {
+  await db.transaction("rw", [db.deviceProfiles, db.deviceSyncManifests], async () => {
+    await db.deviceSyncManifests.where("deviceId").equals(id).delete();
+    await db.deviceProfiles.delete(id);
+  });
+}
+
 export async function saveDeviceSyncManifest(
   manifest: DeviceSyncManifestRecord
 ): Promise<DeviceSyncManifestRecord> {
   await db.deviceSyncManifests.put(manifest);
   return manifest;
+}
+
+export async function saveDeviceFileIndexEntries(
+  entries: DeviceFileIndexRecord[]
+): Promise<void> {
+  if (entries.length === 0) return;
+  await db.deviceFileIndex.bulkPut(entries);
+}
+
+export async function getDeviceFileIndexEntries(
+  deviceId: string
+): Promise<DeviceFileIndexRecord[]> {
+  return db.deviceFileIndex.where("deviceId").equals(deviceId).toArray();
+}
+
+export async function getDeviceFileIndexMap(
+  deviceId: string
+): Promise<Map<string, DeviceFileIndexRecord>> {
+  const entries = await getDeviceFileIndexEntries(deviceId);
+  const map = new Map<string, DeviceFileIndexRecord>();
+  for (const entry of entries) {
+    map.set(entry.matchKey, entry);
+  }
+  return map;
+}
+
+export async function clearDeviceFileIndex(deviceId: string): Promise<void> {
+  await db.deviceFileIndex.where("deviceId").equals(deviceId).delete();
 }
 
 export async function getDeviceSyncManifest(

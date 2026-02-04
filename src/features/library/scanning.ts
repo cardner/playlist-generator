@@ -178,7 +178,8 @@ export async function buildFileIndex(
   root: LibraryRoot,
   onProgress?: ScanProgressCallback,
   checkpoint?: ScanCheckpoint,
-  onDisconnection?: (error: Error) => void
+  onDisconnection?: (error: Error) => void,
+  signal?: AbortSignal
 ): Promise<FileIndex> {
   const index = new Map<string, FileIndexEntry>();
   let found = 0;
@@ -194,6 +195,9 @@ export async function buildFileIndex(
       // Handle mode: recursive directory traversal
       try {
         for await (const libraryFile of getLibraryFiles(root, onDisconnection)) {
+          if (signal?.aborted) {
+            throw new DOMException("Scan aborted", "AbortError");
+          }
           found++;
           currentIndex++;
           if (checkpoint) {
@@ -301,6 +305,15 @@ export async function buildFileIndex(
       // Return partial results instead of failing completely
       return index;
     }
+    if (error instanceof DOMException && error.name === "NoModificationAllowedError") {
+      logger.warn(
+        "Some files or directories could not be accessed due to read-only restrictions. " +
+          "The scan will continue with accessible files.",
+        error
+      );
+      // Return partial results instead of failing completely
+      return index;
+    }
     
     logger.error("Error building file index:", error);
     throw error;
@@ -318,7 +331,8 @@ export async function buildFileIndex(
 export async function buildFileIndexFromFileList(
   files: FileList,
   rootName: string,
-  onProgress?: ScanProgressCallback
+  onProgress?: ScanProgressCallback,
+  signal?: AbortSignal
 ): Promise<FileIndex> {
   const index = new Map<string, FileIndexEntry>();
   let found = 0;
@@ -329,6 +343,9 @@ export async function buildFileIndexFromFileList(
       files,
       rootName
     )) {
+      if (signal?.aborted) {
+        throw new DOMException("Scan aborted", "AbortError");
+      }
       found++;
 
       // Check if file extension is supported

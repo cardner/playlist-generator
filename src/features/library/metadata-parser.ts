@@ -136,7 +136,8 @@ async function parseSingleFile(file: LibraryFile): Promise<MetadataResult> {
 export async function parseMetadataForFiles(
   files: LibraryFile[],
   onProgress?: MetadataProgressCallback,
-  concurrency: number = 3
+  concurrency: number = 3,
+  signal?: AbortSignal
 ): Promise<MetadataResult[]> {
   const { measureAsync } = await import("./performance");
   
@@ -155,6 +156,9 @@ export async function parseMetadataForFiles(
   // Process files with concurrency control
   const processNext = async (): Promise<void> => {
     while (currentIndex < files.length) {
+      if (signal?.aborted) {
+        throw new DOMException("Metadata parsing aborted", "AbortError");
+      }
       const file = files[currentIndex];
       const index = currentIndex;
       currentIndex++;

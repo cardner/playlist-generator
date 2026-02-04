@@ -14,6 +14,8 @@ interface TempoDetectionProgressProps {
   total: number;
   detected: number;
   currentTrack?: string;
+  onPause?: () => void;
+  onStop?: () => void;
 }
 
 export function TempoDetectionProgress({
@@ -21,6 +23,8 @@ export function TempoDetectionProgress({
   total,
   detected,
   currentTrack,
+  onPause,
+  onStop,
 }: TempoDetectionProgressProps) {
   const percentage = total > 0 ? Math.round((processed / total) * 100) : 0;
 
@@ -72,6 +76,28 @@ export function TempoDetectionProgress({
                 <p className="text-app-secondary text-sm truncate" title={currentTrack}>
                   {currentTrack}
                 </p>
+              </div>
+            )}
+            {(onPause || onStop) && (
+              <div className="pt-4 border-t border-app-border flex items-center justify-center gap-2">
+                {onPause && (
+                  <button
+                    type="button"
+                    onClick={onPause}
+                    className="px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border text-xs uppercase tracking-wider"
+                  >
+                    Pause
+                  </button>
+                )}
+                {onStop && (
+                  <button
+                    type="button"
+                    onClick={onStop}
+                    className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-sm border border-red-500/20 text-xs uppercase tracking-wider"
+                  >
+                    Stop
+                  </button>
+                )}
               </div>
             )}
           </div>

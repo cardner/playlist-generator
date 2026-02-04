@@ -32,6 +32,9 @@ import type { TrackSelection, TrackReason } from "./matching-engine";
 import type { PlaylistStrategy } from "./strategy";
 import type { PlaylistRequest } from "@/types/playlist";
 import type { MatchingIndex } from "@/features/library/summarization";
+import { mapMoodTagsToCategories } from "@/features/library/mood-mapping";
+import { mapActivityTagsToCategories } from "@/features/library/activity-mapping";
+import { inferActivityFromTrack } from "@/features/library/activity-inference";
 
 export interface OrderedTrack {
   trackFileId: string;
@@ -51,8 +54,54 @@ export interface OrderedTracks {
   };
 }
 
+const LOW_MOODS = new Set(["calm", "relaxed", "peaceful", "mellow"]);
+const HIGH_MOODS = new Set(["energetic", "upbeat", "intense", "exciting"]);
+const LOW_ACTIVITIES = new Set(["sleep", "meditation", "relaxing", "reading"]);
+const HIGH_ACTIVITIES = new Set(["workout", "running", "party", "dance"]);
+
 /**
- * Calculate transition score between two tracks
+ * Derives an energy level from mood and activity tags.
+ * Used to place tracks in flow arc sections (e.g. low energy in cooldown).
+ */
+function deriveEnergyLevel(moods: string[], activities: string[]): "low" | "medium" | "high" {
+  let score = 0;
+  for (const mood of moods) {
+    const key = mood.toLowerCase();
+    if (HIGH_MOODS.has(key)) score += 1;
+    if (LOW_MOODS.has(key)) score -= 1;
+  }
+  for (const activity of activities) {
+    const key = activity.toLowerCase();
+    if (HIGH_ACTIVITIES.has(key)) score += 1;
+    if (LOW_ACTIVITIES.has(key)) score -= 1;
+  }
+  if (score >= 2) return "high";
+  if (score <= -2) return "low";
+  return "medium";
+}
+
+/** Gets energy level for a track from its mood/activity tags (or "medium" if unknown). */
+function getTrackEnergyLevel(track: TrackSelection): "low" | "medium" | "high" {
+  const moods = mapMoodTagsToCategories(track.track.enhancedMetadata?.mood || []);
+  let activities = mapActivityTagsToCategories(track.track.enhancedMetadata?.activity || []);
+  if (activities.length === 0) {
+    activities = inferActivityFromTrack(track.track);
+  }
+  if (moods.length === 0 && activities.length === 0) {
+    return "medium";
+  }
+  return deriveEnergyLevel(moods, activities);
+}
+
+/** Gets energy level implied by the request's mood/activity preferences. */
+function getRequestEnergyLevel(request: PlaylistRequest): "low" | "medium" | "high" {
+  return deriveEnergyLevel(request.mood || [], request.activity || []);
+}
+
+/**
+ * Calculates how well the current track transitions from the previous track.
+ * Considers artist/album/genre continuity, mood/activity continuity, tempo
+ * progression, and year proximity. Returns a multiplier (typically 0.2–1.2).
  */
 function calculateTransitionScore(
   current: TrackSelection,
@@ -102,6 +151,44 @@ function calculateTransitionScore(
     reasons.push("Genre change");
   }
 
+  // Mood transition (if tags available)
+  const currentMoods = mapMoodTagsToCategories(currentTrack.enhancedMetadata?.mood || []);
+  const previousMoods = mapMoodTagsToCategories(previousTrack.enhancedMetadata?.mood || []);
+  if (currentMoods.length > 0 && previousMoods.length > 0) {
+    const currentMoodSet = new Set(currentMoods.map((m) => m.toLowerCase()));
+    const previousMoodSet = new Set(previousMoods.map((m) => m.toLowerCase()));
+    const moodOverlap = Array.from(currentMoodSet).filter((m) => previousMoodSet.has(m));
+    if (moodOverlap.length > 0) {
+      score *= 1.05;
+      reasons.push(`Mood continuity: ${moodOverlap[0]}`);
+    } else {
+      score *= 0.95;
+      reasons.push("Mood shift");
+    }
+  }
+
+  // Activity transition (if tags available)
+  let currentActivities = mapActivityTagsToCategories(currentTrack.enhancedMetadata?.activity || []);
+  let previousActivities = mapActivityTagsToCategories(previousTrack.enhancedMetadata?.activity || []);
+  if (currentActivities.length === 0) {
+    currentActivities = inferActivityFromTrack(currentTrack);
+  }
+  if (previousActivities.length === 0) {
+    previousActivities = inferActivityFromTrack(previousTrack);
+  }
+  if (currentActivities.length > 0 && previousActivities.length > 0) {
+    const currentActivitySet = new Set(currentActivities.map((a) => a.toLowerCase()));
+    const previousActivitySet = new Set(previousActivities.map((a) => a.toLowerCase()));
+    const activityOverlap = Array.from(currentActivitySet).filter((a) => previousActivitySet.has(a));
+    if (activityOverlap.length > 0) {
+      score *= 1.05;
+      reasons.push(`Activity continuity: ${activityOverlap[0]}`);
+    } else {
+      score *= 0.95;
+      reasons.push("Activity shift");
+    }
+  }
+
   // Tempo transition
   const currentTempo =
     matchingIndex.trackMetadata.get(currentTrack.trackFileId)?.tempoBucket ||
@@ -148,11 +235,13 @@ function calculateTransitionScore(
 }
 
 /**
- * Assign tracks to sections based on ordering plan
+ * Assigns tracks to flow arc sections (warmup, build, peak, cooldown).
+ * Filters by tempo target and energy level when specified in the strategy.
  */
 function assignToSections(
   tracks: TrackSelection[],
   strategy: PlaylistStrategy,
+  request: PlaylistRequest,
   matchingIndex: MatchingIndex
 ): Map<string, TrackSelection[]> {
   const sections = new Map<string, TrackSelection[]>();
@@ -211,6 +300,19 @@ function assignToSections(
       }
     }
 
+    // Filter by energy level if specified or inferred from request
+    const requestEnergy = getRequestEnergyLevel(request);
+    const energyTarget =
+      boundary.energyLevel || (requestEnergy !== "medium" ? requestEnergy : undefined);
+    if (energyTarget) {
+      const energyMatches = candidates.filter(
+        (t) => getTrackEnergyLevel(t) === energyTarget
+      );
+      if (energyMatches.length >= sectionSize) {
+        candidates = energyMatches;
+      }
+    }
+
     // Take tracks for this section
     for (let i = 0; i < sectionSize && candidates.length > 0; i++) {
       const selected = candidates[0];
@@ -234,7 +336,8 @@ function assignToSections(
 }
 
 /**
- * Order tracks within a section with transition awareness
+ * Orders tracks within a section using a greedy algorithm: repeatedly picks the
+ * track with the best transition score from the previous track.
  */
 function orderSectionTracks(
   sectionTracks: TrackSelection[],
@@ -290,7 +393,9 @@ function orderSectionTracks(
 }
 
 /**
- * Insert surprise tracks at defined positions
+ * Inserts surprise tracks at strategic positions (25%, 50%, 75%) when surprise
+ * level is high enough. Surprise tracks are candidates with high surprise scores
+ * that weren't in the main selection.
  */
 function insertSurpriseTracks(
   ordered: TrackSelection[],
@@ -367,7 +472,7 @@ export function orderTracks(
   }
 
   // Assign tracks to sections based on ordering plan
-  const sections = assignToSections(trackCandidates, strategy, matchingIndex);
+  const sections = assignToSections(trackCandidates, strategy, request, matchingIndex);
 
   // Order tracks within each section with transition awareness
   const ordered: TrackSelection[] = [];

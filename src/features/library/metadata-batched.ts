@@ -22,6 +22,7 @@ export interface BatchedParseOptions {
   concurrency?: number; // Concurrent parsing tasks per batch (default: 3)
   saveAfterEachBatch?: boolean; // Save to IndexedDB after each batch (default: true)
   collectResults?: boolean; // Keep all results in memory (default: true)
+  signal?: AbortSignal;
 }
 
 export interface BatchedParseProgress {
@@ -69,6 +70,7 @@ export async function parseMetadataBatched(
     concurrency = 3,
     saveAfterEachBatch = true,
     collectResults = true,
+    signal,
   } = options;
 
   if (files.length === 0) {
@@ -83,6 +85,9 @@ export async function parseMetadataBatched(
   const startTime = Date.now();
 
   for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+    if (signal?.aborted) {
+      throw new DOMException("Metadata parsing aborted", "AbortError");
+    }
     const batchStart = batchIndex * batchSize;
     const batchEnd = Math.min(batchStart + batchSize, files.length);
     const batchFiles = files.slice(batchStart, batchEnd);
@@ -113,7 +118,12 @@ export async function parseMetadataBatched(
     };
 
     try {
-      let results = await parseMetadataForFiles(batchFiles, batchOnProgress, concurrency);
+      let results = await parseMetadataForFiles(
+        batchFiles,
+        batchOnProgress,
+        concurrency,
+        signal
+      );
       const sidecarMap = await readSidecarMetadataForTracks(
         libraryRootId,
         results.map((result) => result.trackFileId)
@@ -141,6 +151,17 @@ export async function parseMetadataBatched(
           totalSaved += batchSuccessCount;
 
           await applySidecarEnhancements(libraryRootId, sidecarMap);
+
+          onProgress?.({
+            batch: batchNumber,
+            totalBatches,
+            parsed: totalParsed,
+            total: files.length,
+            errors: totalErrors,
+            saved: totalSaved,
+            currentFile: batchFiles[batchFiles.length - 1]?.file?.name,
+            estimatedTimeRemaining: undefined,
+          });
         } catch (err) {
           logger.error(`Error saving batch ${batchNumber}:`, err);
           

@@ -15,6 +15,7 @@ export interface SidecarMetadata {
   bpm?: number;
   tempoCategory?: "slow" | "medium" | "fast";
   mood?: string[];
+  activity?: string[];
   updatedAt: number;
 }
 
@@ -153,7 +154,11 @@ export async function applySidecarEnhancements(
     if (!existing) {
       continue;
     }
-    const enhancedUpdates: { tempo?: number | "slow" | "medium" | "fast"; mood?: string[] } = {};
+    const enhancedUpdates: {
+      tempo?: number | "slow" | "medium" | "fast";
+      mood?: string[];
+      activity?: string[];
+    } = {};
 
     if (sidecar.bpm !== undefined) {
       enhancedUpdates.tempo = sidecar.bpm;
@@ -170,6 +175,9 @@ export async function applySidecarEnhancements(
     }
     if (sidecar.mood?.length) {
       enhancedUpdates.mood = sidecar.mood;
+    }
+    if (sidecar.activity?.length) {
+      enhancedUpdates.activity = sidecar.activity;
     }
 
     if (Object.keys(enhancedUpdates).length > 0) {

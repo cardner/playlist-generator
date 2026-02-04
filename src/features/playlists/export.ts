@@ -167,6 +167,19 @@ function calculateRelativePath(
   }
 }
 
+function stripMountPrefix(path: string): string {
+  if (!path) return path;
+  let normalized = normalizePath(path);
+  normalized = normalized.replace(/^file:\/\//i, "");
+  normalized = normalized.replace(/^[a-zA-Z]:[\\/]/, "");
+  normalized = normalized.replace(/^\/Volumes\/[^/]+\/?/i, "");
+  normalized = normalized.replace(/^\/volume\d+\/?/i, "");
+  normalized = normalized.replace(/^\/media\/[^/]+\/?/i, "");
+  normalized = normalized.replace(/^\/mnt\/[^/]+\/?/i, "");
+  normalized = normalized.replace(/^\/+/, "");
+  return normalized;
+}
+
 /**
  * Get file path for track based on export strategy
  * 
@@ -182,7 +195,10 @@ export function getTrackPath(
   hasRelativePath: boolean;
 } {
   const strategy = config?.pathStrategy || "absolute";
-  const playlistLocation = config?.playlistLocation || "root";
+  const playlistLocation =
+    config?.playlistSubfolderPath && config.playlistSubfolderPath.trim().length > 0
+      ? "subfolder"
+      : config?.playlistLocation || "root";
   const absolutePathPrefix = config?.absolutePathPrefix || "";
 
   // Prefer relativePath from fileIndex
@@ -202,9 +218,22 @@ export function getTrackPath(
     switch (strategy) {
       case "relative-to-playlist":
         // Path relative to where playlist file is located
+        let relativeForPlaylist = stripMountPrefix(relativePath);
+        let effectivePlaylistLocation = playlistLocation;
+        if (config?.playlistSubfolderPath && config.playlistSubfolderPath.trim().length > 0) {
+          const normalizedSubfolder = normalizePath(config.playlistSubfolderPath);
+          const subfolderPrefix = normalizedSubfolder ? `${normalizedSubfolder}/` : "";
+          if (
+            subfolderPrefix &&
+            relativeForPlaylist.toLowerCase().startsWith(subfolderPrefix.toLowerCase())
+          ) {
+            relativeForPlaylist = relativeForPlaylist.slice(subfolderPrefix.length);
+            effectivePlaylistLocation = "root";
+          }
+        }
         const relativeToPlaylist = calculateRelativePath(
-          relativePath,
-          playlistLocation,
+          relativeForPlaylist,
+          effectivePlaylistLocation,
           config?.playlistSubfolderPath
         );
         return {
@@ -215,7 +244,7 @@ export function getTrackPath(
       case "relative-to-library-root":
         // Path relative to library root (as stored)
         return {
-          path: normalizePath(relativePath),
+          path: normalizePath(stripMountPrefix(relativePath)),
           hasRelativePath: true,
         };
         
@@ -223,6 +252,14 @@ export function getTrackPath(
         // Absolute path: prepend prefix to relative path
         const normalizedRelative = normalizePath(relativePath);
         const normalizedPrefix = normalizePath(absolutePathPrefix);
+        const isAbsolute =
+          normalizedRelative.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(normalizedRelative);
+        if (isAbsolute) {
+          return {
+            path: normalizePath(normalizedRelative),
+            hasRelativePath: true,
+          };
+        }
         
         // If prefix is provided, construct absolute path
         if (normalizedPrefix) {
@@ -328,7 +365,7 @@ export function exportM3U(
     
     // Normalize path for the specified service
     path = normalizePathForService(path, service);
-    
+
     if (!hasRelativePath) {
       hasRelativePaths = false;
     }

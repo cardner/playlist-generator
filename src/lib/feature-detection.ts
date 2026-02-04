@@ -74,3 +74,15 @@ export function supportsWebWorkers(): boolean {
   return typeof Worker !== "undefined";
 }
 
+/**
+ * Checks if the browser supports WebUSB
+ *
+ * @returns true if WebUSB is supported
+ */
+export function supportsWebUSB(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return "usb" in navigator;
+}
