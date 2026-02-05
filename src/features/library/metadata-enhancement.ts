@@ -734,7 +734,8 @@ export async function detectTempoForLibrary(
         throw new DOMException("Tempo detection aborted", "AbortError");
       }
       const batch = tracksNeedingDetection.slice(i, i + batchSize);
-      const concurrency = Math.min(3, batch.length);
+      const hc = typeof navigator !== "undefined" && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 4;
+      const concurrency = Math.min(Math.max(1, hc - 1), 6, batch.length);
       const inFlight = new Set<Promise<void>>();
 
       const runTask = async (track: TrackRecord) => {

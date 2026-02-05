@@ -297,7 +297,10 @@ export function useMetadataParsing(
 
           // Adjust batch size and concurrency based on library size
           const batchSize = libraryFiles.length > 10000 ? 500 : 1000;
-          const concurrency = libraryFiles.length > 5000 ? 2 : 3;
+          const concurrency = Math.min(
+            Math.max(1, (typeof navigator !== "undefined" && navigator.hardwareConcurrency ? navigator.hardwareConcurrency - 1 : 0) || 4),
+            8
+          );
 
           let lastSavedCount = processingCheckpoint?.lastProcessedIndex ?? 0;
           const onBatchedProgress = (progress: any) => {
@@ -354,8 +357,11 @@ export function useMetadataParsing(
           }
         } else {
           // For smaller libraries, use direct parsing (faster)
-          // Adjust concurrency based on library size
-          const concurrency = orderedFiles.length > 500 ? 3 : 5;
+          // Use hardware concurrency for parallelism (capped 1-8)
+          const concurrency = Math.min(
+            Math.max(1, (typeof navigator !== "undefined" && navigator.hardwareConcurrency ? navigator.hardwareConcurrency - 1 : 0) || 4),
+            8
+          );
 
           const onMetadataProgress: MetadataProgressCallback = (progress) => {
             // Update UI progress state
@@ -449,7 +455,7 @@ export function useMetadataParsing(
             (window.navigator as Navigator & { standalone?: boolean }).standalone === true);
         const deviceMemory = typeof navigator !== "undefined" ? (navigator as Navigator & { deviceMemory?: number }).deviceMemory : undefined;
         const tempoBatchSize =
-          isStandalone && deviceMemory && deviceMemory <= 4 ? 2 : 5;
+          isStandalone && deviceMemory && deviceMemory <= 4 ? 2 : 8;
         const tempoTargetCount = tempoTrackFileIds.length;
         const isLargeLibrary = (tempoTargetCount || orderedFiles.length) > 10000;
         const isLowMemoryStandalone = isStandalone && deviceMemory && deviceMemory <= 4;

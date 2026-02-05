@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TrackRecord } from "@/db/schema";
 import type { LLMConfig } from "@/types/playlist";
 import { searchTracksByCriteria, type TrackSearchType } from "@/lib/track-search-engine";
@@ -49,6 +49,9 @@ export function MultiCriteriaTrackSearch({
   } = audioPreviewState;
 
   const audioRefs = useRef<Map<string, InlineAudioPlayerRef>>(new Map());
+  const hoverPrefetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prefetchInFlightRef = useRef<Set<string>>(new Set());
+  const MAX_PREFETCH_CONCURRENT = 3;
 
   const searchPlaceholder = useMemo(
     () => SEARCH_TYPES.find((type) => type.value === searchType)?.placeholder || "Search...",
@@ -105,10 +108,31 @@ export function MultiCriteriaTrackSearch({
     }
 
     if (hasSampleResult(trackFileId)) {
-      setTimeout(() => {
+      setSearchingTrack(trackFileId);
+      const attemptPlay = async (attempts = 0) => {
+        if (attempts > 10) {
+          setSearchingTrack(null);
+          return;
+        }
         const audioControls = audioRefs.current.get(trackFileId);
-        audioControls?.play();
-      }, 100);
+        if (audioControls) {
+          try {
+            await audioControls.play();
+            return;
+          } catch {
+            if (attempts < 10) {
+              setTimeout(() => attemptPlay(attempts + 1), 100);
+            } else {
+              setSearchingTrack(null);
+            }
+          }
+        } else if (attempts < 10) {
+          setTimeout(() => attemptPlay(attempts + 1), 100);
+        } else {
+          setSearchingTrack(null);
+        }
+      };
+      setTimeout(() => attemptPlay(), 100);
       return;
     }
 
@@ -121,11 +145,30 @@ export function MultiCriteriaTrackSearch({
       });
       if (sampleResult) {
         setSampleResult(trackFileId, sampleResult);
-        setSearchingTrack(null);
-        setTimeout(() => {
+        const attemptPlay = async (attempts = 0) => {
+          if (attempts > 10) {
+            setSearchingTrack(null);
+            return;
+          }
           const audioControls = audioRefs.current.get(trackFileId);
-          audioControls?.play();
-        }, 100);
+          if (audioControls) {
+            try {
+              await audioControls.play();
+              return;
+            } catch {
+              if (attempts < 10) {
+                setTimeout(() => attemptPlay(attempts + 1), 100);
+              } else {
+                setSearchingTrack(null);
+              }
+            }
+          } else if (attempts < 10) {
+            setTimeout(() => attemptPlay(attempts + 1), 100);
+          } else {
+            setSearchingTrack(null);
+          }
+        };
+        setTimeout(() => attemptPlay(), 100);
       } else {
         setTrackError(trackFileId, "Preview not available for this track");
         setSearchingTrack(null);
@@ -135,6 +178,48 @@ export function MultiCriteriaTrackSearch({
       setSearchingTrack(null);
     }
   };
+
+  const prefetchTrackSample = useCallback(
+    async (trackFileId: string, trackInfo: { title: string; artist: string; album?: string }) => {
+      if (hasSampleResult(trackFileId)) return;
+      if (prefetchInFlightRef.current.has(trackFileId)) return;
+      if (prefetchInFlightRef.current.size >= MAX_PREFETCH_CONCURRENT) return;
+
+      prefetchInFlightRef.current.add(trackFileId);
+      try {
+        const sampleResult = await searchTrackSample(trackInfo);
+        if (sampleResult) {
+          setSampleResult(trackFileId, sampleResult);
+        }
+      } catch {
+        // Silently ignore prefetch failures
+      } finally {
+        prefetchInFlightRef.current.delete(trackFileId);
+      }
+    },
+    [hasSampleResult, setSampleResult]
+  );
+
+  const handleTrackRowMouseEnter = useCallback(
+    (trackFileId: string, trackInfo: { title: string; artist: string; album?: string }) => {
+      if (hoverPrefetchTimeoutRef.current) {
+        clearTimeout(hoverPrefetchTimeoutRef.current);
+        hoverPrefetchTimeoutRef.current = null;
+      }
+      hoverPrefetchTimeoutRef.current = setTimeout(() => {
+        hoverPrefetchTimeoutRef.current = null;
+        prefetchTrackSample(trackFileId, trackInfo);
+      }, 250);
+    },
+    [prefetchTrackSample]
+  );
+
+  const handleTrackRowMouseLeave = useCallback(() => {
+    if (hoverPrefetchTimeoutRef.current) {
+      clearTimeout(hoverPrefetchTimeoutRef.current);
+      hoverPrefetchTimeoutRef.current = null;
+    }
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -177,6 +262,14 @@ export function MultiCriteriaTrackSearch({
           <div
             key={track.trackFileId}
             className="flex items-start gap-3 p-3 bg-app-hover rounded-sm border border-app-border"
+            onMouseEnter={() =>
+              handleTrackRowMouseEnter(track.trackFileId, {
+                title: track.tags.title || "Unknown Title",
+                artist: track.tags.artist || "Unknown Artist",
+                album: track.tags.album,
+              })
+            }
+            onMouseLeave={handleTrackRowMouseLeave}
           >
             <button
               onClick={() => handlePlayClick(track)}
@@ -233,12 +326,16 @@ export function MultiCriteriaTrackSearch({
               trackFileId={track.trackFileId}
               sampleResult={getSampleResult(track.trackFileId) || null}
               autoPlay={playingTrackId === track.trackFileId && !searchingTrackId && hasSampleResult(track.trackFileId)}
-              onPlay={() => setPlayingTrack(track.trackFileId)}
+              onPlay={() => {
+                setPlayingTrack(track.trackFileId);
+                setSearchingTrack(null);
+              }}
               onPause={() => clearPlayingTrack()}
               onEnded={() => clearPlayingTrack()}
               onError={(error) => {
                 setTrackError(track.trackFileId, error);
                 clearPlayingTrack();
+                setSearchingTrack(null);
               }}
             />
           </div>

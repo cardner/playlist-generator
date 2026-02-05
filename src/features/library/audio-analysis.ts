@@ -14,6 +14,72 @@
  */
 
 import { logger } from "@/lib/logger";
+import { transcodeToWavForTempo } from "./ffmpeg-tempo-fallback";
+
+/** After first "AudioContext not available in worker", skip worker-decode path for subsequent files. */
+let workerDecodeUnavailable: boolean | null = null;
+
+/** Cached result of probe: can worker use AudioContext? null = not yet probed. */
+let workerDecodeCapability: boolean | null = null;
+
+/** In-flight probe promise so concurrent callers share one probe. */
+let probePromise: Promise<boolean> | null = null;
+
+const AUDIO_CONTEXT_UNAVAILABLE_MSG = "AudioContext not available in worker";
+
+let sharedDecodeContext: AudioContext | null = null;
+
+function getSharedDecodeContext(): AudioContext {
+  if (!sharedDecodeContext || sharedDecodeContext.state === "closed") {
+    sharedDecodeContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+  }
+  return sharedDecodeContext;
+}
+
+/**
+ * Probe once whether the tempo worker can use AudioContext. Caches result.
+ * Concurrent callers share the same in-flight probe to avoid creating multiple workers.
+ * Returns false on timeout or error.
+ */
+async function probeWorkerDecodeCapability(): Promise<boolean> {
+  if (workerDecodeUnavailable === true) return false;
+  if (workerDecodeCapability !== null) return workerDecodeCapability;
+  if (probePromise) return probePromise;
+
+  probePromise = (async (): Promise<boolean> => {
+    try {
+      const worker = new Worker("/tempo-worker-probe.js", { type: "classic" });
+      const result = await new Promise<boolean>((resolve) => {
+        const timeout = setTimeout(() => {
+          worker.terminate();
+          resolve(false);
+        }, 3000);
+        worker.onmessage = (e: MessageEvent<{ audioContextAvailable?: boolean }>) => {
+          clearTimeout(timeout);
+          worker.terminate();
+          resolve(!!e.data?.audioContextAvailable);
+        };
+        worker.onerror = () => {
+          clearTimeout(timeout);
+          worker.terminate();
+          resolve(false);
+        };
+        worker.postMessage({});
+      });
+      workerDecodeCapability = result;
+      if (!result) workerDecodeUnavailable = true;
+      return result;
+    } catch {
+      workerDecodeCapability = false;
+      workerDecodeUnavailable = true;
+      return false;
+    } finally {
+      probePromise = null;
+    }
+  })();
+
+  return probePromise;
+}
 
 /**
  * Detect tempo (BPM) from an audio file
@@ -190,6 +256,23 @@ function analyzeTempo(channelData: Float32Array, sampleRate: number): { bpm: num
 }
 
 /**
+ * When worker reports EncodingError, transcode to WAV and retry with worker.
+ */
+async function detectTempoWithFfmpegFallback(
+  file: File,
+  method: 'autocorrelation' | 'spectral-flux' | 'peak-picking' | 'combined'
+): Promise<{ bpm: number | null; confidence: number; method: string }> {
+  try {
+    logger.debug("Tempo: using FFmpeg fallback for", file.name);
+    const wavFile = await transcodeToWavForTempo(file);
+    return detectTempoInWorker(wavFile, method);
+  } catch (err) {
+    logger.warn("FFmpeg tempo fallback failed:", err);
+    return { bpm: null, confidence: 0, method };
+  }
+}
+
+/**
  * Detect tempo in a Web Worker (for non-blocking analysis)
  * 
  * This function creates a Web Worker to run tempo detection without
@@ -211,14 +294,95 @@ export async function detectTempoInWorker(
   file: File,
   method: 'autocorrelation' | 'spectral-flux' | 'peak-picking' | 'combined' = 'combined'
 ): Promise<{ bpm: number | null; confidence: number; method: string }> {
+  if (workerDecodeUnavailable === true) {
+    return detectTempoWithMainThreadDecode(file, method);
+  }
+
+  const canDecodeInWorker = await probeWorkerDecodeCapability();
+  if (!canDecodeInWorker) {
+    return detectTempoWithMainThreadDecode(file, method);
+  }
+
+  let worker: Worker | null = null;
+
+  try {
+    worker = new Worker('/tempo-detection-worker.js', { type: 'classic' });
+    logger.debug("Created tempo detection worker from public folder");
+
+    // Post File to worker - worker decodes audio internally to keep main thread free
+    return await new Promise<{ bpm: number | null; confidence: number; method: string }>(
+      (resolve, reject) => {
+        const timeout = setTimeout(() => {
+          worker?.terminate();
+          reject(new Error('Tempo detection timeout'));
+        }, 30000);
+
+        worker!.onmessage = (
+          event: MessageEvent<{
+            bpm: number | null;
+            confidence: number;
+            method: string;
+            error?: string;
+            encodingError?: boolean;
+          }>
+        ) => {
+          clearTimeout(timeout);
+          worker?.terminate();
+
+          if (event.data.error) {
+            if (event.data.error.includes(AUDIO_CONTEXT_UNAVAILABLE_MSG)) {
+              workerDecodeUnavailable = true;
+              detectTempoWithMainThreadDecode(file, method).then(resolve).catch(() => {
+                resolve({ bpm: null, confidence: 0, method });
+              });
+              return;
+            }
+            if (event.data.encodingError) {
+              detectTempoWithFfmpegFallback(file, method).then(resolve).catch(() => {
+                resolve({ bpm: null, confidence: 0, method });
+              });
+              return;
+            }
+            reject(new Error(event.data.error));
+            return;
+          }
+          resolve(event.data);
+        };
+
+        worker!.onerror = () => {
+          clearTimeout(timeout);
+          worker?.terminate();
+          reject(new Error('Tempo detection worker error'));
+        };
+
+        worker!.postMessage({ file, method });
+      }
+    );
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if (errMsg.includes(AUDIO_CONTEXT_UNAVAILABLE_MSG)) {
+      workerDecodeUnavailable = true;
+    }
+    logger.debug("Worker decode failed, falling back to main-thread decode", error);
+    return detectTempoWithMainThreadDecode(file, method);
+  }
+}
+
+/**
+ * Fallback when worker cannot decode (e.g. AudioContext unavailable in worker).
+ * Decodes on main thread, transfers channel data to worker for analysis.
+ */
+async function detectTempoWithMainThreadDecode(
+  file: File,
+  method: 'autocorrelation' | 'spectral-flux' | 'peak-picking' | 'combined'
+): Promise<{ bpm: number | null; confidence: number; method: string }> {
   let arrayBuffer: ArrayBuffer | null = null;
   let audioBuffer: AudioBuffer | null = null;
   let channelData: Float32Array | null = null;
   let sampleRate = 0;
 
   try {
-    // Decode audio in main thread (AudioContext not available in Worker)
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const audioContext = getSharedDecodeContext();
     arrayBuffer = await file.arrayBuffer();
     audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
     channelData = audioBuffer.getChannelData(0);
@@ -227,20 +391,11 @@ export async function detectTempoInWorker(
       throw new Error("Failed to extract audio channel data");
     }
     const channelDataForWorker = channelData;
-    
-    audioContext.close();
-    
-    // Create worker from public folder (works best for static builds)
-    // For static webapps, workers must be in the public folder as JavaScript files
+
     let worker: Worker | null = null;
-    
     try {
-      // Load worker from public folder - this works reliably in static builds
       worker = new Worker('/tempo-detection-worker.js', { type: 'classic' });
-      logger.debug("Created tempo detection worker from public folder");
-    } catch (workerError) {
-      // Worker creation failed, use main thread
-      logger.debug("Worker not available, using main thread for tempo detection", workerError);
+    } catch {
       const result = analyzeTempo(channelDataForWorker, sampleRate);
       return {
         bpm: result.bpm,
@@ -248,66 +403,52 @@ export async function detectTempoInWorker(
         method: 'autocorrelation',
       };
     }
-    
-    if (!worker) {
-      // Final fallback to main thread
-      const result = analyzeTempo(channelData, sampleRate);
-      return {
-        bpm: result.bpm,
-        confidence: result.confidence,
-        method: 'autocorrelation',
-      };
-    }
-    
-    // Send data to worker
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        worker?.terminate();
-        reject(new Error('Tempo detection timeout'));
-      }, 30000); // 30 second timeout
-      
-      worker!.onmessage = (event: MessageEvent<{ bpm: number | null; confidence: number; method: string; error?: string }>) => {
-        clearTimeout(timeout);
-        worker?.terminate();
-        
-        if (event.data.error) {
-          reject(new Error(event.data.error));
-        } else {
-          resolve(event.data);
-        }
-      };
-      
-      worker!.onerror = (error) => {
-        clearTimeout(timeout);
-        worker?.terminate();
-        // Fallback to main thread on worker error
-        logger.debug("Worker error, falling back to main thread");
-        const result = analyzeTempo(channelDataForWorker, sampleRate);
-        resolve({
-          bpm: result.bpm,
-          confidence: result.confidence,
-          method: 'autocorrelation',
-        });
-      };
-      
-      // Transfer channel data to worker (using transferable for performance)
-      worker!.postMessage({
-        channelData: channelDataForWorker,
-        sampleRate,
-        method,
-      }, [channelDataForWorker.buffer]);
-    });
+
+    return await new Promise<{ bpm: number | null; confidence: number; method: string }>(
+      (resolve, reject) => {
+        const timeout = setTimeout(() => {
+          worker?.terminate();
+          reject(new Error('Tempo detection timeout'));
+        }, 30000);
+
+        worker!.onmessage = (
+          event: MessageEvent<{ bpm: number | null; confidence: number; method: string; error?: string }>
+        ) => {
+          clearTimeout(timeout);
+          worker?.terminate();
+          if (event.data.error) {
+            reject(new Error(event.data.error));
+          } else {
+            resolve(event.data);
+          }
+        };
+
+        worker!.onerror = () => {
+          clearTimeout(timeout);
+          worker?.terminate();
+          const result = analyzeTempo(channelDataForWorker, sampleRate);
+          resolve({
+            bpm: result.bpm,
+            confidence: result.confidence,
+            method: 'autocorrelation',
+          });
+        };
+
+        worker!.postMessage(
+          { channelData: channelDataForWorker, sampleRate, method },
+          [channelDataForWorker.buffer]
+        );
+      }
+    );
   } catch (error) {
-    logger.error("Failed to detect tempo in worker:", error);
-    // Fallback to main thread detection
+    logger.error("Failed to detect tempo:", error);
     const bpm = await detectTempo(file);
     return {
       bpm,
-      confidence: bpm ? 0.5 : 0, // Lower confidence for fallback
+      confidence: bpm ? 0.5 : 0,
       method: 'autocorrelation',
     };
   } finally {
-    // Release references for GC under memory pressure
     channelData = null;
     audioBuffer = null;
     arrayBuffer = null;

@@ -100,6 +100,9 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
     clearAll: clearAllAudioState,
   } = audioPreviewState;
   const audioRefs = useRef<Map<string, InlineAudioPlayerRef>>(new Map());
+  const hoverPrefetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prefetchInFlightRef = useRef<Set<string>>(new Set());
+  const MAX_PREFETCH_CONCURRENT = 3;
 
   const {
     isWriting,
@@ -355,26 +358,32 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
 
     // Check if we already have sample result cached
     if (hasSampleResult(trackFileId)) {
-      // Start playing immediately without updating UI until play event fires
+      // Show loading until stream loads and audio actually plays (onPlay fires)
+      setSearchingTrack(trackFileId);
       // Use retry logic to ensure audio element is ready
       const attemptPlay = async (attempts = 0) => {
-        if (attempts > 10) return; // Max 10 attempts (1 second total)
+        if (attempts > 10) {
+          setSearchingTrack(null);
+          return;
+        }
         
         const audioControls = audioRefs.current.get(trackFileId);
         if (audioControls) {
           try {
             await audioControls.play();
-            // Success - stop retrying
+            // Success - onPlay will clear searching and show pause
             return;
           } catch (err) {
-            // If play fails, try again after a short delay
             if (attempts < 10) {
               setTimeout(() => attemptPlay(attempts + 1), 100);
+            } else {
+              setSearchingTrack(null);
             }
           }
         } else if (attempts < 10) {
-          // Audio controls not ready yet, try again
           setTimeout(() => attemptPlay(attempts + 1), 100);
+        } else {
+          setSearchingTrack(null);
         }
       };
       
@@ -383,36 +392,39 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
       return;
     }
 
-    // Search for preview
+    // Search for preview - show loading immediately
     setSearchingTrack(trackFileId);
     try {
       const sampleResult = await searchTrackSample(trackInfo);
       if (sampleResult) {
-        // Set sample result before attempting to play
+        // Set sample result - keep loading until stream loads and audio plays (onPlay fires)
         setSampleResult(trackFileId, sampleResult);
-        // Clear searching state AFTER setting sample result to ensure audio element exists
-        setSearchingTrack(null);
         
         // Trigger play after a short delay to ensure React has rendered the audio element
         // and the audio has started loading. We'll try multiple times to handle timing issues.
         const attemptPlay = async (attempts = 0) => {
-          if (attempts > 15) return; // Max 15 attempts (1.5 seconds total)
+          if (attempts > 15) {
+            setSearchingTrack(null);
+            return;
+          }
           
           const audioControls = audioRefs.current.get(trackFileId);
           if (audioControls) {
             try {
               await audioControls.play();
-              // Success - stop retrying
+              // Success - onPlay will clear searching and show pause
               return;
             } catch (err) {
-              // If play fails, try again after a short delay (audio might still be loading)
               if (attempts < 15) {
                 setTimeout(() => attemptPlay(attempts + 1), 100);
+              } else {
+                setSearchingTrack(null);
               }
             }
           } else if (attempts < 15) {
-            // Audio controls not ready yet, try again
             setTimeout(() => attemptPlay(attempts + 1), 100);
+          } else {
+            setSearchingTrack(null);
           }
         };
         
@@ -434,14 +446,58 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
     }
   }, [playingTrackId, hasSampleResult, setSampleResult, setError, clearPlayingTrack, setSearchingTrack]);
 
+  // Prefetch preview on hover - caches result so first click can play immediately (within user gesture)
+  const prefetchTrackSample = useCallback(
+    async (trackFileId: string, trackInfo: { title: string; artist: string; album?: string }) => {
+      if (hasSampleResult(trackFileId)) return;
+      if (prefetchInFlightRef.current.has(trackFileId)) return;
+      if (prefetchInFlightRef.current.size >= MAX_PREFETCH_CONCURRENT) return;
+
+      prefetchInFlightRef.current.add(trackFileId);
+      try {
+        const sampleResult = await searchTrackSample(trackInfo);
+        if (sampleResult) {
+          setSampleResult(trackFileId, sampleResult);
+        }
+      } catch (error) {
+        logger.debug("[LibraryBrowser] Prefetch failed:", error);
+      } finally {
+        prefetchInFlightRef.current.delete(trackFileId);
+      }
+    },
+    [hasSampleResult, setSampleResult]
+  );
+
+  const handleTrackRowMouseEnter = useCallback(
+    (trackFileId: string, trackInfo: { title: string; artist: string; album?: string }) => {
+      if (hoverPrefetchTimeoutRef.current) {
+        clearTimeout(hoverPrefetchTimeoutRef.current);
+        hoverPrefetchTimeoutRef.current = null;
+      }
+      hoverPrefetchTimeoutRef.current = setTimeout(() => {
+        hoverPrefetchTimeoutRef.current = null;
+        prefetchTrackSample(trackFileId, trackInfo);
+      }, 250);
+    },
+    [prefetchTrackSample]
+  );
+
+  const handleTrackRowMouseLeave = useCallback(() => {
+    if (hoverPrefetchTimeoutRef.current) {
+      clearTimeout(hoverPrefetchTimeoutRef.current);
+      hoverPrefetchTimeoutRef.current = null;
+    }
+  }, []);
+
   // Cleanup when component unmounts
   useEffect(() => {
     const currentRefs = audioRefs.current;
     return () => {
-      // Stop all audio when component unmounts
+      if (hoverPrefetchTimeoutRef.current) {
+        clearTimeout(hoverPrefetchTimeoutRef.current);
+      }
       currentRefs.forEach(controls => controls.stop());
       currentRefs.clear();
-      // Clear all audio preview state
       clearAllAudioState();
     };
   }, [clearAllAudioState]);
@@ -692,7 +748,15 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
                     <Fragment key={track.trackFileId}>
                       <tr
                         className="border-b border-app-border hover:bg-app-hover transition-colors group"
-                  >
+                        onMouseEnter={() =>
+                          handleTrackRowMouseEnter(track.trackFileId, {
+                            title: track.tags.title || "Unknown Title",
+                            artist: track.tags.artist || "Unknown Artist",
+                            album: track.tags.album,
+                          })
+                        }
+                        onMouseLeave={handleTrackRowMouseLeave}
+                      >
                         <td className="py-2 px-4">
                           <button
                             onClick={() => handleInlinePlayClick(track.trackFileId, {
@@ -824,12 +888,16 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
                               trackFileId={track.trackFileId}
                               sampleResult={getSampleResult(track.trackFileId) || null}
                               autoPlay={playingTrackId === track.trackFileId && !searchingTrackId && hasSampleResult(track.trackFileId)}
-                              onPlay={() => setPlayingTrack(track.trackFileId)}
+                              onPlay={() => {
+                                setPlayingTrack(track.trackFileId);
+                                setSearchingTrack(null);
+                              }}
                               onPause={() => clearPlayingTrack()}
                               onEnded={() => clearPlayingTrack()}
                               onError={(error) => {
                                 setError(track.trackFileId, error);
                                 clearPlayingTrack();
+                                setSearchingTrack(null);
                               }}
                               onLoaded={async () => {
                                 // Audio loaded successfully - trigger play if this track should be playing

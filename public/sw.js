@@ -13,6 +13,8 @@ const PRECACHE_URLS = [
   "/icons/icon_256x256.png",
   "/icons/icon_512x512.png",
   "/tempo-detection-worker.js",
+  "/tempo-worker-probe.js",
+  "/metadataWorker.js",
 ];
 
 self.addEventListener("install", (event) => {

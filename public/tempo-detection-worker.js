@@ -1,15 +1,40 @@
 /**
  * Tempo Detection Web Worker
- * 
+ *
  * Runs tempo detection algorithms in a background thread to avoid blocking the UI.
  * Supports multiple detection methods: autocorrelation, spectral flux, peak picking, and combined.
+ * When a File is provided, decodes audio in the worker to keep main thread free.
  */
 
+async function getChannelDataAndSampleRate(data) {
+  if (data.file) {
+    const arrayBuffer = await data.file.arrayBuffer();
+    const AudioContextClass = self.AudioContext || self.webkitAudioContext;
+    if (!AudioContextClass) {
+      throw new Error("AudioContext not available in worker");
+    }
+    const audioContext = new AudioContextClass();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    const channelData = audioBuffer.getChannelData(0);
+    const sampleRate = audioBuffer.sampleRate;
+    if (audioContext.close) {
+      audioContext.close();
+    }
+    return { channelData, sampleRate };
+  }
+  return {
+    channelData: data.channelData,
+    sampleRate: data.sampleRate,
+  };
+}
+
 // Handle messages from main thread
-self.onmessage = (event) => {
-  const { channelData, sampleRate, method } = event.data;
+self.onmessage = async (event) => {
+  const { method } = event.data;
 
   try {
+    const { channelData, sampleRate } = await getChannelDataAndSampleRate(event.data);
+
     // Run detection based on method
     let result;
     
@@ -36,11 +61,17 @@ self.onmessage = (event) => {
       method,
     });
   } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const encodingError =
+      (error && error.name === "EncodingError") ||
+      (typeof errMsg === "string" &&
+        (errMsg.includes("EncodingError") || errMsg.includes("Unable to decode")));
     self.postMessage({
       bpm: null,
       confidence: 0,
       method,
-      error: error instanceof Error ? error.message : String(error),
+      error: errMsg,
+      encodingError: encodingError || undefined,
     });
   }
 };
