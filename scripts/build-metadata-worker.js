@@ -32,22 +32,27 @@ esbuild
               return { path: resolved };
             }
             
-            // Check if the resolved path is a directory
-            try {
-              const stats = fs.statSync(resolved);
-              if (stats.isDirectory()) {
-                // For directories, try index.ts
-                resolved = path.join(resolved, "index.ts");
-              } else {
-                // It's a file, add .ts extension
-                resolved = resolved + ".ts";
-              }
-            } catch {
-              // Path doesn't exist yet, assume it needs .ts extension
-              resolved = resolved + ".ts";
+            // Check if it's a file with .ts extension first
+            const resolvedWithTs = resolved + ".ts";
+            if (fs.existsSync(resolvedWithTs)) {
+              return { path: resolvedWithTs };
             }
             
-            return { path: resolved };
+            // Check if the resolved path is a directory
+            if (fs.existsSync(resolved)) {
+              try {
+                const stats = fs.statSync(resolved);
+                if (stats.isDirectory()) {
+                  // For directories, use index.ts
+                  return { path: path.join(resolved, "index.ts") };
+                }
+              } catch {
+                // If statSync fails, fall through to default
+              }
+            }
+            
+            // Default: assume it needs .ts extension
+            return { path: resolvedWithTs };
           });
         },
       },
