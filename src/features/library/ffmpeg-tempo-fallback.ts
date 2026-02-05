@@ -37,7 +37,6 @@ async function getFFmpeg(): Promise<FFmpeg> {
           await new Promise(resolve => setTimeout(resolve, delayMs));
         }
 
-        loadAttempts++;
         const instance = new FFmpeg();
         await instance.load();
         ffmpegInstance = instance;
@@ -48,10 +47,13 @@ async function getFFmpeg(): Promise<FFmpeg> {
         
         return instance;
       } catch (error) {
-        // Cache the error and clear loading promise to allow retry
+        // Increment attempt counter and cache the error
+        loadAttempts++;
         lastLoadError = error instanceof Error ? error : new Error(String(error));
-        ffmpegLoading = null;
         throw lastLoadError;
+      } finally {
+        // Clear loading promise to allow retry after all concurrent waiters are notified
+        ffmpegLoading = null;
       }
     })();
   }
