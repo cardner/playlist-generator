@@ -54,6 +54,7 @@ import { InlineAudioPlayer, type InlineAudioPlayerRef } from "./InlineAudioPlaye
 import { searchTrackSample } from "@/features/audio-preview/platform-searcher";
 import type { SampleResult } from "@/features/audio-preview/types";
 import { logger } from "@/lib/logger";
+import { MAX_PLAY_ATTEMPTS } from "@/lib/audio-playback-config";
 import { useAudioPreviewState } from "@/hooks/useAudioPreviewState";
 import { usePlaylistEditState } from "@/hooks/usePlaylistEditState";
 import {
@@ -390,7 +391,6 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   const hoverPrefetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prefetchInFlightRef = useRef<Set<string>>(new Set());
   const MAX_PREFETCH_CONCURRENT = 3;
-  const MAX_PLAY_ATTEMPTS = 10;
 
   const checkIfSaved = useCallback(async () => {
     const saved = await isPlaylistSaved(playlist.id);

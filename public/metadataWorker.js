@@ -10999,29 +10999,15 @@
       } finally {
         reader.releaseLock();
       }
-      const streamReader = stream.getReader();
-      const newStream = new ReadableStream({
-        start(controller) {
-          if (firstChunk) {
-            controller.enqueue(firstChunk);
-          }
+      const transformStream = new TransformStream({
+        async start(controller) {
+          controller.enqueue(firstChunk);
         },
-        async pull(controller) {
-          const { value, done } = await streamReader.read();
-          if (done) {
-            controller.close();
-            streamReader.releaseLock();
-          } else {
-            controller.enqueue(value);
-          }
-        },
-        cancel(reason) {
-          streamReader.releaseLock();
-          if (typeof stream.cancel === "function") {
-            return stream.cancel(reason);
-          }
+        transform(chunk, controller) {
+          controller.enqueue(chunk);
         }
       });
+      const newStream = stream.pipeThrough(transformStream);
       newStream.fileType = detectedFileType;
       return newStream;
     }
@@ -11134,7 +11120,9 @@
       }
     }
   };
+  var supportedExtensions = new Set(extensions);
   var supportedMimeTypes = new Set(mimeTypes);
+
   // node_modules/music-metadata/lib/ParserFactory.js
   var import_content_type = __toESM(require_content_type(), 1);
   var import_media_typer = __toESM(require_media_typer(), 1);

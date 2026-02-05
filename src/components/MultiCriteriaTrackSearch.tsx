@@ -5,6 +5,7 @@ import { searchTracksByCriteria, type TrackSearchType } from "@/lib/track-search
 import { InlineAudioPlayer, type InlineAudioPlayerRef } from "./InlineAudioPlayer";
 import { useAudioPreviewState } from "@/hooks/useAudioPreviewState";
 import { searchTrackSample } from "@/features/audio-preview/platform-searcher";
+import { MAX_PLAY_ATTEMPTS } from "@/lib/audio-playback-config";
 import { Play, Pause, Loader2, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -110,7 +111,7 @@ export function MultiCriteriaTrackSearch({
     if (hasSampleResult(trackFileId)) {
       setSearchingTrack(trackFileId);
       const attemptPlay = async (attempts = 0) => {
-        if (attempts > 10) {
+        if (attempts >= MAX_PLAY_ATTEMPTS) {
           setSearchingTrack(null);
           return;
         }
@@ -120,13 +121,13 @@ export function MultiCriteriaTrackSearch({
             await audioControls.play();
             return;
           } catch {
-            if (attempts < 10) {
+            if (attempts < MAX_PLAY_ATTEMPTS - 1) {
               setTimeout(() => attemptPlay(attempts + 1), 100);
             } else {
               setSearchingTrack(null);
             }
           }
-        } else if (attempts < 10) {
+        } else if (attempts < MAX_PLAY_ATTEMPTS - 1) {
           setTimeout(() => attemptPlay(attempts + 1), 100);
         } else {
           setSearchingTrack(null);
@@ -146,7 +147,7 @@ export function MultiCriteriaTrackSearch({
       if (sampleResult) {
         setSampleResult(trackFileId, sampleResult);
         const attemptPlay = async (attempts = 0) => {
-          if (attempts > 10) {
+          if (attempts >= MAX_PLAY_ATTEMPTS) {
             setSearchingTrack(null);
             return;
           }
@@ -156,13 +157,13 @@ export function MultiCriteriaTrackSearch({
               await audioControls.play();
               return;
             } catch {
-              if (attempts < 10) {
+              if (attempts < MAX_PLAY_ATTEMPTS - 1) {
                 setTimeout(() => attemptPlay(attempts + 1), 100);
               } else {
                 setSearchingTrack(null);
               }
             }
-          } else if (attempts < 10) {
+          } else if (attempts < MAX_PLAY_ATTEMPTS - 1) {
             setTimeout(() => attemptPlay(attempts + 1), 100);
           } else {
             setSearchingTrack(null);
