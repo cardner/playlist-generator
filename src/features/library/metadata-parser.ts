@@ -78,16 +78,16 @@ class MetadataWorkerPool {
     const worker = this.workers[this.nextWorkerIndex % this.workers.length];
     this.nextWorkerIndex++;
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        worker.removeEventListener("message", handler);
-        reject(new Error("Metadata parse timeout"));
-      }, 60000);
       const handler = (event: MessageEvent<MetadataResult>) => {
         if (event.data.trackFileId !== trackFileId) return;
         clearTimeout(timeout);
         worker.removeEventListener("message", handler);
         resolve(event.data);
       };
+      const timeout = setTimeout(() => {
+        worker.removeEventListener("message", handler);
+        reject(new Error("Metadata parse timeout"));
+      }, 60000);
       worker.addEventListener("message", handler);
       worker.postMessage({ trackFileId, file });
     });
