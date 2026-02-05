@@ -34,14 +34,26 @@ export function useWakeLock(isActive: boolean): void {
       return;
     }
 
+    let isMounted = true;
+
     const requestLock = async () => {
+      // Don't request a new lock if one is already held
+      if (sentinelRef.current) {
+        return;
+      }
       const wl = getWakeLock();
       if (document.visibilityState !== "visible" || !wl) {
         return;
       }
       try {
         const sentinel = await wl.request("screen");
-        sentinelRef.current = sentinel;
+        // Only store the sentinel if the effect is still mounted
+        if (isMounted) {
+          sentinelRef.current = sentinel;
+        } else {
+          // Effect was cleaned up while request was in progress, release immediately
+          await sentinel.release().catch(() => {});
+        }
       } catch (err) {
         // Request can fail (e.g. low battery, power save mode)
         console.debug("Wake lock request failed:", err);
@@ -74,6 +86,7 @@ export function useWakeLock(isActive: boolean): void {
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
+      isMounted = false;
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       void releaseLock();
     };
