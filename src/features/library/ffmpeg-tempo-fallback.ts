@@ -33,7 +33,7 @@ async function getFFmpeg(): Promise<FFmpeg> {
       try {
         // Apply exponential backoff if this is a retry
         if (loadAttempts > 0) {
-          const delayMs = INITIAL_RETRY_DELAY_MS * Math.pow(2, loadAttempts - 1);
+          const delayMs = INITIAL_RETRY_DELAY_MS * (1 << (loadAttempts - 1));
           await new Promise(resolve => setTimeout(resolve, delayMs));
         }
 
