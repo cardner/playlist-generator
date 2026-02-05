@@ -7,7 +7,6 @@
 
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
-import { logger } from "@/lib/logger";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_FILE_BYTES = 50 * 1024 * 1024; // 50MB

@@ -27,13 +27,65 @@ let probePromise: Promise<boolean> | null = null;
 
 const AUDIO_CONTEXT_UNAVAILABLE_MSG = "AudioContext not available in worker";
 
+/**
+ * Shared AudioContext for decoding audio on the main thread.
+ * Reusing a single AudioContext is more efficient than creating a new one for each file,
+ * as AudioContext creation is expensive and browsers limit the number of concurrent contexts.
+ * The context is automatically closed after 30 seconds of inactivity to prevent resource leaks.
+ */
 let sharedDecodeContext: AudioContext | null = null;
 
+/** Timer to automatically close the shared context after inactivity */
+let contextCloseTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Inactivity timeout in milliseconds before closing the shared AudioContext */
+const CONTEXT_IDLE_TIMEOUT_MS = 30000; // 30 seconds
+
+/**
+ * Gets or creates a shared AudioContext for decoding audio on the main thread.
+ * Automatically schedules the context to be closed after inactivity.
+ * 
+ * @returns Shared AudioContext instance
+ */
 function getSharedDecodeContext(): AudioContext {
   if (!sharedDecodeContext || sharedDecodeContext.state === "closed") {
     sharedDecodeContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
   }
+  
+  // Reset the idle timer - schedule context to close after inactivity
+  if (contextCloseTimer) {
+    clearTimeout(contextCloseTimer);
+  }
+  contextCloseTimer = setTimeout(() => {
+    closeSharedDecodeContext();
+  }, CONTEXT_IDLE_TIMEOUT_MS);
+  
   return sharedDecodeContext;
+}
+
+/**
+ * Closes the shared AudioContext if it exists and is not already closed.
+ * This frees up resources and should be called when tempo detection is no longer needed.
+ * The context will be recreated on the next call to getSharedDecodeContext() if needed.
+ */
+export function closeSharedDecodeContext(): void {
+  if (contextCloseTimer) {
+    clearTimeout(contextCloseTimer);
+    contextCloseTimer = null;
+  }
+  
+  if (sharedDecodeContext) {
+    if (sharedDecodeContext.state !== "closed") {
+      const contextToClose = sharedDecodeContext;
+      sharedDecodeContext = null; // Clear reference before closing to avoid race condition
+      contextToClose.close().catch((err) => {
+        logger.warn("Failed to close shared AudioContext:", err);
+      });
+    } else {
+      // Context is already closed, just clear the reference
+      sharedDecodeContext = null;
+    }
+  }
 }
 
 /**

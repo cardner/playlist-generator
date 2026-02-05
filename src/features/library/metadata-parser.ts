@@ -78,15 +78,16 @@ class MetadataWorkerPool {
     const worker = this.workers[this.nextWorkerIndex % this.workers.length];
     this.nextWorkerIndex++;
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error("Metadata parse timeout"));
-      }, 60000);
       const handler = (event: MessageEvent<MetadataResult>) => {
         if (event.data.trackFileId !== trackFileId) return;
         clearTimeout(timeout);
         worker.removeEventListener("message", handler);
         resolve(event.data);
       };
+      const timeout = setTimeout(() => {
+        worker.removeEventListener("message", handler);
+        reject(new Error("Metadata parse timeout"));
+      }, 60000);
       worker.addEventListener("message", handler);
       worker.postMessage({ trackFileId, file });
     });
@@ -325,24 +326,26 @@ export async function parseMetadataForFiles(
         }
       };
 
-      const processNext = async (): Promise<void> => {
-        while (currentIndex < files.length) {
-          const index = currentIndex;
-          currentIndex++;
-          await parseOne(files[index], index);
+      try {
+        const processNext = async (): Promise<void> => {
+          while (currentIndex < files.length) {
+            const index = currentIndex;
+            currentIndex++;
+            await parseOne(files[index], index);
+          }
+        };
+
+        const promises: Promise<void>[] = [];
+        for (let i = 0; i < Math.min(effectiveConcurrency, files.length); i++) {
+          promises.push(processNext());
         }
-      };
 
-      const promises: Promise<void>[] = [];
-      for (let i = 0; i < Math.min(effectiveConcurrency, files.length); i++) {
-        promises.push(processNext());
+        await Promise.all(promises);
+
+        return results;
+      } finally {
+        pool?.terminate();
       }
-
-      await Promise.all(promises);
-
-      pool?.terminate();
-
-      return results;
     },
     {
       fileCount: files.length,

@@ -11000,7 +11000,7 @@
         reader.releaseLock();
       }
       const transformStream = new TransformStream({
-        async start(controller) {
+        start(controller) {
           controller.enqueue(firstChunk);
         },
         transform(chunk, controller) {
