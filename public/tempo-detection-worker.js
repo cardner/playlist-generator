@@ -61,11 +61,15 @@ self.onmessage = async (event) => {
       method,
     });
   } catch (error) {
+    // Check error.name first before converting to string
+    const isEncodingError = error && error.name === "EncodingError";
     const errMsg = error instanceof Error ? error.message : String(error);
-    const encodingError =
-      (error && error.name === "EncodingError") ||
-      (typeof errMsg === "string" &&
-        (errMsg.includes("EncodingError") || errMsg.includes("Unable to decode")));
+    const hasEncodingErrorText =
+      typeof errMsg === "string" &&
+      (errMsg.includes("EncodingError") || errMsg.includes("Unable to decode"));
+    
+    const encodingError = isEncodingError || hasEncodingErrorText;
+    
     self.postMessage({
       bpm: null,
       confidence: 0,
