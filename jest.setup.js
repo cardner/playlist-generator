@@ -64,14 +64,49 @@ globalThis.Worker = class MockWorker {
     const data = isProbe
       ? { audioContextAvailable: probeMockResponse }
       : (workerMockResponses.shift() ?? { bpm: null, confidence: 0, method: 'combined' })
+    // simple listener registry keyed by event type (e.g. 'message', 'error')
+    this._listeners = this._listeners || { message: new Set(), error: new Set() }
     queueMicrotask(() => {
-      if (this._onmessage) this._onmessage({ data })
+      const event = { data }
+      if (this._onmessage) {
+        this._onmessage(event)
+      }
+      const messageListeners = this._listeners && this._listeners.message
+      if (messageListeners) {
+        messageListeners.forEach((listener) => {
+          try {
+            listener(event)
+          } catch {
+            // Swallow listener errors in the mock to avoid breaking tests.
+          }
+        })
+      }
     })
   }
   postMessage() {}
   terminate() {}
   _onmessage = null
+  _onerror = null
+  _listeners = { message: new Set(), error: new Set() }
   set onmessage(h) { this._onmessage = h }
   get onmessage() { return this._onmessage }
+  set onerror(h) { this._onerror = h }
+  get onerror() { return this._onerror }
+  addEventListener(type, handler) {
+    if (!this._listeners) {
+      this._listeners = { message: new Set(), error: new Set() }
+    }
+    const set = this._listeners[type]
+    if (set && typeof handler === 'function') {
+      set.add(handler)
+    }
+  }
+  removeEventListener(type, handler) {
+    if (!this._listeners) return
+    const set = this._listeners[type]
+    if (set && typeof handler === 'function') {
+      set.delete(handler)
+    }
+  }
 }
 
