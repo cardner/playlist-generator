@@ -221,6 +221,14 @@ export function MultiCriteriaTrackSearch({
     }
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (hoverPrefetchTimeoutRef.current) {
+        clearTimeout(hoverPrefetchTimeoutRef.current);
+        hoverPrefetchTimeoutRef.current = null;
+      }
+    };
+  }, []);
   return (
     <div className="space-y-4">
       <div className="flex flex-col md:flex-row gap-3">
