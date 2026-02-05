@@ -390,6 +390,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   const hoverPrefetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prefetchInFlightRef = useRef<Set<string>>(new Set());
   const MAX_PREFETCH_CONCURRENT = 3;
+  const MAX_PLAY_ATTEMPTS = 10;
 
   const checkIfSaved = useCallback(async () => {
     const saved = await isPlaylistSaved(playlist.id);
@@ -1277,8 +1278,8 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       // Show loading until stream loads and audio actually plays (onPlay fires)
       setSearchingTrack(trackFileId);
       const attemptPlay = async (attempts = 0) => {
-        if (attempts > 10) {
-          logger.error("[PlaylistDisplay] Failed to play track after 10 retry attempts:", trackFileId);
+        if (attempts >= MAX_PLAY_ATTEMPTS) {
+          logger.error("[PlaylistDisplay] Failed to play track after maximum retry attempts:", trackFileId);
           setTrackError(trackFileId, "Failed to start playback");
           setSearchingTrack(null);
           return;
@@ -1289,18 +1290,18 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
             await audioControls.play();
             return;
           } catch (err) {
-            if (attempts < 10) {
+            if (attempts + 1 < MAX_PLAY_ATTEMPTS) {
               setTimeout(() => attemptPlay(attempts + 1), 100);
             } else {
-              logger.error("[PlaylistDisplay] Failed to play track after 10 retry attempts:", trackFileId, err);
+              logger.error("[PlaylistDisplay] Failed to play track after maximum retry attempts:", trackFileId, err);
               setTrackError(trackFileId, "Failed to start playback");
               setSearchingTrack(null);
             }
           }
-        } else if (attempts < 10) {
+        } else if (attempts + 1 < MAX_PLAY_ATTEMPTS) {
           setTimeout(() => attemptPlay(attempts + 1), 100);
         } else {
-          logger.error("[PlaylistDisplay] Audio controls not found after 10 retry attempts:", trackFileId);
+          logger.error("[PlaylistDisplay] Audio controls not found after maximum retry attempts:", trackFileId);
           setTrackError(trackFileId, "Failed to start playback");
           setSearchingTrack(null);
         }
@@ -1318,8 +1319,8 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
         setSampleResult(trackFileId, sampleResult);
         
         const attemptPlay = async (attempts = 0) => {
-          if (attempts > 10) {
-            logger.error("[PlaylistDisplay] Failed to play track after 10 retry attempts:", trackFileId);
+          if (attempts >= MAX_PLAY_ATTEMPTS) {
+            logger.error("[PlaylistDisplay] Failed to play track after maximum retry attempts:", trackFileId);
             setTrackError(trackFileId, "Failed to start playback");
             setSearchingTrack(null);
             return;
@@ -1330,18 +1331,18 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
               await audioControls.play();
               return;
             } catch (err) {
-              if (attempts < 10) {
+              if (attempts + 1 < MAX_PLAY_ATTEMPTS) {
                 setTimeout(() => attemptPlay(attempts + 1), 100);
               } else {
-                logger.error("[PlaylistDisplay] Failed to play track after 10 retry attempts:", trackFileId, err);
+                logger.error("[PlaylistDisplay] Failed to play track after maximum retry attempts:", trackFileId, err);
                 setTrackError(trackFileId, "Failed to start playback");
                 setSearchingTrack(null);
               }
             }
-          } else if (attempts < 10) {
+          } else if (attempts + 1 < MAX_PLAY_ATTEMPTS) {
             setTimeout(() => attemptPlay(attempts + 1), 100);
           } else {
-            logger.error("[PlaylistDisplay] Audio controls not found after 10 retry attempts:", trackFileId);
+            logger.error("[PlaylistDisplay] Audio controls not found after maximum retry attempts:", trackFileId);
             setTrackError(trackFileId, "Failed to start playback");
             setSearchingTrack(null);
           }
