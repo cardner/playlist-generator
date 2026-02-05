@@ -325,24 +325,26 @@ export async function parseMetadataForFiles(
         }
       };
 
-      const processNext = async (): Promise<void> => {
-        while (currentIndex < files.length) {
-          const index = currentIndex;
-          currentIndex++;
-          await parseOne(files[index], index);
+      try {
+        const processNext = async (): Promise<void> => {
+          while (currentIndex < files.length) {
+            const index = currentIndex;
+            currentIndex++;
+            await parseOne(files[index], index);
+          }
+        };
+
+        const promises: Promise<void>[] = [];
+        for (let i = 0; i < Math.min(effectiveConcurrency, files.length); i++) {
+          promises.push(processNext());
         }
-      };
 
-      const promises: Promise<void>[] = [];
-      for (let i = 0; i < Math.min(effectiveConcurrency, files.length); i++) {
-        promises.push(processNext());
+        await Promise.all(promises);
+
+        return results;
+      } finally {
+        pool?.terminate();
       }
-
-      await Promise.all(promises);
-
-      pool?.terminate();
-
-      return results;
     },
     {
       fileCount: files.length,
