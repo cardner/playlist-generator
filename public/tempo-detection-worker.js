@@ -18,21 +18,19 @@ async function getChannelDataAndSampleRate(data) {
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
       const channelData = audioBuffer.getChannelData(0);
       const sampleRate = audioBuffer.sampleRate;
-      if (audioContext.close) {
-        audioContext.close();
-      }
       return { channelData, sampleRate };
     } catch (decodeError) {
-      // Clean up AudioContext before re-throwing
-      if (audioContext.close) {
-        audioContext.close();
-      }
       // Distinguish between encoding errors and other decode failures
       if (decodeError.name === "EncodingError") {
         throw new Error("Unable to decode audio data");
       }
       // Re-throw other errors as-is
       throw decodeError;
+    } finally {
+      // Clean up AudioContext in all cases
+      if (audioContext.close) {
+        audioContext.close();
+      }
     }
   }
   return {
