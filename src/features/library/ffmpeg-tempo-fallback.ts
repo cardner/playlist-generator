@@ -10,20 +10,55 @@ import { fetchFile } from "@ffmpeg/util";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_FILE_BYTES = 50 * 1024 * 1024; // 50MB
+const MAX_LOAD_RETRIES = 3;
+const INITIAL_RETRY_DELAY_MS = 1000;
+const MAX_RETRY_DELAY_MS = 8000; // Cap at 8 seconds
 
 let ffmpegInstance: FFmpeg | null = null;
 let ffmpegLoading: Promise<FFmpeg> | null = null;
+let lastLoadError: Error | null = null;
+let loadAttempts = 0;
 
 async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpegInstance && ffmpegInstance.loaded) {
     return ffmpegInstance;
   }
+
+  // If we've exceeded max retries, throw the cached error
+  if (lastLoadError && loadAttempts >= MAX_LOAD_RETRIES) {
+    throw new Error(`FFmpeg load failed after ${MAX_LOAD_RETRIES} attempts: ${lastLoadError.message}`);
+  }
+
   if (!ffmpegLoading) {
     ffmpegLoading = (async () => {
-      const instance = new FFmpeg();
-      await instance.load();
-      ffmpegInstance = instance;
-      return instance;
+      try {
+        // Apply exponential backoff if this is a retry
+        if (loadAttempts > 0) {
+          const delayMs = Math.min(
+            INITIAL_RETRY_DELAY_MS * (1 << (loadAttempts - 1)),
+            MAX_RETRY_DELAY_MS
+          );
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+
+        const instance = new FFmpeg();
+        await instance.load();
+        ffmpegInstance = instance;
+        
+        // Reset error state on success
+        lastLoadError = null;
+        loadAttempts = 0;
+        
+        return instance;
+      } catch (error) {
+        // Increment attempt counter and cache the error
+        loadAttempts++;
+        lastLoadError = error instanceof Error ? error : new Error(String(error));
+        throw lastLoadError;
+      } finally {
+        // Clear loading promise to allow retry after all concurrent waiters are notified
+        ffmpegLoading = null;
+      }
     })();
   }
   return ffmpegLoading;
