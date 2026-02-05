@@ -297,8 +297,12 @@ export function useMetadataParsing(
 
           // Adjust batch size and concurrency based on library size
           const batchSize = libraryFiles.length > 10000 ? 500 : 1000;
+          const effectiveHardwareConcurrency =
+            typeof navigator !== "undefined" && navigator.hardwareConcurrency
+              ? navigator.hardwareConcurrency
+              : 4;
           const concurrency = Math.min(
-            Math.max(1, (typeof navigator !== "undefined" && navigator.hardwareConcurrency ? navigator.hardwareConcurrency - 1 : 0) || 4),
+            Math.max(1, effectiveHardwareConcurrency - 1),
             8
           );
 
