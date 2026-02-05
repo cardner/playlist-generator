@@ -32,6 +32,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.1.0] - 2026-02-05
+
+### Added
+
+- improve tempo detect and playback
+
+### Other Changes
+
+- Merge pull request #17 from cardner/processesing-enhancements
+- Merge pull request #27 from cardner/copilot/sub-pr-17-7f16a4de-21b4-467e-a6a8-901ab3ee99c6
+- Merge pull request #28 from cardner/copilot/sub-pr-17-01224dbe-588b-4f6a-a396-20e5b7c6b79f
+- Merge pull request #26 from cardner/copilot/sub-pr-17-83b9462b-f4c4-442b-b5ef-cb99574c39be
+- Merge pull request #25 from cardner/copilot/sub-pr-17-f0c90b93-6c27-45e9-9f36-b33c4ddf2faa
+- Add maximum delay cap to prevent potential overflow in exponential backoff
+- Optimize exponential backoff calculation using bit shifting
+- Fix race condition and retry counter logic in FFmpeg loading
+- Extract MAX_PLAY_ATTEMPTS to shared constant
+- Use try-finally block for AudioContext cleanup to avoid duplication
+- Add error caching and exponential backoff for FFmpeg loading
+- Simplify EncodingError detection to use standard name property
+- Improve error handling to distinguish AudioContext unavailability from decode errors
+- Improve encoding error detection in tempo-detection-worker
+- Initial plan
+- Initial plan
+- Initial plan
+- Initial plan
+- Update scripts/build-metadata-worker.js
+- Update src/hooks/useMetadataParsing.ts
+- Update src/components/MultiCriteriaTrackSearch.tsx
+- Update public/metadataWorker.js
+- Update public/metadataWorker.js
+- Update src/hooks/useWakeLock.ts
+- Merge pull request #22 from cardner/copilot/sub-pr-17-one-more-time
+- Merge branch 'processesing-enhancements' into copilot/sub-pr-17-one-more-time
+- Merge pull request #23 from cardner/copilot/sub-pr-17-please-work
+- Merge pull request #21 from cardner/copilot/sub-pr-17-yet-again
+- Refine path resolution with better naming and optimized checks
+- Improve path resolution logic to check files before directories
+- Merge pull request #24 from cardner/copilot/sub-pr-17-91dc2d5e-9299-4595-9a54-e51a1db5aa3f
+- Fix path alias resolution to handle directory imports with index.ts
+- Move pool.terminate() to finally block for proper cleanup
+- Merge pull request #19 from cardner/copilot/sub-pr-17-again
+- Merge pull request #18 from cardner/copilot/sub-pr-17
+- Extract handlePlaybackFailure helper to reduce code duplication
+- Merge pull request #20 from cardner/copilot/sub-pr-17-another-one
+- Fix retry logic to ensure exactly MAX_PLAY_ATTEMPTS tries
+- Remove async keyword from TransformStream start method
+- Extract MAX_PLAY_ATTEMPTS constant and fix retry condition
+- Add error logging and user notification for playback retry failures
+- Fix wake lock to prevent duplicate requests and handle unmount race condition
+- Fix handler reference order to avoid temporal dead zone
+- Initial plan
+- Fix timeout handler to remove event listener and prevent memory leaks
+- Update public/metadataWorker.js
+- Update src/features/library/ffmpeg-tempo-fallback.ts
+- Initial plan
+- Initial plan
+- Improve code clarity in closeSharedDecodeContext
+- Initial plan
+- Fix race condition in AudioContext cleanup
+- Update src/hooks/useMetadataParsing.ts
+- Initial plan
+- Initial plan
+- Add AudioContext cleanup with idle timeout to prevent resource leaks
+- Update public/metadataWorker.js
+- Update jest.setup.js
+- Update src/hooks/useMetadataParsing.ts
+- Initial plan
+
 ## [1.0.1] - 2026-02-05
 
 ### Other Changes
