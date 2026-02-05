@@ -61,13 +61,15 @@ export function useWakeLock(isActive: boolean): void {
     };
 
     const releaseLock = async () => {
-      if (sentinelRef.current) {
+      const sentinel = sentinelRef.current;
+      if (sentinel) {
+        // Clear the ref immediately so new lock requests aren't blocked
+        sentinelRef.current = null;
         try {
-          await sentinelRef.current.release();
+          await sentinel.release();
         } catch {
           // Ignore release errors
         }
-        sentinelRef.current = null;
       }
     };
 
