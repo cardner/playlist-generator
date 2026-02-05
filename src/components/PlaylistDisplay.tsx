@@ -1290,7 +1290,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
             await audioControls.play();
             return;
           } catch (err) {
-            if (attempts + 1 < MAX_PLAY_ATTEMPTS) {
+            if (attempts < MAX_PLAY_ATTEMPTS - 1) {
               setTimeout(() => attemptPlay(attempts + 1), 100);
             } else {
               logger.error("[PlaylistDisplay] Failed to play track after maximum retry attempts:", trackFileId, err);
@@ -1298,7 +1298,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
               setSearchingTrack(null);
             }
           }
-        } else if (attempts + 1 < MAX_PLAY_ATTEMPTS) {
+        } else if (attempts < MAX_PLAY_ATTEMPTS - 1) {
           setTimeout(() => attemptPlay(attempts + 1), 100);
         } else {
           logger.error("[PlaylistDisplay] Audio controls not found after maximum retry attempts:", trackFileId);
@@ -1331,7 +1331,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
               await audioControls.play();
               return;
             } catch (err) {
-              if (attempts + 1 < MAX_PLAY_ATTEMPTS) {
+              if (attempts < MAX_PLAY_ATTEMPTS - 1) {
                 setTimeout(() => attemptPlay(attempts + 1), 100);
               } else {
                 logger.error("[PlaylistDisplay] Failed to play track after maximum retry attempts:", trackFileId, err);
@@ -1339,7 +1339,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                 setSearchingTrack(null);
               }
             }
-          } else if (attempts + 1 < MAX_PLAY_ATTEMPTS) {
+          } else if (attempts < MAX_PLAY_ATTEMPTS - 1) {
             setTimeout(() => attemptPlay(attempts + 1), 100);
           } else {
             logger.error("[PlaylistDisplay] Audio controls not found after maximum retry attempts:", trackFileId);
