@@ -11120,7 +11120,6 @@
       }
     }
   };
-  var supportedExtensions = new Set(extensions);
 
   // node_modules/music-metadata/lib/ParserFactory.js
   var import_content_type = __toESM(require_content_type(), 1);
