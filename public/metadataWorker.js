@@ -11134,9 +11134,7 @@
       }
     }
   };
-  var supportedExtensions = new Set(extensions);
   var supportedMimeTypes = new Set(mimeTypes);
-
   // node_modules/music-metadata/lib/ParserFactory.js
   var import_content_type = __toESM(require_content_type(), 1);
   var import_media_typer = __toESM(require_media_typer(), 1);
