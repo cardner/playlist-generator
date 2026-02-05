@@ -358,8 +358,12 @@ export function useMetadataParsing(
         } else {
           // For smaller libraries, use direct parsing (faster)
           // Use hardware concurrency for parallelism (capped 1-8)
+          const hardwareConcurrency =
+            typeof navigator !== "undefined" && typeof navigator.hardwareConcurrency === "number"
+              ? navigator.hardwareConcurrency
+              : 4;
           const concurrency = Math.min(
-            Math.max(1, (typeof navigator !== "undefined" && navigator.hardwareConcurrency ? navigator.hardwareConcurrency - 1 : 0) || 4),
+            Math.max(1, (hardwareConcurrency || 4) - 1),
             8
           );
 
