@@ -25,34 +25,32 @@ esbuild
         setup(build) {
           build.onResolve({ filter: /^@\// }, (args) => {
             const subpath = args.path.replace(/^@\//, "");
-            let resolved = path.join(projectRoot, "src", subpath);
+            const basePath = path.join(projectRoot, "src", subpath);
             
             // If path already has .ts extension, use it as-is
-            if (resolved.endsWith(".ts")) {
-              return { path: resolved };
+            if (basePath.endsWith(".ts")) {
+              return { path: basePath };
             }
             
             // Check if it's a file with .ts extension first
-            const resolvedWithTs = resolved + ".ts";
-            if (fs.existsSync(resolvedWithTs)) {
-              return { path: resolvedWithTs };
+            const filePathWithTs = basePath + ".ts";
+            if (fs.existsSync(filePathWithTs)) {
+              return { path: filePathWithTs };
             }
             
-            // Check if the resolved path is a directory
-            if (fs.existsSync(resolved)) {
-              try {
-                const stats = fs.statSync(resolved);
-                if (stats.isDirectory()) {
-                  // For directories, use index.ts
-                  return { path: path.join(resolved, "index.ts") };
-                }
-              } catch {
-                // If statSync fails, fall through to default
+            // Check if the base path is a directory
+            try {
+              const stats = fs.statSync(basePath);
+              if (stats.isDirectory()) {
+                // For directories, use index.ts
+                return { path: path.join(basePath, "index.ts") };
               }
+            } catch {
+              // Path doesn't exist, fall through to default
             }
             
             // Default: assume it needs .ts extension
-            return { path: resolvedWithTs };
+            return { path: filePathWithTs };
           });
         },
       },
