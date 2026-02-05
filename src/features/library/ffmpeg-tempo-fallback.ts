@@ -12,6 +12,7 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_FILE_BYTES = 50 * 1024 * 1024; // 50MB
 const MAX_LOAD_RETRIES = 3;
 const INITIAL_RETRY_DELAY_MS = 1000;
+const MAX_RETRY_DELAY_MS = 8000; // Cap at 8 seconds
 
 let ffmpegInstance: FFmpeg | null = null;
 let ffmpegLoading: Promise<FFmpeg> | null = null;
@@ -33,7 +34,10 @@ async function getFFmpeg(): Promise<FFmpeg> {
       try {
         // Apply exponential backoff if this is a retry
         if (loadAttempts > 0) {
-          const delayMs = INITIAL_RETRY_DELAY_MS * (1 << (loadAttempts - 1));
+          const delayMs = Math.min(
+            INITIAL_RETRY_DELAY_MS * (1 << (loadAttempts - 1)),
+            MAX_RETRY_DELAY_MS
+          );
           await new Promise(resolve => setTimeout(resolve, delayMs));
         }
 
