@@ -57,6 +57,7 @@ import { InlineAudioPlayer, type InlineAudioPlayerRef } from "./InlineAudioPlaye
 import { searchTrackSample } from "@/features/audio-preview/platform-searcher";
 import { useAudioPreviewState } from "@/hooks/useAudioPreviewState";
 import { useMetadataWriteback } from "@/hooks/useMetadataWriteback";
+import { MAX_PLAY_ATTEMPTS } from "@/lib/audio-playback-config";
 import type { LibraryRoot } from "@/lib/library-selection";
 import { logger } from "@/lib/logger";
 
@@ -362,7 +363,7 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
       setSearchingTrack(trackFileId);
       // Use retry logic to ensure audio element is ready
       const attemptPlay = async (attempts = 0) => {
-        if (attempts > 10) {
+        if (attempts >= MAX_PLAY_ATTEMPTS) {
           setSearchingTrack(null);
           return;
         }
@@ -374,13 +375,13 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
             // Success - onPlay will clear searching and show pause
             return;
           } catch (err) {
-            if (attempts < 10) {
+            if (attempts < MAX_PLAY_ATTEMPTS - 1) {
               setTimeout(() => attemptPlay(attempts + 1), 100);
             } else {
               setSearchingTrack(null);
             }
           }
-        } else if (attempts < 10) {
+        } else if (attempts < MAX_PLAY_ATTEMPTS - 1) {
           setTimeout(() => attemptPlay(attempts + 1), 100);
         } else {
           setSearchingTrack(null);
@@ -403,7 +404,7 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
         // Trigger play after a short delay to ensure React has rendered the audio element
         // and the audio has started loading. We'll try multiple times to handle timing issues.
         const attemptPlay = async (attempts = 0) => {
-          if (attempts > 15) {
+          if (attempts >= MAX_PLAY_ATTEMPTS) {
             setSearchingTrack(null);
             return;
           }
@@ -415,13 +416,13 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
               // Success - onPlay will clear searching and show pause
               return;
             } catch (err) {
-              if (attempts < 15) {
+              if (attempts < MAX_PLAY_ATTEMPTS - 1) {
                 setTimeout(() => attemptPlay(attempts + 1), 100);
               } else {
                 setSearchingTrack(null);
               }
             }
-          } else if (attempts < 15) {
+          } else if (attempts < MAX_PLAY_ATTEMPTS - 1) {
             setTimeout(() => attemptPlay(attempts + 1), 100);
           } else {
             setSearchingTrack(null);
