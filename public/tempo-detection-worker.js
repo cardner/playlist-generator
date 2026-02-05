@@ -28,8 +28,7 @@ async function getChannelDataAndSampleRate(data) {
         audioContext.close();
       }
       // Distinguish between encoding errors and other decode failures
-      if (decodeError.name === "EncodingError" || 
-          (decodeError.message && decodeError.message.includes("EncodingError"))) {
+      if (decodeError.name === "EncodingError") {
         throw new Error("Unable to decode audio data");
       }
       // Re-throw other errors as-is
