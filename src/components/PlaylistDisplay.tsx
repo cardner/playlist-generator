@@ -390,6 +390,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   const hoverPrefetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prefetchInFlightRef = useRef<Set<string>>(new Set());
   const MAX_PREFETCH_CONCURRENT = 3;
+  const MAX_PLAY_ATTEMPTS = 10;
 
   const checkIfSaved = useCallback(async () => {
     const saved = await isPlaylistSaved(playlist.id);
@@ -1248,6 +1249,13 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
 
   const flowArcStrategy = pendingFlowArcStrategy ?? displayPlaylist.strategy;
 
+  // Helper function to handle playback failure after all retry attempts
+  const handlePlaybackFailure = useCallback((trackFileId: string, reason: string, error?: unknown) => {
+    logger.error(`[PlaylistDisplay] ${reason}:`, trackFileId, error);
+    setTrackError(trackFileId, "Failed to start playback");
+    setSearchingTrack(null);
+  }, [setTrackError, setSearchingTrack]);
+
   // Handler for inline audio preview play/pause
   const handleInlinePlayClick = useCallback(async (
     trackFileId: string,
@@ -1277,8 +1285,8 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       // Show loading until stream loads and audio actually plays (onPlay fires)
       setSearchingTrack(trackFileId);
       const attemptPlay = async (attempts = 0) => {
-        if (attempts > 10) {
-          setSearchingTrack(null);
+        if (attempts >= MAX_PLAY_ATTEMPTS) {
+          handlePlaybackFailure(trackFileId, "Failed to play track after maximum retry attempts");
           return;
         }
         const audioControls = audioRefs.current.get(trackFileId);
@@ -1287,16 +1295,16 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
             await audioControls.play();
             return;
           } catch (err) {
-            if (attempts < 10) {
+            if (attempts < MAX_PLAY_ATTEMPTS - 1) {
               setTimeout(() => attemptPlay(attempts + 1), 100);
             } else {
-              setSearchingTrack(null);
+              handlePlaybackFailure(trackFileId, "Failed to play track after maximum retry attempts", err);
             }
           }
-        } else if (attempts < 10) {
+        } else if (attempts < MAX_PLAY_ATTEMPTS - 1) {
           setTimeout(() => attemptPlay(attempts + 1), 100);
         } else {
-          setSearchingTrack(null);
+          handlePlaybackFailure(trackFileId, "Audio controls not found after maximum retry attempts");
         }
       };
       setTimeout(() => attemptPlay(), 100);
@@ -1312,8 +1320,8 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
         setSampleResult(trackFileId, sampleResult);
         
         const attemptPlay = async (attempts = 0) => {
-          if (attempts > 10) {
-            setSearchingTrack(null);
+          if (attempts >= MAX_PLAY_ATTEMPTS) {
+            handlePlaybackFailure(trackFileId, "Failed to play track after maximum retry attempts");
             return;
           }
           const audioControls = audioRefs.current.get(trackFileId);
@@ -1322,16 +1330,16 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
               await audioControls.play();
               return;
             } catch (err) {
-              if (attempts < 10) {
+              if (attempts < MAX_PLAY_ATTEMPTS - 1) {
                 setTimeout(() => attemptPlay(attempts + 1), 100);
               } else {
-                setSearchingTrack(null);
+                handlePlaybackFailure(trackFileId, "Failed to play track after maximum retry attempts", err);
               }
             }
-          } else if (attempts < 10) {
+          } else if (attempts < MAX_PLAY_ATTEMPTS - 1) {
             setTimeout(() => attemptPlay(attempts + 1), 100);
           } else {
-            setSearchingTrack(null);
+            handlePlaybackFailure(trackFileId, "Audio controls not found after maximum retry attempts");
           }
         };
         
@@ -1345,7 +1353,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       setTrackError(trackFileId, "Failed to find preview for this track");
       setSearchingTrack(null);
     }
-  }, [playingTrackId, hasSampleResult, setSampleResult, setTrackError, clearPlayingTrack, setSearchingTrack]);
+  }, [playingTrackId, hasSampleResult, setSampleResult, setTrackError, clearPlayingTrack, setSearchingTrack, handlePlaybackFailure]);
 
   // Prefetch preview on hover - caches result so first click can play immediately (within user gesture)
   const prefetchTrackSample = useCallback(
