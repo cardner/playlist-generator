@@ -10999,15 +10999,29 @@
       } finally {
         reader.releaseLock();
       }
-      const transformStream = new TransformStream({
+      const streamReader = stream.getReader();
+      const newStream = new ReadableStream({
         start(controller) {
-          controller.enqueue(firstChunk);
+          if (firstChunk) {
+            controller.enqueue(firstChunk);
+          }
         },
-        transform(chunk, controller) {
-          controller.enqueue(chunk);
+        async pull(controller) {
+          const { value, done } = await streamReader.read();
+          if (done) {
+            controller.close();
+            streamReader.releaseLock();
+          } else {
+            controller.enqueue(value);
+          }
+        },
+        cancel(reason) {
+          streamReader.releaseLock();
+          if (typeof stream.cancel === "function") {
+            return stream.cancel(reason);
+          }
         }
       });
-      const newStream = stream.pipeThrough(transformStream);
       newStream.fileType = detectedFileType;
       return newStream;
     }
