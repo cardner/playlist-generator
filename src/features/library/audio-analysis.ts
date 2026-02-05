@@ -75,11 +75,15 @@ export function closeSharedDecodeContext(): void {
   }
   
   if (sharedDecodeContext && sharedDecodeContext.state !== "closed") {
-    sharedDecodeContext.close().catch((err) => {
+    const contextToClose = sharedDecodeContext;
+    sharedDecodeContext = null; // Clear reference before closing to avoid race condition
+    contextToClose.close().catch((err) => {
       logger.warn("Failed to close shared AudioContext:", err);
     });
+  } else if (sharedDecodeContext) {
+    // Context is already closed, just clear the reference
+    sharedDecodeContext = null;
   }
-  sharedDecodeContext = null;
 }
 
 /**
