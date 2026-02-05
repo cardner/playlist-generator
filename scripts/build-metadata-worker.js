@@ -42,8 +42,11 @@ esbuild
             try {
               const stats = fs.statSync(basePath);
               if (stats.isDirectory()) {
-                // For directories, use index.ts
-                return { path: path.join(basePath, "index.ts") };
+                // For directories, use index.ts if it exists
+                const indexTsPath = path.join(basePath, "index.ts");
+                if (fs.existsSync(indexTsPath)) {
+                  return { path: indexTsPath };
+                }
               }
             } catch {
               // Path doesn't exist, fall through to default
