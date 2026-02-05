@@ -79,6 +79,7 @@ class MetadataWorkerPool {
     this.nextWorkerIndex++;
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
+        worker.removeEventListener("message", handler);
         reject(new Error("Metadata parse timeout"));
       }, 60000);
       const handler = (event: MessageEvent<MetadataResult>) => {
