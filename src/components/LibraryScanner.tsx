@@ -64,6 +64,7 @@ import { InterruptedScanBanner } from "./InterruptedScanBanner";
 import { useLibraryScanning } from "@/hooks/useLibraryScanning";
 import { useMetadataParsing } from "@/hooks/useMetadataParsing";
 import { useMetadataWriteback } from "@/hooks/useMetadataWriteback";
+import { useWakeLock } from "@/hooks/useWakeLock";
 import { getResumableScans } from "@/db/storage-scan-checkpoints";
 import { getInterruptedProcessingCheckpoints } from "@/db/storage-processing-checkpoints";
 import { getInterruptedWritebackCheckpoints } from "@/db/storage-writeback-checkpoints";
@@ -158,6 +159,10 @@ export function LibraryScanner({
     isWriting: isWritingWriteback,
     handleResumeWriteback,
   } = useMetadataWriteback();
+
+  // Prevent screen sleep during scanning and processing
+  const isProcessing = isScanning || isParsingMetadata || isDetectingTempo || isWritingWriteback;
+  useWakeLock(isProcessing);
 
   const renderProcessingResumeBanner = () => {
     if (

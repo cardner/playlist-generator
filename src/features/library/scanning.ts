@@ -244,8 +244,9 @@ export async function buildFileIndex(
             }
             scanned++;
 
-            // Yield control every 50 files to avoid blocking UI
-            if (scanned % 50 === 0) {
+            // Yield control periodically; less frequent for large libraries
+            const yieldInterval = scanned > 5000 ? 100 : 50;
+            if (scanned % yieldInterval === 0) {
               await new Promise((resolve) => setTimeout(resolve, 0));
               onProgress?.({
                 found,

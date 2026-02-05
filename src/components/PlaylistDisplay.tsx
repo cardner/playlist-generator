@@ -54,6 +54,7 @@ import { InlineAudioPlayer, type InlineAudioPlayerRef } from "./InlineAudioPlaye
 import { searchTrackSample } from "@/features/audio-preview/platform-searcher";
 import type { SampleResult } from "@/features/audio-preview/types";
 import { logger } from "@/lib/logger";
+import { MAX_PLAY_ATTEMPTS } from "@/lib/audio-playback-config";
 import { useAudioPreviewState } from "@/hooks/useAudioPreviewState";
 import { usePlaylistEditState } from "@/hooks/usePlaylistEditState";
 import {
@@ -387,6 +388,9 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     clearAll: clearAllAudioState,
   } = audioPreviewState;
   const audioRefs = useRef<Map<string, InlineAudioPlayerRef>>(new Map());
+  const hoverPrefetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prefetchInFlightRef = useRef<Set<string>>(new Set());
+  const MAX_PREFETCH_CONCURRENT = 3;
 
   const checkIfSaved = useCallback(async () => {
     const saved = await isPlaylistSaved(playlist.id);
@@ -696,6 +700,14 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
             "px-4 md:px-6 py-4 hover:bg-app-hover transition-colors group border-l-2 border-accent-primary/30 bg-accent-primary/5",
             isDragging && "opacity-70"
           )}
+          onMouseEnter={() =>
+            handleTrackRowMouseEnter(trackFileId, {
+              title: dtrack.title,
+              artist: dtrack.artist,
+              album: dtrack.album,
+            })
+          }
+          onMouseLeave={handleTrackRowMouseLeave}
         >
           <div className="flex items-start gap-4">
             {dragHandle}
@@ -809,12 +821,16 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
             trackFileId={trackFileId}
             sampleResult={getSampleResult(trackFileId) || null}
             autoPlay={playingTrackId === trackFileId && !searchingTrackId && hasSampleResult(trackFileId)}
-            onPlay={() => setPlayingTrack(trackFileId)}
+            onPlay={() => {
+              setPlayingTrack(trackFileId);
+              setSearchingTrack(null);
+            }}
             onPause={() => clearPlayingTrack()}
             onEnded={() => clearPlayingTrack()}
             onError={(error) => {
               setTrackError(trackFileId, error);
               clearPlayingTrack();
+              setSearchingTrack(null);
             }}
             onLoaded={async () => {
               if (playingTrackId === trackFileId && !searchingTrackId) {
@@ -846,6 +862,14 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
             "px-4 md:px-6 py-4 hover:bg-app-hover transition-colors group",
             isDragging && "opacity-70"
           )}
+          onMouseEnter={() =>
+            handleTrackRowMouseEnter(trackFileId, {
+              title: track.tags.title || "Unknown Title",
+              artist: track.tags.artist || "Unknown Artist",
+              album: track.tags.album,
+            })
+          }
+          onMouseLeave={handleTrackRowMouseLeave}
         >
           <div className="flex items-start gap-4">
             {dragHandle}
@@ -936,12 +960,16 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
               trackFileId={trackFileId}
               sampleResult={getSampleResult(trackFileId) || null}
               autoPlay={playingTrackId === trackFileId && !searchingTrackId && hasSampleResult(trackFileId)}
-              onPlay={() => setPlayingTrack(trackFileId)}
+              onPlay={() => {
+                setPlayingTrack(trackFileId);
+                setSearchingTrack(null);
+              }}
               onPause={() => clearPlayingTrack()}
               onEnded={() => clearPlayingTrack()}
               onError={(error) => {
                 setTrackError(trackFileId, error);
                 clearPlayingTrack();
+                setSearchingTrack(null);
               }}
               onLoaded={async () => {
                 if (playingTrackId === trackFileId && !searchingTrackId) {
@@ -1221,6 +1249,13 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
 
   const flowArcStrategy = pendingFlowArcStrategy ?? displayPlaylist.strategy;
 
+  // Helper function to handle playback failure after all retry attempts
+  const handlePlaybackFailure = useCallback((trackFileId: string, reason: string, error?: unknown) => {
+    logger.error(`[PlaylistDisplay] ${reason}:`, trackFileId, error);
+    setTrackError(trackFileId, "Failed to start playback");
+    setSearchingTrack(null);
+  }, [setTrackError, setSearchingTrack]);
+
   // Handler for inline audio preview play/pause
   const handleInlinePlayClick = useCallback(async (
     trackFileId: string,
@@ -1247,50 +1282,67 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
 
     // Check if we already have sample result cached
     if (hasSampleResult(trackFileId)) {
-      // Start playing immediately without updating UI until play event fires
-      setTimeout(() => {
+      // Show loading until stream loads and audio actually plays (onPlay fires)
+      setSearchingTrack(trackFileId);
+      const attemptPlay = async (attempts = 0) => {
+        if (attempts >= MAX_PLAY_ATTEMPTS) {
+          handlePlaybackFailure(trackFileId, "Failed to play track after maximum retry attempts");
+          return;
+        }
         const audioControls = audioRefs.current.get(trackFileId);
         if (audioControls) {
-          audioControls.play();
+          try {
+            await audioControls.play();
+            return;
+          } catch (err) {
+            if (attempts < MAX_PLAY_ATTEMPTS - 1) {
+              setTimeout(() => attemptPlay(attempts + 1), 100);
+            } else {
+              handlePlaybackFailure(trackFileId, "Failed to play track after maximum retry attempts", err);
+            }
+          }
+        } else if (attempts < MAX_PLAY_ATTEMPTS - 1) {
+          setTimeout(() => attemptPlay(attempts + 1), 100);
+        } else {
+          handlePlaybackFailure(trackFileId, "Audio controls not found after maximum retry attempts");
         }
-      }, 100);
+      };
+      setTimeout(() => attemptPlay(), 100);
       return;
     }
 
-    // Search for preview
+    // Search for preview - show loading immediately
     setSearchingTrack(trackFileId);
     try {
       const sampleResult = await searchTrackSample(trackInfo);
       if (sampleResult) {
-        // Set sample result before attempting to play
+        // Set sample result - keep loading until stream loads and audio plays (onPlay fires)
         setSampleResult(trackFileId, sampleResult);
-        // Clear searching state AFTER setting sample result to ensure audio element exists
-        setSearchingTrack(null);
         
-        // Trigger play after a short delay to ensure React has rendered the audio element
-        // and the audio has started loading. We'll try multiple times to handle timing issues.
         const attemptPlay = async (attempts = 0) => {
-          if (attempts > 10) return; // Max 10 attempts (1 second total)
-          
+          if (attempts >= MAX_PLAY_ATTEMPTS) {
+            handlePlaybackFailure(trackFileId, "Failed to play track after maximum retry attempts");
+            return;
+          }
           const audioControls = audioRefs.current.get(trackFileId);
           if (audioControls) {
             try {
               await audioControls.play();
-              // Success - stop retrying
               return;
             } catch (err) {
-              // If play fails, try again after a short delay (audio might still be loading)
-              if (attempts < 10) {
+              if (attempts < MAX_PLAY_ATTEMPTS - 1) {
                 setTimeout(() => attemptPlay(attempts + 1), 100);
+              } else {
+                handlePlaybackFailure(trackFileId, "Failed to play track after maximum retry attempts", err);
               }
             }
-          } else if (attempts < 10) {
-            // Audio controls not ready yet, try again
+          } else if (attempts < MAX_PLAY_ATTEMPTS - 1) {
             setTimeout(() => attemptPlay(attempts + 1), 100);
-            }
+          } else {
+            handlePlaybackFailure(trackFileId, "Audio controls not found after maximum retry attempts");
+          }
         };
         
-        // Start attempting to play after a short initial delay
         setTimeout(() => attemptPlay(), 50);
       } else {
         setTrackError(trackFileId, "Preview not available for this track");
@@ -1301,16 +1353,60 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       setTrackError(trackFileId, "Failed to find preview for this track");
       setSearchingTrack(null);
     }
-  }, [playingTrackId, hasSampleResult, setSampleResult, setTrackError, clearPlayingTrack, setSearchingTrack]);
+  }, [playingTrackId, hasSampleResult, setSampleResult, setTrackError, clearPlayingTrack, setSearchingTrack, handlePlaybackFailure]);
+
+  // Prefetch preview on hover - caches result so first click can play immediately (within user gesture)
+  const prefetchTrackSample = useCallback(
+    async (trackFileId: string, trackInfo: { title: string; artist: string; album?: string }) => {
+      if (hasSampleResult(trackFileId)) return;
+      if (prefetchInFlightRef.current.has(trackFileId)) return;
+      if (prefetchInFlightRef.current.size >= MAX_PREFETCH_CONCURRENT) return;
+
+      prefetchInFlightRef.current.add(trackFileId);
+      try {
+        const sampleResult = await searchTrackSample(trackInfo);
+        if (sampleResult) {
+          setSampleResult(trackFileId, sampleResult);
+        }
+      } catch (error) {
+        logger.debug("[PlaylistDisplay] Prefetch failed:", error);
+      } finally {
+        prefetchInFlightRef.current.delete(trackFileId);
+      }
+    },
+    [hasSampleResult, setSampleResult]
+  );
+
+  const handleTrackRowMouseEnter = useCallback(
+    (trackFileId: string, trackInfo: { title: string; artist: string; album?: string }) => {
+      if (hoverPrefetchTimeoutRef.current) {
+        clearTimeout(hoverPrefetchTimeoutRef.current);
+        hoverPrefetchTimeoutRef.current = null;
+      }
+      hoverPrefetchTimeoutRef.current = setTimeout(() => {
+        hoverPrefetchTimeoutRef.current = null;
+        prefetchTrackSample(trackFileId, trackInfo);
+      }, 250);
+    },
+    [prefetchTrackSample]
+  );
+
+  const handleTrackRowMouseLeave = useCallback(() => {
+    if (hoverPrefetchTimeoutRef.current) {
+      clearTimeout(hoverPrefetchTimeoutRef.current);
+      hoverPrefetchTimeoutRef.current = null;
+    }
+  }, []);
 
   // Cleanup when playlist changes
   useEffect(() => {
     const currentRefs = audioRefs.current;
     return () => {
-      // Stop all audio when component unmounts or playlist changes
+      if (hoverPrefetchTimeoutRef.current) {
+        clearTimeout(hoverPrefetchTimeoutRef.current);
+      }
       currentRefs.forEach(controls => controls.stop());
       currentRefs.clear();
-      // Clear all audio preview state
       clearAllAudioState();
     };
   }, [playlist.id, clearAllAudioState]);
