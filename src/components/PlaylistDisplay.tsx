@@ -1278,6 +1278,8 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       setSearchingTrack(trackFileId);
       const attemptPlay = async (attempts = 0) => {
         if (attempts > 10) {
+          logger.error("[PlaylistDisplay] Failed to play track after 10 retry attempts:", trackFileId);
+          setTrackError(trackFileId, "Failed to start playback");
           setSearchingTrack(null);
           return;
         }
@@ -1290,12 +1292,16 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
             if (attempts < 10) {
               setTimeout(() => attemptPlay(attempts + 1), 100);
             } else {
+              logger.error("[PlaylistDisplay] Failed to play track after 10 retry attempts:", trackFileId, err);
+              setTrackError(trackFileId, "Failed to start playback");
               setSearchingTrack(null);
             }
           }
         } else if (attempts < 10) {
           setTimeout(() => attemptPlay(attempts + 1), 100);
         } else {
+          logger.error("[PlaylistDisplay] Audio controls not found after 10 retry attempts:", trackFileId);
+          setTrackError(trackFileId, "Failed to start playback");
           setSearchingTrack(null);
         }
       };
@@ -1313,6 +1319,8 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
         
         const attemptPlay = async (attempts = 0) => {
           if (attempts > 10) {
+            logger.error("[PlaylistDisplay] Failed to play track after 10 retry attempts:", trackFileId);
+            setTrackError(trackFileId, "Failed to start playback");
             setSearchingTrack(null);
             return;
           }
@@ -1325,12 +1333,16 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
               if (attempts < 10) {
                 setTimeout(() => attemptPlay(attempts + 1), 100);
               } else {
+                logger.error("[PlaylistDisplay] Failed to play track after 10 retry attempts:", trackFileId, err);
+                setTrackError(trackFileId, "Failed to start playback");
                 setSearchingTrack(null);
               }
             }
           } else if (attempts < 10) {
             setTimeout(() => attemptPlay(attempts + 1), 100);
           } else {
+            logger.error("[PlaylistDisplay] Audio controls not found after 10 retry attempts:", trackFileId);
+            setTrackError(trackFileId, "Failed to start playback");
             setSearchingTrack(null);
           }
         };
