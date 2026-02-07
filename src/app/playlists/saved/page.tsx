@@ -5,12 +5,20 @@ import { useRouter } from "next/navigation";
 import { getAllSavedPlaylistsWithCollections, deleteSavedPlaylist, savePlaylist } from "@/db/playlist-storage";
 import type { GeneratedPlaylist } from "@/features/playlists";
 import { PlaylistDisplay } from "@/components/PlaylistDisplay";
-import { Music, Trash2, Loader2, AlertCircle, Database, Shuffle } from "lucide-react";
-import { getCollection, getCurrentCollectionId } from "@/db/storage";
+import { Music, Trash2, Loader2, AlertCircle, Database, Shuffle, Download, Upload } from "lucide-react";
+import { getCollection, getCurrentCollectionId, getAllCollections } from "@/db/storage";
 import { logger } from "@/lib/logger";
 import type { PlaylistRequest } from "@/types/playlist";
 import { SavePlaylistDialog } from "@/components/SavePlaylistDialog";
+import { PlaylistImportDialog } from "@/components/PlaylistImportDialog";
 import { remixSavedPlaylist } from "@/features/playlists";
+import {
+  exportPlaylists,
+  importPlaylists,
+  validatePlaylistExportFormat,
+  type PlaylistExport,
+} from "@/db/storage-playlist-import";
+import type { LibraryRootRecord } from "@/db/schema";
 
 interface PlaylistWithCollection {
   playlist: GeneratedPlaylist;
@@ -29,15 +37,22 @@ export default function SavedPlaylistsPage() {
   const [currentCollectionId, setCurrentCollectionId] = useState<string | null>(null);
   const [remixTarget, setRemixTarget] = useState<PlaylistWithCollection | null>(null);
   const [isRemixing, setIsRemixing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importData, setImportData] = useState<PlaylistExport | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [collections, setCollections] = useState<LibraryRootRecord[]>([]);
 
   useEffect(() => {
     loadPlaylists();
-    
+    getAllCollections().then(setCollections);
+
     // Refresh when collections might change (check periodically)
     const interval = setInterval(() => {
       loadPlaylists();
+      getAllCollections().then(setCollections);
     }, 3000); // Check every 3 seconds
-    
+
     return () => clearInterval(interval);
   }, []);
 
@@ -134,6 +149,76 @@ export default function SavedPlaylistsPage() {
     }
   }
 
+  async function handleExportPlaylists() {
+    setIsExporting(true);
+    try {
+      const exportData = await exportPlaylists();
+      const fileName = `playlists-${Date.now()}.json`;
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      logger.error("Failed to export playlists:", err);
+      alert(`Failed to export playlists: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  function handleImportClick() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+
+        if (!validatePlaylistExportFormat(data)) {
+          alert("Invalid export file format. Please select a valid playlist export file.");
+          return;
+        }
+
+        setImportData(data);
+        setImportDialogOpen(true);
+      } catch (err) {
+        logger.error("Failed to read import file:", err);
+        alert(`Failed to read import file: ${err instanceof Error ? err.message : "Unknown error"}`);
+      }
+    };
+    input.click();
+  }
+
+  async function handleImportConfirm(targetCollectionId: string) {
+    if (!importData) return;
+
+    setIsImporting(true);
+    try {
+      const count = await importPlaylists(importData, targetCollectionId);
+      setImportDialogOpen(false);
+      setImportData(null);
+      await loadPlaylists();
+      alert(`${count} playlist${count !== 1 ? "s" : ""} imported successfully.`);
+    } catch (err) {
+      logger.error("Failed to import playlists:", err);
+      alert(`Failed to import playlists: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
   function formatDate(timestamp: number): string {
     const date = new Date(timestamp);
     return date.toLocaleDateString() + " " + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -174,18 +259,47 @@ export default function SavedPlaylistsPage() {
   return (
     <div>
       <div className="mb-8">
-        <div className="flex items-center gap-4 mb-4">
-          <div className="size-12 bg-gradient-to-br from-accent-primary to-accent-secondary rounded-sm flex items-center justify-center">
-            <Music className="size-6 text-white" />
-            
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div className="flex items-center gap-4">
+            <div className="size-12 bg-gradient-to-br from-accent-primary to-accent-secondary rounded-sm flex items-center justify-center shrink-0">
+              <Music className="size-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-app-primary tracking-tight text-2xl font-semibold">
+                Saved Playlists
+              </h1>
+              <p className="text-app-secondary text-sm">
+                View and manage your saved playlists
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-app-primary tracking-tight text-2xl font-semibold">
-              Saved Playlists
-            </h1>
-            <p className="text-app-secondary text-sm">
-              View and manage your saved playlists
-            </p>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleExportPlaylists}
+              disabled={isExporting || playlists.length === 0}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Export all playlists to JSON"
+            >
+              {isExporting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Download className="size-4" />
+              )}
+              Export
+            </button>
+            <button
+              onClick={handleImportClick}
+              disabled={isImporting}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Import playlists from JSON"
+            >
+              {isImporting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Upload className="size-4" />
+              )}
+              Import
+            </button>
           </div>
         </div>
       </div>
@@ -212,12 +326,31 @@ export default function SavedPlaylistsPage() {
           <p className="text-app-secondary mb-6">
             Playlists you save will appear here for easy access.
           </p>
-          <button
-            onClick={() => router.push("/playlists/new")}
-            className="px-6 py-3 bg-accent-primary hover:bg-accent-hover text-white rounded-sm transition-colors"
-          >
-            Create New Playlist
-          </button>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={() => router.push("/playlists/new")}
+              className="px-6 py-3 bg-accent-primary hover:bg-accent-hover text-white rounded-sm transition-colors"
+            >
+              Create New Playlist
+            </button>
+            <button
+              onClick={handleImportClick}
+              disabled={isImporting || collections.length === 0}
+              className="flex items-center gap-2 px-6 py-3 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isImporting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Upload className="size-4" />
+              )}
+              Import Playlists
+            </button>
+          </div>
+          {collections.length === 0 && (
+            <p className="text-app-tertiary text-sm mt-4">
+              Create a collection and scan music first to import playlists.
+            </p>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -304,6 +437,19 @@ export default function SavedPlaylistsPage() {
         confirmLabel={isRemixing ? "Remixing..." : "Remix"}
         confirmDisabled={isRemixing}
       />
+
+      {importDialogOpen && importData && (
+        <PlaylistImportDialog
+          exportData={importData}
+          collections={collections}
+          onConfirm={handleImportConfirm}
+          onCancel={() => {
+            setImportDialogOpen(false);
+            setImportData(null);
+          }}
+          importing={isImporting}
+        />
+      )}
     </div>
   );
 }
