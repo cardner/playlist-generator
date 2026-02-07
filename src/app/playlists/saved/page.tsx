@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { getAllSavedPlaylistsWithCollections, deleteSavedPlaylist, savePlaylist } from "@/db/playlist-storage";
 import type { GeneratedPlaylist } from "@/features/playlists";
 import { PlaylistDisplay } from "@/components/PlaylistDisplay";
-import { Music, Trash2, Loader2, AlertCircle, Database, Shuffle, Download, Upload } from "lucide-react";
+import { Music, Trash2, Loader2, Database, Shuffle, Download, Upload } from "lucide-react";
+import { Button, Alert, Card } from "@/design-system/components";
 import { getCollection, getCurrentCollectionId, getAllCollections } from "@/db/storage";
 import { logger } from "@/lib/logger";
 import type { PlaylistRequest } from "@/types/playlist";
@@ -238,15 +239,15 @@ export default function SavedPlaylistsPage() {
     return (
       <div>
         <div className="mb-6">
-          <button
+          <Button
+            variant="secondary"
             onClick={() => {
               setSelectedPlaylist(null);
               setSelectedPlaylistCollectionId(undefined);
             }}
-            className="flex items-center gap-2 px-4 py-2 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm"
           >
             ← Back to Saved Playlists
-          </button>
+          </Button>
         </div>
         <PlaylistDisplay 
           playlist={selectedPlaylist} 
@@ -274,44 +275,34 @@ export default function SavedPlaylistsPage() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={isExporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
               onClick={handleExportPlaylists}
               disabled={isExporting || playlists.length === 0}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title="Export all playlists to JSON"
             >
-              {isExporting ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Download className="size-4" />
-              )}
               Export
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={isImporting ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
               onClick={handleImportClick}
               disabled={isImporting}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title="Import playlists from JSON"
             >
-              {isImporting ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Upload className="size-4" />
-              )}
               Import
-            </button>
+            </Button>
           </div>
         </div>
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/20 rounded-sm p-4 mb-6 flex items-start gap-3">
-          <AlertCircle className="size-5 text-red-500 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-red-500 text-sm font-medium mb-1">Error</p>
-            <p className="text-red-500 text-sm">{error}</p>
-          </div>
-        </div>
+        <Alert variant="error" title="Error" className="mb-6">
+          {error}
+        </Alert>
       )}
 
       {isLoading ? (
@@ -320,38 +311,34 @@ export default function SavedPlaylistsPage() {
           <p className="text-app-secondary">Loading playlists...</p>
         </div>
       ) : playlists.length === 0 ? (
-        <div className="bg-app-surface rounded-sm border border-app-border p-12 text-center">
+        <Card padding="lg" className="p-12 text-center">
           <Music className="size-12 text-app-tertiary mx-auto mb-4" />
           <h2 className="text-app-primary text-xl font-medium mb-2">No Saved Playlists</h2>
           <p className="text-app-secondary mb-6">
             Playlists you save will appear here for easy access.
           </p>
           <div className="flex items-center justify-center gap-3">
-            <button
+            <Button
+              variant="primary"
               onClick={() => router.push("/playlists/new")}
-              className="px-6 py-3 bg-accent-primary hover:bg-accent-hover text-white rounded-sm transition-colors"
             >
               Create New Playlist
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="secondary"
+              leftIcon={isImporting ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
               onClick={handleImportClick}
               disabled={isImporting || collections.length === 0}
-              className="flex items-center gap-2 px-6 py-3 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isImporting ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Upload className="size-4" />
-              )}
               Import Playlists
-            </button>
+            </Button>
           </div>
           {collections.length === 0 && (
             <p className="text-app-tertiary text-sm mt-4">
               Create a collection and scan music first to import playlists.
             </p>
           )}
-        </div>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {playlists.map((item) => {

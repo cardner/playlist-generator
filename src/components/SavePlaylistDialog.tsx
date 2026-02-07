@@ -1,5 +1,8 @@
+"use client";
+
 import { useEffect, useState } from "react";
-import { Check, X } from "lucide-react";
+import { Check } from "lucide-react";
+import { Dialog, Button, Input, Textarea } from "@/design-system/components";
 
 interface SavePlaylistDialogProps {
   isOpen: boolean;
@@ -48,23 +51,10 @@ export function SavePlaylistDialog({
     }
   }, [mode, title, defaultTitle]);
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-      <div className="w-full max-w-lg bg-app-surface rounded-sm border border-app-border shadow-2xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-app-border">
-          <h3 className="text-app-primary text-lg font-semibold">{titleText}</h3>
-          <button
-            onClick={onClose}
-            className="p-2 text-app-secondary hover:text-app-primary transition-colors"
-            aria-label="Close"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-
-        <div className="p-6 space-y-4">
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()} title={titleText}>
+      <Dialog.Body className="p-6">
+        <div className="space-y-4">
           {modeOptions.length > 1 && (
             <div className="space-y-2">
               {modeOptions.includes("override") && (
@@ -91,45 +81,33 @@ export function SavePlaylistDialog({
           )}
 
           <div className="space-y-3">
-            <div>
-              <label className="text-app-tertiary text-xs uppercase tracking-wider">Title</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                className="w-full mt-1 px-3 py-2 bg-app-hover text-app-primary rounded-sm border border-app-border focus:outline-none focus:border-accent-primary text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-app-tertiary text-xs uppercase tracking-wider">Description</label>
-              <textarea
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                rows={3}
-                className="w-full mt-1 px-3 py-2 bg-app-hover text-app-primary rounded-sm border border-app-border focus:outline-none focus:border-accent-primary text-sm"
-              />
-            </div>
+            <Input
+              label="Title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+            <Textarea
+              label="Description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+            />
           </div>
         </div>
-
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-app-border">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-app-hover text-app-primary rounded-sm text-sm border border-app-border hover:bg-app-surface-hover transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onConfirm({ mode, title: title.trim() || defaultTitle, description: description.trim() })}
-            disabled={confirmDisabled}
-            className="flex items-center gap-2 px-4 py-2 bg-accent-primary text-white rounded-sm text-sm hover:bg-accent-hover transition-colors disabled:opacity-50"
-          >
-            <Check className="size-4" />
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+      </Dialog.Body>
+      <Dialog.Footer className="px-6">
+        <Button variant="secondary" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          leftIcon={<Check className="size-4" />}
+          onClick={() => onConfirm({ mode, title: title.trim() || defaultTitle, description: description.trim() })}
+          disabled={confirmDisabled}
+        >
+          {confirmLabel}
+        </Button>
+      </Dialog.Footer>
+    </Dialog>
   );
 }
-
