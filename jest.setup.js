@@ -109,4 +109,3 @@ globalThis.Worker = class MockWorker {
     }
   }
 }
-
