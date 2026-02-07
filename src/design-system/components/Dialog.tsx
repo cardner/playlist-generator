@@ -27,7 +27,6 @@ function DialogRoot({ open, onOpenChange, title, children }: DialogProps) {
           )}
           onPointerDownOutside={() => onOpenChange(false)}
           onEscapeKeyDown={() => onOpenChange(false)}
-          aria-describedby={undefined}
         >
           <div className="flex items-center justify-between p-4 border-b border-app-border shrink-0">
             <RadixDialog.Title className={cn(title ? "text-app-primary text-lg font-semibold" : "sr-only")}>
