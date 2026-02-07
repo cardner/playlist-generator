@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { Tabs } from "@/design-system/components/Tabs";
 
 describe("Tabs", () => {
