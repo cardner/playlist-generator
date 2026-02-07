@@ -20,6 +20,7 @@ import {
   getAllCollections,
   getAllTracks,
   getFileIndexEntries,
+  getFileIndexEntry,
   getLibraryRoot,
   relinkCollectionHandle,
 } from "@/db/storage";
@@ -33,6 +34,7 @@ import {
   saveDeviceProfile,
 } from "@/features/devices/device-storage";
 import {
+  applyDevicePathMap,
   checkDeviceWriteAccess,
   pickDeviceRootHandle,
   syncPlaylistsToDevice,
@@ -41,6 +43,7 @@ import {
   type PlaylistPathValidationResult,
 } from "@/features/devices/device-sync";
 import { detectDevicePreset } from "@/features/devices/device-detect";
+import type { DeviceScanEntry } from "@/features/devices/device-scan";
 import {
   scanDeviceForPaths,
   type DeviceScanProgress,
@@ -121,6 +124,7 @@ export function DeviceSyncPanel({
     hashed: 0,
   });
   const [devicePathMap, setDevicePathMap] = useState<Map<string, string>>(new Map());
+  const [deviceEntries, setDeviceEntries] = useState<DeviceScanEntry[]>([]);
   const [ipodSetupStatus, setIpodSetupStatus] = useState<
     "idle" | "checking" | "ready" | "needs_setup" | "error"
   >("idle");
@@ -627,11 +631,27 @@ export function DeviceSyncPanel({
 
   async function buildTrackLookups(
     targetPlaylist: GeneratedPlaylist,
-    rootId?: string
+    rootId?: string,
+    options?: { tryLazyFileIndex?: boolean }
   ): Promise<TrackLookup[]> {
-    let allTracks;
+    const trackFileIds = targetPlaylist.trackFileIds;
+    let allTracks: Awaited<ReturnType<typeof getAllTracks>>;
     if (rootId) {
-      allTracks = await db.tracks.where("libraryRootId").equals(rootId).toArray();
+      const fromRoot = await db.tracks
+        .where("libraryRootId")
+        .equals(rootId)
+        .toArray();
+      const foundIds = new Set(fromRoot.map((t) => t.trackFileId));
+      const missingIds = trackFileIds.filter((id) => !foundIds.has(id));
+      if (missingIds.length > 0) {
+        const fromOther = await db.tracks
+          .where("trackFileId")
+          .anyOf(missingIds)
+          .toArray();
+        allTracks = [...fromRoot, ...fromOther];
+      } else {
+        allTracks = fromRoot;
+      }
     } else {
       allTracks = await getAllTracks();
     }
@@ -660,22 +680,71 @@ export function DeviceSyncPanel({
     }
 
     const trackLookups: TrackLookup[] = [];
-    for (const trackFileId of targetPlaylist.trackFileIds) {
+    for (const trackFileId of trackFileIds) {
       const track = allTracks.find((t) => t.trackFileId === trackFileId);
       if (!track) continue;
-      const fileIndex = fileIndexEntries.get(trackFileId);
-      trackLookups.push({ track, fileIndex });
+      let fileIndex = fileIndexEntries.get(trackFileId);
+      if (!fileIndex && track.libraryRootId) {
+        fileIndex = await getFileIndexEntry(trackFileId, track.libraryRootId);
+        if (fileIndex) {
+          fileIndexEntries.set(trackFileId, fileIndex);
+        }
+      }
+      if (!fileIndex) {
+        const rootsToTry = Array.from(
+          new Set(allTracks.map((t) => t.libraryRootId).filter(Boolean))
+        ).filter((id) => id !== rootId);
+        for (const rid of rootsToTry) {
+          fileIndex = await getFileIndexEntry(trackFileId, rid as string);
+          if (fileIndex) {
+            fileIndexEntries.set(trackFileId, fileIndex);
+            break;
+          }
+        }
+      }
+      if (!fileIndex && options?.tryLazyFileIndex && track.libraryRootId) {
+        const root = await resolveLibraryRoot(track.libraryRootId);
+        if (root?.mode === "handle") {
+          const { tryLazyFileIndex } = await import(
+            "@/features/devices/lazy-file-index"
+          );
+          fileIndex = await tryLazyFileIndex(
+            track,
+            root,
+            track.libraryRootId
+          );
+          if (fileIndex) {
+            fileIndexEntries.set(trackFileId, fileIndex);
+          }
+        }
+      }
+      trackLookups.push({ track, fileIndex: fileIndexEntries.get(trackFileId) });
     }
     return trackLookups;
   }
 
   async function buildTrackLookupsFromTrackIds(
     trackFileIds: string[],
-    rootId?: string
+    rootId?: string,
+    options?: { tryLazyFileIndex?: boolean }
   ): Promise<TrackLookup[]> {
-    let allTracks;
+    let allTracks: Awaited<ReturnType<typeof getAllTracks>>;
     if (rootId) {
-      allTracks = await db.tracks.where("libraryRootId").equals(rootId).toArray();
+      const fromRoot = await db.tracks
+        .where("libraryRootId")
+        .equals(rootId)
+        .toArray();
+      const foundIds = new Set(fromRoot.map((t) => t.trackFileId));
+      const missingIds = trackFileIds.filter((id) => !foundIds.has(id));
+      if (missingIds.length > 0) {
+        const fromOther = await db.tracks
+          .where("trackFileId")
+          .anyOf(missingIds)
+          .toArray();
+        allTracks = [...fromRoot, ...fromOther];
+      } else {
+        allTracks = fromRoot;
+      }
     } else {
       allTracks = await getAllTracks();
     }
@@ -708,8 +777,42 @@ export function DeviceSyncPanel({
     for (const trackFileId of trackFileIds) {
       const track = lookupMap.get(trackFileId);
       if (!track) continue;
-      const fileIndex = fileIndexEntries.get(trackFileId);
-      trackLookups.push({ track, fileIndex });
+      let fileIndex = fileIndexEntries.get(trackFileId);
+      if (!fileIndex && track.libraryRootId) {
+        fileIndex = await getFileIndexEntry(trackFileId, track.libraryRootId);
+        if (fileIndex) {
+          fileIndexEntries.set(trackFileId, fileIndex);
+        }
+      }
+      if (!fileIndex) {
+        const rootsToTry = Array.from(
+          new Set(allTracks.map((t) => t.libraryRootId).filter(Boolean))
+        ).filter((id) => id !== rootId);
+        for (const rid of rootsToTry) {
+          fileIndex = await getFileIndexEntry(trackFileId, rid as string);
+          if (fileIndex) {
+            fileIndexEntries.set(trackFileId, fileIndex);
+            break;
+          }
+        }
+      }
+      if (!fileIndex && options?.tryLazyFileIndex && track.libraryRootId) {
+        const root = await resolveLibraryRoot(track.libraryRootId);
+        if (root?.mode === "handle") {
+          const { tryLazyFileIndex } = await import(
+            "@/features/devices/lazy-file-index"
+          );
+          fileIndex = await tryLazyFileIndex(
+            track,
+            root,
+            track.libraryRootId
+          );
+          if (fileIndex) {
+            fileIndexEntries.set(trackFileId, fileIndex);
+          }
+        }
+      }
+      trackLookups.push({ track, fileIndex: fileIndexEntries.get(trackFileId) });
     }
     return trackLookups;
   }
@@ -754,6 +857,9 @@ export function DeviceSyncPanel({
           size: fileIndex.size,
           mtime: fileIndex.mtime,
         });
+        if (fileIndex.contentHash) {
+          candidates.push(fileIndex.contentHash);
+        }
         if (candidates.length === 0) continue;
         trackIds.add(lookup.track.trackFileId);
         for (const candidate of candidates) {
@@ -807,16 +913,23 @@ export function DeviceSyncPanel({
   function filterTrackLookups(trackLookups: TrackLookup[]): {
     filtered: TrackLookup[];
     missingMetadataCount: number;
+    missingTrackRootIds: string[];
   } {
-    let missingMetadataCount = 0;
+    const missingTrackRootIds: string[] = [];
     const filtered = trackLookups.filter((lookup) => {
       if (!lookup.fileIndex) {
-        missingMetadataCount += 1;
+        if (lookup.track.libraryRootId) {
+          missingTrackRootIds.push(lookup.track.libraryRootId);
+        }
         return false;
       }
       return true;
     });
-    return { filtered, missingMetadataCount };
+    return {
+      filtered,
+      missingMetadataCount: trackLookups.length - filtered.length,
+      missingTrackRootIds,
+    };
   }
 
   const collectionSearch = collectionTrackSearch.trim().toLowerCase();
@@ -1180,13 +1293,18 @@ export function DeviceSyncPanel({
       const targetsWithLookups = await Promise.all(
         targets.map(async (target) => ({
           ...target,
-          trackLookups: await buildTrackLookups(target.playlist, target.libraryRootId),
+          trackLookups: await buildTrackLookups(target.playlist, target.libraryRootId, {
+            tryLazyFileIndex: true,
+          }),
         }))
       );
       let totalMissingMetadata = 0;
+      const allMissingRootIds: string[] = [];
       const scanTargets = targetsWithLookups.map((target) => {
-        const { filtered, missingMetadataCount } = filterTrackLookups(target.trackLookups);
+        const { filtered, missingMetadataCount, missingTrackRootIds } =
+          filterTrackLookups(target.trackLookups);
         totalMissingMetadata += missingMetadataCount;
+        allMissingRootIds.push(...missingTrackRootIds);
         return {
           ...target,
           trackLookups: filtered,
@@ -1194,9 +1312,20 @@ export function DeviceSyncPanel({
       });
       setMissingMetadataCount(totalMissingMetadata);
       if (totalMissingMetadata > 0) {
+        const rootIds = Array.from(
+          new Set(targets.map((t) => t.libraryRootId).filter(Boolean))
+        ) as string[];
+        const primaryRootId = rootIds[0];
+        const missingInOtherRoot =
+          primaryRootId &&
+          allMissingRootIds.length > 0 &&
+          allMissingRootIds.filter((id) => id !== primaryRootId).length >=
+            Math.ceil(allMissingRootIds.length / 2);
         setSyncWarning(
-          `${totalMissingMetadata} track(s) are missing local file metadata. ` +
-            "Rescan your library to improve device path detection."
+          missingInOtherRoot
+            ? `${totalMissingMetadata} track(s) may be in a different collection. Try switching collection or rescanning your library.`
+            : `${totalMissingMetadata} track(s) are missing local file metadata. ` +
+                "Rescan your library to improve device path detection."
         );
       }
       if (isWalkmanPreset && !devicePathDetectionEnabled) {
@@ -1208,20 +1337,23 @@ export function DeviceSyncPanel({
         buildTargetKeyMap(scanTargets);
 
       let activeDevicePathMap = devicePathMap;
+      let activeDeviceEntries = deviceEntries;
       if (isWalkmanPreset && devicePathDetectionEnabled) {
         if (targetTrackCount === 0) {
           setSyncWarning(
             "No track metadata available for playlist scan. Continuing without path detection."
           );
           activeDevicePathMap = new Map();
+          activeDeviceEntries = [];
         } else {
           try {
-            const map = await scanDevicePaths({
+            const scanResult = await scanDevicePaths({
               preview: false,
               targetKeyMap,
               targetTrackCount,
             });
-            activeDevicePathMap = map;
+            activeDevicePathMap = scanResult.map;
+            activeDeviceEntries = scanResult.entries;
           } catch (err) {
             const message = err instanceof Error ? err.message : "Device scan failed";
             throw new Error(`Walkman scan failed (${message}).`);
@@ -1234,20 +1366,23 @@ export function DeviceSyncPanel({
               "No track metadata available for playlist scan. Continuing without path detection."
             );
             activeDevicePathMap = new Map();
+            activeDeviceEntries = [];
           } else {
             try {
-              const map = await scanDevicePaths({
+              const scanResult = await scanDevicePaths({
                 preview: false,
                 targetKeyMap,
                 targetTrackCount,
               });
-              activeDevicePathMap = map;
+              activeDevicePathMap = scanResult.map;
+              activeDeviceEntries = scanResult.entries;
             } catch (err) {
               const message = err instanceof Error ? err.message : "Device scan failed";
               setSyncWarning(
                 `Device scan failed (${message}). Continuing without path detection.`
               );
               activeDevicePathMap = new Map();
+              activeDeviceEntries = [];
             }
           }
         }
@@ -1289,6 +1424,7 @@ export function DeviceSyncPanel({
                     effectivePathStrategy === "absolute"
                       ? effectiveAbsolutePrefix
                       : undefined,
+                  deviceEntries: activeDeviceEntries,
                 })
               : target.trackLookups;
             const payload = buildCompanionPayload({
@@ -1305,6 +1441,7 @@ export function DeviceSyncPanel({
               deviceProfile: profile,
               targets: [target],
               devicePathMap: devicePathDetectionEnabled ? activeDevicePathMap : undefined,
+              deviceEntries: devicePathDetectionEnabled ? activeDeviceEntries : undefined,
               onlyIncludeMatchedPaths: devicePathDetectionEnabled && effectiveOnlyIncludeMatchedPaths,
             });
             if (profile.handleRef && syncResult.playlistPath) {
@@ -1433,7 +1570,8 @@ export function DeviceSyncPanel({
       const profile = await prepareIpodProfileForSync();
       const trackLookups = await buildTrackLookupsFromTrackIds(
         selectedIds,
-        selectedCollectionId
+        selectedCollectionId,
+        { tryLazyFileIndex: true }
       );
       const collectionName =
         collections.find((collection) => collection.id === selectedCollectionId)?.name ||
@@ -1485,7 +1623,8 @@ export function DeviceSyncPanel({
       }
       const trackLookups = await buildTrackLookupsFromTrackIds(
         allTrackIds,
-        selectedCollectionId
+        selectedCollectionId,
+        { tryLazyFileIndex: true }
       );
       const collectionName =
         collections.find((collection) => collection.id === selectedCollectionId)?.name ||
@@ -1521,7 +1660,7 @@ export function DeviceSyncPanel({
     preview: boolean;
     targetKeyMap?: Map<string, Set<string>>;
     targetTrackCount?: number;
-  }): Promise<Map<string, string>> {
+  }): Promise<{ map: Map<string, string>; entries: DeviceScanEntry[] }> {
     if (!deviceHandleRef) {
       throw new Error("Select a device folder before scanning");
     }
@@ -1545,6 +1684,7 @@ export function DeviceSyncPanel({
     });
     const map = result.pathMap;
     setDevicePathMap(map);
+    setDeviceEntries(result.entries);
     setDeviceScanStatus("done");
     if (selectedDeviceId !== "new" && result.entries.length > 0) {
       const now = Date.now();
@@ -1574,7 +1714,7 @@ export function DeviceSyncPanel({
         buildDevicePreview(combinedLookups, map);
       }
     }
-    return map;
+    return { map, entries: result.entries };
   }
 
   function buildCompanionPayload(options: {
@@ -1659,59 +1799,6 @@ export function DeviceSyncPanel({
     }
   }
 
-  function applyDevicePathMap(
-    trackLookups: TrackLookup[],
-    map: Map<string, string>,
-    options?: { absolutePrefix?: string }
-  ): TrackLookup[] {
-    if (map.size === 0) return trackLookups;
-    let normalizedPrefix = options?.absolutePrefix?.trim();
-    if (normalizedPrefix) {
-      normalizedPrefix = normalizedPrefix.replace(/\\/g, "/");
-      if (!normalizedPrefix.startsWith("/")) {
-        normalizedPrefix = `/${normalizedPrefix}`;
-      }
-      normalizedPrefix = normalizedPrefix.replace(/\/+$/, "");
-    }
-    const prefixTopSegment = normalizedPrefix
-      ? normalizedPrefix.split(/[\\/]+/).filter(Boolean).pop()
-      : undefined;
-    return trackLookups.map((lookup) => {
-      if (!lookup.fileIndex) return lookup;
-      const candidates = buildDeviceMatchCandidates({
-        filename: lookup.fileIndex.name,
-        size: lookup.fileIndex.size,
-        mtime: lookup.fileIndex.mtime,
-      });
-      let mapped: string | undefined;
-      for (const candidate of candidates) {
-        const candidatePath = map.get(candidate);
-        if (candidatePath) {
-          mapped = candidatePath;
-          break;
-        }
-      }
-      if (!mapped) return lookup;
-      if (normalizedPrefix && !mapped.startsWith("/")) {
-        if (
-          prefixTopSegment &&
-          mapped.toLowerCase().startsWith(`${prefixTopSegment.toLowerCase()}/`)
-        ) {
-          mapped = `${normalizedPrefix}/${mapped.substring(prefixTopSegment.length + 1)}`;
-        } else {
-          mapped = `${normalizedPrefix}/${mapped}`;
-        }
-      }
-      return {
-        ...lookup,
-        fileIndex: {
-          ...lookup.fileIndex,
-          relativePath: mapped,
-        },
-      };
-    });
-  }
-
   function buildDevicePreview(trackLookups: TrackLookup[], map: Map<string, string>) {
     const resolved: string[] = [];
     const missing: string[] = [];
@@ -1763,13 +1850,18 @@ export function DeviceSyncPanel({
       const targetsWithLookups = await Promise.all(
         targets.map(async (target) => ({
           ...target,
-          trackLookups: await buildTrackLookups(target.playlist, target.libraryRootId),
+          trackLookups: await buildTrackLookups(target.playlist, target.libraryRootId, {
+            tryLazyFileIndex: true,
+          }),
         }))
       );
       let totalMissingMetadata = 0;
+      const allMissingRootIds: string[] = [];
       const normalizedTargets = targetsWithLookups.map((target) => {
-        const { filtered, missingMetadataCount } = filterTrackLookups(target.trackLookups);
+        const { filtered, missingMetadataCount, missingTrackRootIds } =
+          filterTrackLookups(target.trackLookups);
         totalMissingMetadata += missingMetadataCount;
+        allMissingRootIds.push(...missingTrackRootIds);
         return {
           ...target,
           trackLookups: filtered,
@@ -1777,9 +1869,20 @@ export function DeviceSyncPanel({
       });
       setMissingMetadataCount(totalMissingMetadata);
       if (totalMissingMetadata > 0) {
+        const rootIds = Array.from(
+          new Set(targets.map((t) => t.libraryRootId).filter(Boolean))
+        ) as string[];
+        const primaryRootId = rootIds[0];
+        const missingInOtherRoot =
+          primaryRootId &&
+          allMissingRootIds.length > 0 &&
+          allMissingRootIds.filter((id) => id !== primaryRootId).length >=
+            Math.ceil(allMissingRootIds.length / 2);
         setSyncWarning(
-          `${totalMissingMetadata} track(s) are missing local file metadata. ` +
-            "Rescan your library to improve device path detection."
+          missingInOtherRoot
+            ? `${totalMissingMetadata} track(s) may be in a different collection. Try switching collection or rescanning your library.`
+            : `${totalMissingMetadata} track(s) are missing local file metadata. ` +
+                "Rescan your library to improve device path detection."
         );
       }
       const { keyMap: targetKeyMap, trackCount: targetTrackCount } =
@@ -1868,9 +1971,13 @@ export function DeviceSyncPanel({
       if (!playlist) {
         throw new Error("Select a playlist for iPod export");
       }
-      const trackLookups = await buildTrackLookups(playlist, libraryRootId);
+      const trackLookups = await buildTrackLookups(playlist, libraryRootId, {
+        tryLazyFileIndex: true,
+      });
       const mappedLookups = devicePathDetectionEnabled
-        ? applyDevicePathMap(trackLookups, devicePathMap)
+        ? applyDevicePathMap(trackLookups, devicePathMap, {
+            deviceEntries,
+          })
         : trackLookups;
 
       const exportConfig: PlaylistLocationConfig = {
@@ -1943,20 +2050,36 @@ export function DeviceSyncPanel({
       const targetsWithLookups = await Promise.all(
         targets.map(async (target) => ({
           ...target,
-          trackLookups: await buildTrackLookups(target.playlist, target.libraryRootId),
+          trackLookups: await buildTrackLookups(target.playlist, target.libraryRootId, {
+            tryLazyFileIndex: true,
+          }),
         }))
       );
       let totalMissingMetadata = 0;
+      const allMissingRootIds: string[] = [];
       const filteredTargets = targetsWithLookups.map((target) => {
-        const { filtered, missingMetadataCount } = filterTrackLookups(target.trackLookups);
+        const { filtered, missingMetadataCount, missingTrackRootIds } =
+          filterTrackLookups(target.trackLookups);
         totalMissingMetadata += missingMetadataCount;
+        allMissingRootIds.push(...missingTrackRootIds);
         return { ...target, trackLookups: filtered };
       });
       setMissingMetadataCount(totalMissingMetadata);
       if (totalMissingMetadata > 0) {
+        const rootIds = Array.from(
+          new Set(targets.map((t) => t.libraryRootId).filter(Boolean))
+        ) as string[];
+        const primaryRootId = rootIds[0];
+        const missingInOtherRoot =
+          primaryRootId &&
+          allMissingRootIds.length > 0 &&
+          allMissingRootIds.filter((id) => id !== primaryRootId).length >=
+            Math.ceil(allMissingRootIds.length / 2);
         setSyncWarning(
-          `${totalMissingMetadata} track(s) are missing local file metadata. ` +
-            "Rescan your library to improve path accuracy."
+          missingInOtherRoot
+            ? `${totalMissingMetadata} track(s) may be in a different collection. Try switching collection or rescanning your library.`
+            : `${totalMissingMetadata} track(s) are missing local file metadata. ` +
+                "Rescan your library to improve path accuracy."
         );
       }
 
@@ -2794,27 +2917,25 @@ export function DeviceSyncPanel({
               </label>
             )}
             <div className="mt-2 flex items-center gap-2">
-              {!isWalkmanPreset && (
-                <button
-                  type="button"
-                  onClick={handleScanDevicePaths}
-                  disabled={
-                    useCompanionApp ||
-                    !devicePathDetectionEnabled ||
-                    deviceScanStatus === "scanning"
-                  }
-                  className="flex items-center gap-2 px-3 py-2 bg-app-surface text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover text-sm disabled:opacity-50"
-                >
-                  {deviceScanStatus === "scanning" ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" />
-                      Scanning...
-                    </>
-                  ) : (
-                    "Scan Device"
-                  )}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={handleScanDevicePaths}
+                disabled={
+                  useCompanionApp ||
+                  !devicePathDetectionEnabled ||
+                  deviceScanStatus === "scanning"
+                }
+                className="flex items-center gap-2 px-3 py-2 bg-app-surface text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover text-sm disabled:opacity-50"
+              >
+                {deviceScanStatus === "scanning" ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Scanning...
+                  </>
+                ) : (
+                  "Scan Device"
+                )}
+              </button>
               {isWalkmanPreset && (
                 <span className="text-xs text-app-tertiary">
                   Scan runs automatically on sync.
@@ -2846,11 +2967,21 @@ export function DeviceSyncPanel({
                 Keep device folder structure aligned with your library for best results.
               </p>
             </div>
-            {missingMetadataCount > 0 && (
+            {(missingMetadataCount > 0 ||
+              (deviceScanStatus === "done" && devicePreviewPaths.missing.length > 0)) && (
               <div className="mt-2 text-xs text-yellow-500 flex items-center gap-2 flex-wrap">
                 <span>
-                  {missingMetadataCount} track(s) are missing local file metadata. Rescan your
-                  library to improve device path detection.
+                  {missingMetadataCount > 0 ? (
+                    <>
+                      {missingMetadataCount} track(s) are missing local file metadata. Rescan your
+                      library to improve device path detection.
+                    </>
+                  ) : (
+                    <>
+                      Some device paths could not be resolved. Rescan your library to improve
+                      matching.
+                    </>
+                  )}
                 </span>
                 <button
                   type="button"

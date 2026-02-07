@@ -147,6 +147,8 @@ export interface FileIndexRecord {
   size: number;
   /** Last modified time (Unix epoch milliseconds) */
   mtime: number;
+  /** Optional content hash (SHA-256 of first 256KB) for device path matching */
+  contentHash?: string;
   /** Timestamp when this record was last updated (Unix epoch milliseconds) */
   updatedAt: number;
 }

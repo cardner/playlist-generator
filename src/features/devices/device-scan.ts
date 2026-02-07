@@ -3,6 +3,7 @@
  */
 
 import { logger } from "@/lib/logger";
+import { hashFileContent } from "@/lib/file-hash";
 
 const AUDIO_EXTENSIONS = new Set([
   "mp3",
@@ -52,13 +53,16 @@ export function buildDeviceMatchCandidates(options: {
 }): string[] {
   const filename = options.filename.toLowerCase();
   const candidates: string[] = [];
-  if (typeof options.size === "number" && typeof options.mtime === "number") {
-    candidates.push(buildDeviceMatchKey(filename, options.size, options.mtime));
-  }
+  // Primary: filename|size (mtime often changes when copying to device)
   if (typeof options.size === "number") {
     candidates.push(`${filename}|${options.size}`);
   }
+  // Fallback: filename only
   candidates.push(filename);
+  // Backward compatibility: filename|size|mtime for existing cached scans
+  if (typeof options.size === "number" && typeof options.mtime === "number") {
+    candidates.push(buildDeviceMatchKey(filename, options.size, options.mtime));
+  }
   return Array.from(new Set(candidates));
 }
 
@@ -171,10 +175,26 @@ export async function scanDeviceForPaths(options: {
         size: entry.file.size,
         mtime: entry.file.lastModified,
       });
+      let contentHash: string | undefined;
+      if (computeContentHash) {
+        contentHash = await hashFileContent(entry.file, maxHashBytes);
+        if (contentHash) {
+          progress.hashed += 1;
+        }
+      }
       let matchedTarget = false;
       if (targetKeyMap && targetKeyMap.size > 0) {
         for (const candidate of candidates) {
           const trackIds = targetKeyMap.get(candidate);
+          if (trackIds) {
+            matchedTarget = true;
+            for (const trackId of trackIds) {
+              matchedTrackIds.add(trackId);
+            }
+          }
+        }
+        if (!matchedTarget && contentHash) {
+          const trackIds = targetKeyMap.get(contentHash);
           if (trackIds) {
             matchedTarget = true;
             for (const trackId of trackIds) {
@@ -191,13 +211,8 @@ export async function scanDeviceForPaths(options: {
       for (const candidate of candidates) {
         map.set(candidate, entry.path);
       }
-
-      let contentHash: string | undefined;
-      if (computeContentHash) {
-        contentHash = await hashDeviceFileContent(entry.file, maxHashBytes);
-        if (contentHash) {
-          progress.hashed += 1;
-        }
+      if (contentHash) {
+        map.set(contentHash, entry.path);
       }
 
       for (const candidate of candidates) {
@@ -234,21 +249,5 @@ export async function scanDeviceForPaths(options: {
   return { pathMap: map, entries };
 }
 
-export async function hashDeviceFileContent(
-  file: File,
-  maxBytes = 256 * 1024
-): Promise<string | undefined> {
-  if (!("crypto" in globalThis) || !globalThis.crypto?.subtle) {
-    return undefined;
-  }
-  try {
-    const slice = file.slice(0, Math.min(file.size, maxBytes));
-    const buffer = await slice.arrayBuffer();
-    const digest = await globalThis.crypto.subtle.digest("SHA-256", buffer);
-    const hashArray = Array.from(new Uint8Array(digest));
-    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-  } catch (error) {
-    logger.warn("Failed to compute content hash", error);
-    return undefined;
-  }
-}
+/** @deprecated Use hashFileContent from @/lib/file-hash */
+export const hashDeviceFileContent = hashFileContent;

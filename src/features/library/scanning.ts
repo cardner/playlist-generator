@@ -9,6 +9,7 @@ import {
   getLibraryFiles,
   getLibraryFilesFromFileList,
 } from "@/lib/library-selection";
+import { hashFileContent } from "@/lib/file-hash";
 import { logger } from "@/lib/logger";
 
 /**
@@ -38,6 +39,8 @@ export interface FileIndexEntry {
   extension: string;
   size: number;
   mtime: number;
+  /** Optional content hash (SHA-256 of first 256KB) for device path matching */
+  contentHash?: string;
 }
 
 /**
@@ -227,6 +230,12 @@ export async function buildFileIndex(
               checkpoint.lastScannedPath = lastScannedPath;
             }
             
+            // Compute content hash for device path matching fallback
+            const contentHash = await hashFileContent(
+              libraryFile.file,
+              256 * 1024
+            );
+
             // Use the trackFileId from libraryFile (already generated correctly)
             const entry: FileIndexEntry = {
               trackFileId: libraryFile.trackFileId,
@@ -235,6 +244,7 @@ export async function buildFileIndex(
               extension: libraryFile.extension,
               size: libraryFile.size,
               mtime: libraryFile.mtime,
+              contentHash,
             };
 
             index.set(entry.trackFileId, entry);
@@ -355,7 +365,12 @@ export async function buildFileIndexFromFileList(
         const normalizedRelativePath = libraryFile.relativePath 
           ? normalizeRelativePath(libraryFile.relativePath)
           : undefined;
-        
+
+        const contentHash = await hashFileContent(
+          libraryFile.file,
+          256 * 1024
+        );
+
         // Use the trackFileId from libraryFile (already generated correctly)
         const entry: FileIndexEntry = {
           trackFileId: libraryFile.trackFileId,
@@ -364,6 +379,7 @@ export async function buildFileIndexFromFileList(
           extension: libraryFile.extension,
           size: libraryFile.size,
           mtime: libraryFile.mtime,
+          contentHash,
         };
 
         index.set(entry.trackFileId, entry);
