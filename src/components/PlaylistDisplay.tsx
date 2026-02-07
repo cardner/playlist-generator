@@ -399,7 +399,8 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
 
   const loadTracks = useCallback(async () => {
     const root = await getCurrentLibraryRoot();
-    const rootId = root?.id || libraryRootId;
+    // Prefer playlistCollectionId (collection used during generation) for correct track lookups
+    const rootId = playlistCollectionId ?? libraryRootId ?? root?.id;
     const trackFileIds = Array.from(new Set(displayPlaylist.trackFileIds));
 
     if (trackFileIds.length === 0) {
@@ -424,7 +425,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       }
     }
     setTracks(trackMap);
-  }, [displayPlaylist.trackFileIds, libraryRootId]);
+  }, [displayPlaylist.trackFileIds, libraryRootId, playlistCollectionId]);
 
   const loadLibraryRoot = useCallback(async () => {
     const root = await getCurrentLibraryRoot();

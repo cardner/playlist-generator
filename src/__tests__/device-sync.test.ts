@@ -4,7 +4,11 @@
 
 import { describe, it, expect } from "@jest/globals";
 import { getTrackPath, type TrackLookup } from "@/features/playlists/export";
-import { buildDeviceMatchKey, hashDeviceFileContent } from "@/features/devices/device-scan";
+import {
+  buildDeviceMatchKey,
+  buildDeviceMatchCandidates,
+  hashDeviceFileContent,
+} from "@/features/devices/device-scan";
 
 describe("getTrackPath with playlist subfolder", () => {
   it("adds correct depth for nested playlist folder", () => {
@@ -160,6 +164,24 @@ describe("buildDeviceMatchKey", () => {
   it("normalizes filename and combines metadata", () => {
     const key = buildDeviceMatchKey("Track.MP3", 100, 200);
     expect(key).toBe("track.mp3|100|200");
+  });
+});
+
+describe("buildDeviceMatchCandidates", () => {
+  it("returns filename|size first, then filename, then filename|size|mtime for backward compatibility", () => {
+    const candidates = buildDeviceMatchCandidates({
+      filename: "Track.MP3",
+      size: 100,
+      mtime: 200,
+    });
+    expect(candidates[0]).toBe("track.mp3|100");
+    expect(candidates[1]).toBe("track.mp3");
+    expect(candidates[2]).toBe("track.mp3|100|200");
+  });
+
+  it("handles filename only when size and mtime missing", () => {
+    const candidates = buildDeviceMatchCandidates({ filename: "Track.mp3" });
+    expect(candidates).toEqual(["track.mp3"]);
   });
 });
 

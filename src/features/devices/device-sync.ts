@@ -16,7 +16,12 @@ import { getDirectoryHandle, storeDirectoryHandle } from "@/lib/library-selectio
 import { logger } from "@/lib/logger";
 import type { DeviceProfileRecord } from "@/db/schema";
 import { saveDeviceProfile, saveDeviceSyncManifest } from "./device-storage";
+import type { DeviceScanEntry } from "./device-scan";
 import { buildDeviceMatchCandidates } from "./device-scan";
+import {
+  buildFilenameToPathsMap,
+  pickBestDevicePath,
+} from "./path-matching";
 import { syncPlaylistsToIpod } from "./ipod";
 
 export type DevicePlaylistFormat = "m3u" | "pls" | "xspf";
@@ -42,10 +47,13 @@ function normalizeAbsolutePrefix(prefix?: string): string | undefined {
   return normalized || undefined;
 }
 
-function applyDevicePathMap(
+export function applyDevicePathMap(
   trackLookups: TrackLookup[],
   devicePathMap?: DevicePathMap,
-  options?: { absolutePrefix?: string }
+  options?: {
+    absolutePrefix?: string;
+    deviceEntries?: DeviceScanEntry[];
+  }
 ): TrackLookup[] {
   if (!devicePathMap || devicePathMap.size === 0) {
     return trackLookups;
@@ -55,6 +63,10 @@ function applyDevicePathMap(
   const prefixTopSegment = normalizedPrefix
     ? normalizedPrefix.split(/[\\/]+/).filter(Boolean).pop()
     : undefined;
+  const filenameToPaths =
+    options?.deviceEntries && options.deviceEntries.length > 0
+      ? buildFilenameToPathsMap(options.deviceEntries)
+      : null;
 
   return trackLookups.map((lookup) => {
     if (!lookup.fileIndex) return lookup;
@@ -69,6 +81,16 @@ function applyDevicePathMap(
       if (candidatePath) {
         mappedPath = candidatePath;
         break;
+      }
+    }
+    if (!mappedPath && lookup.fileIndex.contentHash) {
+      mappedPath = devicePathMap.get(lookup.fileIndex.contentHash);
+    }
+    if (!mappedPath && filenameToPaths) {
+      const filename = lookup.fileIndex.name.toLowerCase();
+      const candidatePaths = filenameToPaths.get(filename);
+      if (candidatePaths && candidatePaths.length > 0) {
+        mappedPath = pickBestDevicePath(lookup, candidatePaths);
       }
     }
     if (!mappedPath) return lookup;
@@ -473,10 +495,17 @@ export async function syncPlaylistToDevice(options: {
   trackLookups: TrackLookup[];
   deviceProfile: DeviceProfileRecord;
   devicePathMap?: DevicePathMap;
+  deviceEntries?: DeviceScanEntry[];
   onlyIncludeMatchedPaths?: boolean;
 }): Promise<{ playlistPath: string; configHash: string }> {
-  const { playlist, trackLookups, deviceProfile, devicePathMap, onlyIncludeMatchedPaths } =
-    options;
+  const {
+    playlist,
+    trackLookups,
+    deviceProfile,
+    devicePathMap,
+    deviceEntries,
+    onlyIncludeMatchedPaths,
+  } = options;
   if (!deviceProfile.handleRef) {
     throw new Error("Device folder handle not found");
   }
@@ -504,6 +533,7 @@ export async function syncPlaylistToDevice(options: {
   let mappedTrackLookups = applyDevicePathMap(trackLookups, devicePathMap, {
     absolutePrefix:
       deviceProfile.pathStrategy === "absolute" ? inferredAbsolutePrefix : undefined,
+    deviceEntries,
   });
   if (deviceProfile.pathStrategy === "absolute") {
     mappedTrackLookups = applyAbsolutePrefixToLookups(
@@ -603,9 +633,16 @@ export async function syncPlaylistsToDevice(options: {
     mirrorDeleteFromDevice?: boolean;
   }>;
   devicePathMap?: DevicePathMap;
+  deviceEntries?: DeviceScanEntry[];
   onlyIncludeMatchedPaths?: boolean;
 }): Promise<{ playlistPath?: string; configHash?: string }> {
-  const { deviceProfile, targets, devicePathMap, onlyIncludeMatchedPaths } = options;
+  const {
+    deviceProfile,
+    targets,
+    devicePathMap,
+    deviceEntries,
+    onlyIncludeMatchedPaths,
+  } = options;
   if (deviceProfile.deviceType === "ipod") {
     await syncPlaylistsToIpod({
       deviceProfile,
@@ -621,6 +658,7 @@ export async function syncPlaylistsToDevice(options: {
       trackLookups: target.trackLookups,
       deviceProfile,
       devicePathMap,
+      deviceEntries,
       onlyIncludeMatchedPaths,
     });
   }

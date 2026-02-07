@@ -44,16 +44,26 @@ export function PlaylistViewContent() {
             }
             setPlaylist(parsed);
             
-            // Try to get collection ID from saved playlist record
-            if (playlistId) {
-              try {
-                const collectionId = await getPlaylistCollectionId(playlistId);
-                setPlaylistCollectionId(collectionId);
-              } catch (err) {
-                logger.error("Failed to load playlist collection ID:", err);
-                // Not a critical error, continue without collection ID
+            // Get collection ID for track lookups. Try saved playlist first, then
+            // fall back to playlist-request in sessionStorage (for newly generated playlists).
+            let collectionId: string | undefined;
+            try {
+              collectionId = await getPlaylistCollectionId(playlistId);
+            } catch (err) {
+              logger.error("Failed to load playlist collection ID:", err);
+            }
+            if (!collectionId) {
+              const requestStored = sessionStorage.getItem("playlist-request");
+              if (requestStored) {
+                try {
+                  const request = JSON.parse(requestStored) as { collectionId?: string };
+                  collectionId = request.collectionId;
+                } catch {
+                  // Ignore parse errors
+                }
               }
             }
+            setPlaylistCollectionId(collectionId);
           } else {
             setError("Playlist ID mismatch");
           }

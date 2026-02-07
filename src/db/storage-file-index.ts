@@ -43,6 +43,7 @@ export async function saveFileIndexEntries(
     extension: entry.extension,
     size: entry.size,
     mtime: entry.mtime,
+    contentHash: entry.contentHash,
     updatedAt: now,
   }));
 
