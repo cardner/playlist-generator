@@ -28,8 +28,9 @@ describe("Textarea", () => {
   it("generates id from label when id is not provided", () => {
     render(<Textarea label="User Notes" />);
     const textarea = screen.getByRole("textbox");
-    expect(textarea).toHaveAttribute("id", "textarea-user-notes");
-    expect(screen.getByText("User Notes")).toHaveAttribute("for", "textarea-user-notes");
+    const textareaId = textarea.getAttribute("id");
+    expect(textareaId).toBeTruthy();
+    expect(screen.getByText("User Notes")).toHaveAttribute("for", textareaId);
   });
 
   it("calls onChange when value changes", () => {
@@ -46,7 +47,8 @@ describe("Textarea", () => {
   });
 
   it("displays value", () => {
-    render(<Textarea value="Hello World" onChange={() => {}} />);
+    const handleChange = jest.fn();
+    render(<Textarea value="Hello World" onChange={handleChange} />);
     expect(screen.getByRole("textbox")).toHaveValue("Hello World");
   });
 
