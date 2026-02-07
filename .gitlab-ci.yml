@@ -1,0 +1,17 @@
+stages:
+  - test
+
+# Run unit tests on merge requests
+test:
+  stage: test
+  image: node:21
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - node_modules/
+  before_script:
+    - yarn install --frozen-lockfile
+  script:
+    - yarn test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
