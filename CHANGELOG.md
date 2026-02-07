@@ -33,6 +33,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.1.1] - 2026-02-07
+
+### Fixed
+
+- improve file matching
+- stashing these changes
+
+### Other Changes
+
+- Merge pull request #31 from cardner/processesing-enhancements
+
 ## [1.1.0] - 2026-02-05
 
 ### Added
