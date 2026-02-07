@@ -36,6 +36,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.3.0] - 2026-02-07
+
+### Added
+
+- switch to consolidate design system
+
+### Fixed
+
+- remove unused className prop from Popover component
+
+### Other Changes
+
+- Merge pull request #34 from cardner/design-system
+- Merge pull request #38 from cardner/copilot/sub-pr-34-another-one
+- Merge pull request #37 from cardner/copilot/sub-pr-34-again
+- Merge pull request #36 from cardner/copilot/sub-pr-34
+- Initial plan
+- Initial plan
+- Initial plan
+- Update src/__tests__/design-system/Tabs.test.tsx
+- Update src/design-system/components/Dialog.tsx
+- Merge pull request #35 from cardner/copilot/sub-pr-34
+- Initial plan
+
 ## [1.2.1] - 2026-02-07
 
 ### Fixed
