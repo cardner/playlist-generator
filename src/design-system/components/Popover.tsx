@@ -10,7 +10,6 @@ export interface PopoverProps {
   children: React.ReactNode;
   align?: "start" | "center" | "end";
   side?: "top" | "right" | "bottom" | "left";
-  className?: string;
   contentClassName?: string;
 }
 
@@ -21,7 +20,6 @@ export function Popover({
   children,
   align = "start",
   side = "bottom",
-  className,
   contentClassName,
 }: PopoverProps) {
   return (
