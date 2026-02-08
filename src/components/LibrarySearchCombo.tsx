@@ -60,6 +60,9 @@ const INTENSITY_MOODS = [
   "Relaxed",
 ];
 
+/** BPM presets for filtering */
+const BPM_PRESETS = ["slow", "medium", "fast"];
+
 interface LibrarySearchComboProps {
   filters: FilterTag[];
   onChange: (filters: FilterTag[]) => void;
@@ -175,8 +178,6 @@ export function LibrarySearchCombo({
     const moodCategories = getMoodCategories();
     const activityCategories = getActivityCategories();
 
-    const bpmPresets = ["slow", "medium", "fast"];
-
     return {
       titles,
       artists,
@@ -186,7 +187,6 @@ export function LibrarySearchCombo({
       activities,
       moodCategories,
       activityCategories,
-      bpmPresets,
     };
   }, [tracks]);
 
@@ -211,7 +211,7 @@ export function LibrarySearchCombo({
     precomputedCatalogs.artists.forEach((v) => addIfNotFiltered("artist", v));
     precomputedCatalogs.albums.forEach((v) => addIfNotFiltered("album", v));
     genres.forEach((v) => addIfNotFiltered("genre", v));
-    precomputedCatalogs.bpmPresets.forEach((v) => addIfNotFiltered("bpm", v));
+    BPM_PRESETS.forEach((v) => addIfNotFiltered("bpm", v));
     precomputedCatalogs.bpmValues.forEach((v) => addIfNotFiltered("bpm", v));
     [...new Set([...precomputedCatalogs.moods, ...precomputedCatalogs.moodCategories])].forEach(
       (v) => addIfNotFiltered("mood", v)
