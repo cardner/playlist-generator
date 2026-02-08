@@ -3,7 +3,7 @@
  */
 
 import { logger } from "@/lib/logger";
-import { hashFileContent } from "@/lib/file-hash";
+import { hashFileContent, hashFullFileContent } from "@/lib/file-hash";
 
 const AUDIO_EXTENSIONS = new Set([
   "mp3",
@@ -28,6 +28,7 @@ export type DeviceScanEntry = {
   matchKey: string;
   relativePath: string;
   contentHash?: string;
+  fullContentHash?: string;
   name: string;
   size: number;
   mtime: number;
@@ -128,6 +129,7 @@ export async function scanDeviceForPaths(options: {
   onProgress?: (progress: DeviceScanProgress) => void;
   includePaths?: string[];
   computeContentHash?: boolean;
+  computeFullContentHash?: boolean;
   maxHashBytes?: number;
   targetKeyMap?: Map<string, Set<string>>;
   targetTrackCount?: number;
@@ -137,6 +139,7 @@ export async function scanDeviceForPaths(options: {
     onProgress,
     includePaths,
     computeContentHash,
+    computeFullContentHash,
     maxHashBytes,
     targetKeyMap,
     targetTrackCount,
@@ -176,9 +179,16 @@ export async function scanDeviceForPaths(options: {
         mtime: entry.file.lastModified,
       });
       let contentHash: string | undefined;
+      let fullContentHash: string | undefined;
       if (computeContentHash) {
         contentHash = await hashFileContent(entry.file, maxHashBytes);
         if (contentHash) {
+          progress.hashed += 1;
+        }
+      }
+      if (computeFullContentHash) {
+        fullContentHash = await hashFullFileContent(entry.file);
+        if (fullContentHash) {
           progress.hashed += 1;
         }
       }
@@ -186,6 +196,15 @@ export async function scanDeviceForPaths(options: {
       if (targetKeyMap && targetKeyMap.size > 0) {
         for (const candidate of candidates) {
           const trackIds = targetKeyMap.get(candidate);
+          if (trackIds) {
+            matchedTarget = true;
+            for (const trackId of trackIds) {
+              matchedTrackIds.add(trackId);
+            }
+          }
+        }
+        if (!matchedTarget && fullContentHash) {
+          const trackIds = targetKeyMap.get(fullContentHash);
           if (trackIds) {
             matchedTarget = true;
             for (const trackId of trackIds) {
@@ -211,6 +230,9 @@ export async function scanDeviceForPaths(options: {
       for (const candidate of candidates) {
         map.set(candidate, entry.path);
       }
+      if (fullContentHash) {
+        map.set(fullContentHash, entry.path);
+      }
       if (contentHash) {
         map.set(contentHash, entry.path);
       }
@@ -220,6 +242,29 @@ export async function scanDeviceForPaths(options: {
           matchKey: candidate,
           relativePath: entry.path,
           contentHash,
+          fullContentHash,
+          name: entry.file.name,
+          size: entry.file.size,
+          mtime: entry.file.lastModified,
+        });
+      }
+      if (fullContentHash) {
+        entries.push({
+          matchKey: fullContentHash,
+          relativePath: entry.path,
+          contentHash,
+          fullContentHash,
+          name: entry.file.name,
+          size: entry.file.size,
+          mtime: entry.file.lastModified,
+        });
+      }
+      if (contentHash) {
+        entries.push({
+          matchKey: contentHash,
+          relativePath: entry.path,
+          contentHash,
+          fullContentHash,
           name: entry.file.name,
           size: entry.file.size,
           mtime: entry.file.lastModified,

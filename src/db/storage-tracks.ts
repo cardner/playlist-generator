@@ -10,6 +10,7 @@
 import { db, getCompositeId } from "./schema";
 import type { TrackRecord } from "./schema";
 import type { MetadataResult, EnhancedMetadata } from "@/features/library/metadata";
+import { buildMetadataFingerprint } from "@/features/library/track-identity-utils";
 
 /**
  * Save track metadata
@@ -43,6 +44,8 @@ export async function saveTrackMetadata(
       libraryRootId,
       tags: result.tags!,
       tech: result.tech,
+      isrc: result.isrc,
+      metadataFingerprint: buildMetadataFingerprint(result.tags!, result.tech),
       updatedAt: now,
     }));
 

@@ -7,6 +7,7 @@ import {
 import { useLibraryScanning } from "@/hooks/useLibraryScanning";
 import { useMetadataParsing } from "@/hooks/useMetadataParsing";
 import { useMetadataEnhancement } from "@/hooks/useMetadataEnhancement";
+import { useTrackIdentityBackfill } from "@/hooks/useTrackIdentityBackfill";
 
 jest.mock("@/hooks/useLibraryScanning", () => ({
   useLibraryScanning: jest.fn(),
@@ -20,9 +21,14 @@ jest.mock("@/hooks/useMetadataEnhancement", () => ({
   useMetadataEnhancement: jest.fn(),
 }));
 
+jest.mock("@/hooks/useTrackIdentityBackfill", () => ({
+  useTrackIdentityBackfill: jest.fn(),
+}));
+
 const mockUseLibraryScanning = useLibraryScanning as jest.Mock;
 const mockUseMetadataParsing = useMetadataParsing as jest.Mock;
 const mockUseMetadataEnhancement = useMetadataEnhancement as jest.Mock;
+const mockUseTrackIdentityBackfill = useTrackIdentityBackfill as jest.Mock;
 
 function Consumer() {
   const {
@@ -62,6 +68,13 @@ describe("BackgroundLibraryTasksProvider", () => {
     });
     mockUseMetadataParsing.mockReturnValue({});
     mockUseMetadataEnhancement.mockReturnValue({});
+    mockUseTrackIdentityBackfill.mockReturnValue({
+      isBackfilling: false,
+      progress: null,
+      error: null,
+      startBackfill: jest.fn(),
+      cancelBackfill: jest.fn(),
+    });
   });
 
   it("provides and updates library root and permissions", () => {

@@ -12759,6 +12759,14 @@
     }
     return album.trim();
   }
+  function normalizeIsrc(isrc) {
+    if (!isrc) return void 0;
+    const value = Array.isArray(isrc) ? isrc[0] : isrc;
+    if (!value) return void 0;
+    const normalized = value.trim().toUpperCase();
+    if (normalized.length < 8) return void 0;
+    return normalized;
+  }
   function normalizeGenres(genres) {
     if (!genres) {
       return [];
@@ -12878,6 +12886,7 @@
         trackFileId,
         tags,
         tech,
+        isrc: normalizeIsrc(metadata.common.isrc),
         warnings: warnings.length > 0 ? warnings : void 0
       };
       self.postMessage(response);

@@ -8,11 +8,13 @@ import { useBackgroundLibraryTasks } from "./BackgroundLibraryTasksProvider";
 export function BackgroundTaskOverlay() {
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const { scanning, metadataParsing, metadataEnhancement } = useBackgroundLibraryTasks();
+  const { scanning, metadataParsing, metadataEnhancement, trackIdentityBackfill } =
+    useBackgroundLibraryTasks();
   const { isScanning, scanProgress } = scanning;
   const { isParsingMetadata, metadataProgress, isDetectingTempo, tempoProgress } =
     metadataParsing;
   const { isEnhancing, progress: enhancementProgress } = metadataEnhancement;
+  const { isBackfilling, progress: backfillProgress } = trackIdentityBackfill;
 
   const isLibraryPage = pathname?.startsWith("/library");
 
@@ -22,8 +24,9 @@ export function BackgroundTaskOverlay() {
     if (isParsingMetadata) count += 1;
     if (isDetectingTempo) count += 1;
     if (isEnhancing) count += 1;
+    if (isBackfilling) count += 1;
     return count;
-  }, [isScanning, isParsingMetadata, isDetectingTempo, isEnhancing]);
+  }, [isScanning, isParsingMetadata, isDetectingTempo, isEnhancing, isBackfilling]);
 
   if (isLibraryPage || activeTaskCount === 0) {
     return null;
@@ -115,6 +118,23 @@ export function BackgroundTaskOverlay() {
                   {enhancementProgress?.currentTrack && (
                     <span className="text-app-tertiary truncate max-w-[140px]">
                       {enhancementProgress.currentTrack.tags.title}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+            {isBackfilling && (
+              <div>
+                <div className="text-app-primary font-medium">Resolving track identities</div>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <span>
+                    {backfillProgress
+                      ? `${backfillProgress.processed}/${backfillProgress.total} tracks`
+                      : "Starting..."}
+                  </span>
+                  {backfillProgress && (
+                    <span className="text-app-tertiary truncate max-w-[140px]">
+                      {backfillProgress.updated} updated
                     </span>
                   )}
                 </div>

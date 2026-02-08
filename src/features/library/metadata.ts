@@ -105,6 +105,7 @@ export interface MetadataResult {
   trackFileId: string;
   tags?: NormalizedTags;
   tech?: TechInfo;
+  isrc?: string;
   warnings?: string[];
   error?: string;
 }
@@ -121,6 +122,7 @@ export interface MetadataWorkerResponse {
   trackFileId: string;
   tags?: NormalizedTags;
   tech?: TechInfo;
+  isrc?: string;
   warnings?: string[];
   error?: string;
 }
@@ -192,6 +194,20 @@ export function normalizeAlbum(album: string | undefined): string {
     return "Unknown Album";
   }
   return album.trim();
+}
+
+/**
+ * Normalize ISRC (International Standard Recording Code)
+ *
+ * Ensures uppercase, trims whitespace, and validates basic length.
+ */
+export function normalizeIsrc(isrc?: string | string[] | null): string | undefined {
+  if (!isrc) return undefined;
+  const value = Array.isArray(isrc) ? isrc[0] : isrc;
+  if (!value) return undefined;
+  const normalized = value.trim().toUpperCase();
+  if (normalized.length < 8) return undefined;
+  return normalized;
 }
 
 /**
@@ -371,6 +387,10 @@ export interface EnhancedMetadata {
   activity?: string[];
   /** Additional tags from MusicBrainz */
   musicbrainzTags?: string[];
+  /** Release year from MusicBrainz */
+  musicbrainzReleaseYear?: number;
+  /** Duration (seconds) from MusicBrainz */
+  musicbrainzDurationSeconds?: number;
   /** Timestamp when manual edits were last made */
   manualEditDate?: number;
   /** Array of field names that were manually edited (e.g., ['genres', 'tempo']) */

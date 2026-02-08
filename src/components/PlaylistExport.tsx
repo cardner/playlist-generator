@@ -68,6 +68,7 @@ import { getAllTracks, getCurrentCollectionId, getCollection } from "@/db/storag
 import { getFileIndexEntries } from "@/db/storage";
 import { db } from "@/db/schema";
 import { hasRelativePaths } from "@/features/library/relink";
+import { findFileIndexByGlobalTrackId } from "@/features/library/track-identity";
 import { RelinkLibraryRoot } from "./RelinkLibraryRoot";
 import { SpotifyPlaylistExport } from "./SpotifyPlaylistExport";
 import { hasSpotifyTracks } from "@/features/spotify-export/uri-resolver";
@@ -222,11 +223,21 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
 
     // Build track lookups
     const trackLookups: TrackLookup[] = [];
+    const globalIndexCache = new Map<string, any>();
     for (const trackFileId of playlist.trackFileIds) {
       const track = allTracks.find((t) => t.trackFileId === trackFileId);
       if (!track) continue;
 
-      const fileIndex = fileIndexEntries.get(trackFileId);
+      let fileIndex = fileIndexEntries.get(trackFileId);
+      if (!fileIndex && track.globalTrackId) {
+        fileIndex = await findFileIndexByGlobalTrackId(track.globalTrackId, {
+          preferredRootId: libraryRootId ?? track.libraryRootId,
+          cache: globalIndexCache,
+        });
+        if (fileIndex) {
+          fileIndexEntries.set(trackFileId, fileIndex);
+        }
+      }
       trackLookups.push({
         track,
         fileIndex,

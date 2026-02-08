@@ -6,6 +6,7 @@ import { LibraryScanner } from "@/components/LibraryScanner";
 import { LibraryBrowser } from "@/components/LibraryBrowser";
 import { LibrarySummary } from "@/components/LibrarySummary";
 import { StorageWarning } from "@/components/StorageWarning";
+import { useBackgroundLibraryTasks } from "@/components/BackgroundLibraryTasksProvider";
 import { getCurrentLibraryRoot, getCurrentCollectionId } from "@/db/storage";
 import { ensureMigrationComplete } from "@/db/migration-helper";
 import type { LibraryRoot } from "@/lib/library-selection";
@@ -13,6 +14,7 @@ import type { PermissionStatus } from "@/lib/library-selection";
 import { logger } from "@/lib/logger";
 
 export default function LibraryPage() {
+  const backgroundTasks = useBackgroundLibraryTasks();
   const [libraryRoot, setLibraryRoot] = useState<LibraryRoot | null>(null);
   const [permissionStatus, setPermissionStatus] =
     useState<PermissionStatus | null>(null);
@@ -22,6 +24,10 @@ export default function LibraryPage() {
   const [hasExistingScans, setHasExistingScans] = useState<boolean | null>(null); // null = checking
   const [collectionRefresh, setCollectionRefresh] = useState(0);
   const [triggerScan, setTriggerScan] = useState(false);
+
+  useEffect(() => {
+    backgroundTasks.setLibraryRootId(currentLibraryRootId);
+  }, [backgroundTasks, currentLibraryRootId]);
 
   // Check for existing scans on mount (but not when isNewSelection is true)
   useEffect(() => {

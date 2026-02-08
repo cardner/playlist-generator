@@ -30,6 +30,10 @@ const baseTasks = {
     isEnhancing: false,
     progress: null,
   },
+  trackIdentityBackfill: {
+    isBackfilling: false,
+    progress: null,
+  },
 };
 
 describe("BackgroundTaskOverlay", () => {
@@ -77,6 +81,10 @@ describe("BackgroundTaskOverlay", () => {
             updatedAt: Date.now(),
           },
         },
+      },
+      trackIdentityBackfill: {
+        isBackfilling: false,
+        progress: null,
       },
     });
 
