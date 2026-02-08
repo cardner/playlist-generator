@@ -79,7 +79,10 @@ export async function resolveTrackIdentitiesForLibrary(
   const updates: TrackRecord[] = [];
   
   // Build fileIndex map incrementally using cursor-based iteration
-  // This avoids loading all fileIndex entries into memory at once
+  // Note: This still loads all fileIndex entries into memory, but they are typically
+  // smaller than track records and we need to access them randomly during processing.
+  // An alternative would be to query the database for each track, but that would
+  // be significantly slower due to the I/O overhead.
   const fileIndexMap = new Map<string, FileIndexRecord>();
   await db.fileIndex
     .where("libraryRootId")
@@ -100,7 +103,9 @@ export async function resolveTrackIdentitiesForLibrary(
     }
     
     // Load next chunk of tracks using cursor-based pagination
-    // This is more efficient than offset-based pagination for large datasets
+    // Note: Using .and() with a filter doesn't fully leverage the database index,
+    // but without a compound index on [libraryRootId, id], this is the best approach.
+    // The alternative of using offset() would be slower as it has O(n) complexity.
     let query = db.tracks
       .where("libraryRootId")
       .equals(libraryRootId);
@@ -119,6 +124,8 @@ export async function resolveTrackIdentitiesForLibrary(
     
     for (const track of chunk) {
       processed += 1;
+      lastId = track.id; // Update cursor for next iteration
+      
       const fileIndex = fileIndexMap.get(track.trackFileId);
       const metadataFingerprint =
         track.metadataFingerprint ?? buildMetadataFingerprint(track.tags, track.tech);
@@ -150,9 +157,6 @@ export async function resolveTrackIdentitiesForLibrary(
         await db.tracks.bulkPut(updates.splice(0, updates.length));
       }
     }
-    
-    // Update cursor to the last processed ID for next iteration
-    lastId = chunk[chunk.length - 1].id;
     
     // Mark as complete if we got fewer items than requested
     if (chunk.length < CHUNK_SIZE) {
