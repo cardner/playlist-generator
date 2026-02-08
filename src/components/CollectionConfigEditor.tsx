@@ -43,7 +43,7 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Save, FolderOpen, AlertCircle, Calendar, HardDrive } from "lucide-react";
 import type { LibraryRootRecord } from "@/db/schema";
-import { updateCollection, relinkCollectionHandle, getAllCollections } from "@/db/storage";
+import { updateCollection, getAllCollections } from "@/db/storage";
 import { pickLibraryRoot } from "@/lib/library-selection";
 import { supportsFileSystemAccess } from "@/lib/feature-detection";
 
@@ -100,18 +100,15 @@ export function CollectionConfigEditor({
     setError(null);
 
     try {
-      // Use pickLibraryRoot with forceReset to clear any stale picker state from other components
-      const root = await pickLibraryRoot(true);
+      // Use pickLibraryRoot with forceReset and existingCollectionId - updates collection's handle without creating new collection
+      const root = await pickLibraryRoot(true, { existingCollectionId: collection.id });
       
       if (root.mode !== "handle" || !root.handleId) {
         setError("Failed to get directory handle");
         return;
       }
 
-      // Update the collection's handleRef
-      await relinkCollectionHandle(collection.id, root.handleId);
-
-      // Update local state
+      // Update local state (relinkCollectionHandle already called by pickLibraryRoot when existingCollectionId provided)
       const updatedCollection: LibraryRootRecord = {
         ...collection,
         handleRef: root.handleId,

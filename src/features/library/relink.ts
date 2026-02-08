@@ -155,7 +155,9 @@ export async function relinkLibraryRoot(
     let newRootRecord = await db.libraryRoots.get(newRoot.handleId || "");
     if (!newRootRecord) {
       // Root wasn't saved yet (shouldn't happen, but handle it)
-      newRootRecord = await saveLibraryRoot(newRoot, newRoot.handleId);
+      newRootRecord = await saveLibraryRoot(newRoot, newRoot.handleId, {
+        setAsCurrent: false,
+      });
     } else {
       // Update the existing root record to ensure handleRef is set
       if (newRoot.mode === "handle" && newRoot.handleId && newRootRecord.handleRef !== newRoot.handleId) {

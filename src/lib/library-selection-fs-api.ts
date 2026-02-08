@@ -26,12 +26,19 @@ export function resetPickerState(): void {
   isPickerOpen = false;
 }
 
+/** Options for pickLibraryRootWithFSAPI */
+export interface PickLibraryRootFSAPIOptions {
+  /** When provided, updates the existing collection's handle instead of creating a new collection (for re-select/permission flow) */
+  existingCollectionId?: string;
+}
+
 /**
  * Pick a library root using File System Access API
  * 
  * Opens a directory picker dialog and stores the selected directory handle.
  * 
  * @param forceReset If true, resets any existing picker state before opening
+ * @param options Options for the pick operation. When existingCollectionId is provided, updates the existing collection's handle instead of creating a new collection.
  * @returns Promise resolving to the selected library root
  * @throws Error if user cancels or selection fails
  * 
@@ -47,7 +54,10 @@ export function resetPickerState(): void {
  * }
  * ```
  */
-export async function pickLibraryRootWithFSAPI(forceReset: boolean = false): Promise<LibraryRoot> {
+export async function pickLibraryRootWithFSAPI(
+  forceReset: boolean = false,
+  options?: PickLibraryRootFSAPIOptions
+): Promise<LibraryRoot> {
   if (!supportsFileSystemAccess()) {
     throw new Error("File System Access API not supported");
   }
@@ -70,6 +80,8 @@ export async function pickLibraryRootWithFSAPI(forceReset: boolean = false): Pro
     resetPickerState();
   }
 
+  const existingCollectionId = options?.existingCollectionId;
+
   let attempt = 0;
   while (true) {
   isPickerOpen = true;
@@ -90,9 +102,15 @@ export async function pickLibraryRootWithFSAPI(forceReset: boolean = false): Pro
     // Store handle in IndexedDB and get handleId
     root.handleId = await storeDirectoryHandle(handle);
 
-    // Save library root configuration
-    const { saveLibraryRootLegacy } = await import("./library-selection-root");
-    await saveLibraryRootLegacy(root);
+    if (existingCollectionId) {
+      // Update existing collection's handle (re-select/permission flow) - do not create new collection
+      const { relinkCollectionHandle } = await import("@/db/storage");
+      await relinkCollectionHandle(existingCollectionId, root.handleId!);
+    } else {
+      // Save as new library root collection
+      const { saveLibraryRootLegacy } = await import("./library-selection-root");
+      await saveLibraryRootLegacy(root);
+    }
 
       // Reset flag immediately after successful selection
       isPickerOpen = false;

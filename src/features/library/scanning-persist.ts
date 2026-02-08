@@ -53,7 +53,9 @@ export async function scanLibraryWithPersistence(
   const startTime = Date.now();
 
   // Save or get library root
-  const libraryRoot = await saveLibraryRoot(root, root.handleId);
+  const libraryRoot = await saveLibraryRoot(root, root.handleId, {
+    setAsCurrent: false,
+  });
 
   // Load previous index and migrate track IDs if needed
   const prevEntries = await getFileIndexEntries(libraryRoot.id);

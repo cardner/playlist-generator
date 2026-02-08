@@ -314,9 +314,7 @@ export function LibrarySelector({
                     )}
                   </div>
                 </div>
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                  <div className="min-w-0 pl-6">
-                  <div className="flex items-baseline gap-2">
+                <div className="flex items-center justify-between gap-3 min-w-0 group mb-2 pl-6">
                   {isEditingCollectionName ? (
                     <div className="flex-1 flex items-center gap-1.5 min-w-0">
                       <span
@@ -370,126 +368,148 @@ export function LibrarySelector({
                       </button>
                     </div>
                   ) : (
-                    <>
-                      <div className="flex-1 flex flex-col gap-1.5 min-w-0 group">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                        <span
-                          title={
-                            permissionStatus === "granted"
-                              ? "Permission granted"
-                              : permissionStatus === "denied"
-                              ? "Permission denied"
-                              : "Permission prompt required"
-                          }
-                          className="shrink-0"
-                        >
-                          {permissionStatus === "granted" ? (
-                            <CheckCircle2 className="size-4 text-accent-primary" aria-hidden />
-                          ) : permissionStatus === "denied" ? (
-                            <X className="size-4 text-red-500" aria-hidden />
-                          ) : (
-                            <AlertCircle className="size-4 text-app-tertiary" aria-hidden />
-                          )}
-                        </span>
-                        <p className="text-app-primary text-base font-semibold truncate -mt-0.5">
-                          {currentCollectionName || "None"}
-                        </p>
-                        {currentCollectionName && (
-                          <button
-                            onClick={handleStartEditCollectionName}
-                            className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-app-surface rounded-sm transition-all text-app-secondary hover:text-accent-primary shrink-0"
-                            aria-label="Edit collection name"
-                            title="Edit collection name"
-                          >
-                            <Edit className="size-3" />
-                          </button>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span
+                        title={
+                          permissionStatus === "granted"
+                            ? "Permission granted"
+                            : permissionStatus === "denied"
+                            ? "Permission denied"
+                            : "Permission prompt required"
+                        }
+                        className="shrink-0"
+                      >
+                        {permissionStatus === "granted" ? (
+                          <CheckCircle2 className="size-4 text-accent-primary" aria-hidden />
+                        ) : permissionStatus === "denied" ? (
+                          <X className="size-4 text-red-500" aria-hidden />
+                        ) : (
+                          <AlertCircle className="size-4 text-app-tertiary" aria-hidden />
                         )}
-                        {currentCollectionId && (
-                          <button
-                            onClick={() => handleExportCollection(currentCollectionId)}
-                            disabled={exportingId === currentCollectionId}
-                            className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-app-surface rounded-sm transition-all text-app-secondary hover:text-app-primary shrink-0 disabled:opacity-50"
-                            aria-label="Export collection"
-                            title="Export collection"
-                          >
-                            <Download className="size-3.5" />
-                          </button>
-                        )}
+                      </span>
+                      <p className="text-app-primary text-base font-semibold truncate -mt-0.5 w-full">
+                        {currentCollectionName || "None"}
+                      </p>
+                      {currentCollectionName && (
                         <button
-                          onClick={() => setShowCollectionManagerModal(true)}
-                          className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-app-surface rounded-sm transition-all text-app-secondary hover:text-app-primary shrink-0"
-                          aria-label="Manage collections"
-                          title="Manage collections"
+                          onClick={handleStartEditCollectionName}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-app-surface rounded-sm transition-all text-app-secondary hover:text-accent-primary shrink-0"
+                          aria-label="Edit collection name"
+                          title="Edit collection name"
                         >
-                          <Settings className="size-3.5" />
+                          <Edit className="size-3" />
                         </button>
-                        </div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <button
-                            onClick={() => {
-                              if (currentRoot) {
-                                onLibrarySelected?.(currentRoot);
-                                onStartScan?.();
-                              }
-                            }}
-                            disabled={isLoading || permissionStatus !== "granted"}
-                            className="inline-flex items-center gap-2 px-4 py-2 bg-accent-primary text-white rounded-sm hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-[10px] w-fit"
-                          >
-                            <Music className="size-3.5" />
-                            <span>Start Scanning</span>
-                          </button>
-                          <button
-                            onClick={() => enhanceAction?.()}
-                            disabled={!enhanceAction || isLoading || !currentRootId}
-                            className="inline-flex items-center gap-2 px-3 py-2 bg-app-hover text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-[10px] w-fit"
-                          >
-                            <span>Enhance metadata</span>
-                          </button>
-                        </div>
-                      </div>
-                      {collections.length > 1 && (
-                        <div className="relative shrink-0" ref={dropdownRef}>
-                          <button
-                            onClick={() => setShowCollectionDropdown(!showCollectionDropdown)}
-                            className="p-1 hover:bg-app-surface-hover rounded-sm transition-colors"
-                            aria-label="Switch collection"
-                          >
-                            {showCollectionDropdown ? (
-                              <ChevronUp className="size-4 text-app-secondary" />
-                            ) : (
-                              <ChevronDown className="size-4 text-app-secondary" />
-                            )}
-                          </button>
-                          {showCollectionDropdown && (
-                            <div className="absolute top-full right-0 mt-1 bg-app-surface border border-app-border rounded-sm shadow-lg z-50 min-w-[200px] max-h-[300px] overflow-y-auto">
-                              {collections.map((collection) => (
-                                <button
-                                  key={collection.id}
-                                  onClick={() => handleSwitchCollectionWithReload(collection.id)}
-                                  className={`w-full text-left px-3 py-2 text-sm hover:bg-app-hover transition-colors ${
-                                    collection.id === currentCollectionId
-                                      ? "bg-accent-primary/10 text-accent-primary"
-                                      : "text-app-primary"
-                                  }`}
-                                >
-                                  <div className="font-medium">{collection.name}</div>
-                                  {collection.id === currentCollectionId && (
-                                    <div className="text-xs text-accent-primary mt-0.5">Current</div>
-                                  )}
-                                </button>
-                              ))}
-                            </div>
-                          )}
+                      )}
+                      {currentCollectionId && (
+                        <button
+                          onClick={() => handleExportCollection(currentCollectionId)}
+                          disabled={exportingId === currentCollectionId}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-app-surface rounded-sm transition-all text-app-secondary hover:text-app-primary shrink-0 disabled:opacity-50"
+                          aria-label="Export collection"
+                          title="Export collection"
+                        >
+                          <Download className="size-3.5" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setShowCollectionManagerModal(true)}
+                        className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-app-surface rounded-sm transition-all text-app-secondary hover:text-app-primary shrink-0"
+                        aria-label="Manage collections"
+                        title="Manage collections"
+                      >
+                        <Settings className="size-3.5" />
+                      </button>
+                    </div>
+                  )}
+                  {collections.length > 1 && (
+                    <div className="relative shrink-0" ref={dropdownRef}>
+                      <button
+                        onClick={() => setShowCollectionDropdown(!showCollectionDropdown)}
+                        className="p-1 hover:bg-app-surface-hover rounded-sm transition-colors"
+                        aria-label="Switch collection"
+                      >
+                        {showCollectionDropdown ? (
+                          <ChevronUp className="size-4 text-app-secondary" />
+                        ) : (
+                          <ChevronDown className="size-4 text-app-secondary" />
+                        )}
+                      </button>
+                      {showCollectionDropdown && (
+                        <div className="absolute top-full right-0 mt-1 bg-app-surface border border-app-border rounded-sm shadow-lg z-50 min-w-[200px] max-h-[300px] overflow-y-auto">
+                          {collections.map((collection) => (
+                            <button
+                              key={collection.id}
+                              onClick={() => handleSwitchCollectionWithReload(collection.id)}
+                              className={`w-full text-left px-3 py-2 text-sm hover:bg-app-hover transition-colors ${
+                                collection.id === currentCollectionId
+                                  ? "bg-accent-primary/10 text-accent-primary"
+                                  : "text-app-primary"
+                              }`}
+                            >
+                              <div className="font-medium">{collection.name}</div>
+                              {collection.id === currentCollectionId && (
+                                <div className="text-xs text-accent-primary mt-0.5">Current</div>
+                              )}
+                            </button>
+                          ))}
+                          <div className="border-t border-app-border">
+                            <button
+                              onClick={() => {
+                                handleChooseFolder();
+                                setShowCollectionDropdown(false);
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm text-accent-primary hover:bg-app-hover transition-colors flex items-center gap-2"
+                            >
+                              <FolderOpen className="size-4" />
+                              <span>Add New Collection</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setShowCollectionManagerModal(true);
+                                setShowCollectionDropdown(false);
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm text-app-secondary hover:bg-app-hover transition-colors flex items-center gap-2"
+                            >
+                              <Settings className="size-4" />
+                              <span>Manage Collections</span>
+                            </button>
+                          </div>
                         </div>
                       )}
-                    </>
+                    </div>
                   )}
                 </div>
-                {editingCollectionError && (
-                  <div className="mt-2 p-1.5 bg-red-500/10 border border-red-500/20 rounded-sm text-red-500 text-xs">
-                    {editingCollectionError}
-                  </div>
-                )}
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div className="min-w-0 pl-6">
+                    <div className="flex items-baseline gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => {
+                          if (currentRoot) {
+                            onLibrarySelected?.(currentRoot);
+                            onStartScan?.();
+                          }
+                        }}
+                        disabled={isLoading || permissionStatus !== "granted"}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-accent-primary text-white rounded-sm hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-[10px] w-fit"
+                      >
+                        <Music className="size-3.5" />
+                        <span>Start Scanning</span>
+                      </button>
+                      <button
+                        onClick={() => enhanceAction?.()}
+                        disabled={!enhanceAction || isLoading || !currentRootId}
+                        className="inline-flex items-center gap-2 px-3 py-2 bg-app-hover text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-[10px] w-fit"
+                      >
+                        <span>Enhance metadata</span>
+                      </button>
+                    </div>
+                    </div>
+                    {editingCollectionError && (
+                      <div className="mt-2 p-1.5 bg-red-500/10 border border-red-500/20 rounded-sm text-red-500 text-xs">
+                        {editingCollectionError}
+                      </div>
+                    )}
                   </div>
                   <div className="shrink-0 flex flex-col items-end gap-1.5">
                     {showPermissionActions ? (

@@ -30,7 +30,7 @@ import {
   getCurrentCollectionId,
   getCollection,
   getAllCollections,
-  setCurrentCollectionId,
+  setCurrentCollectionId as setCurrentCollectionIdInDb,
   updateCollection,
 } from "@/db/storage";
 import { logger } from "@/lib/logger";
@@ -139,7 +139,7 @@ export function useCollectionSelection(
    */
   const handleSwitchCollection = useCallback(
     async (collectionId: string) => {
-      await setCurrentCollectionId(collectionId);
+      await setCurrentCollectionIdInDb(collectionId);
       setShowCollectionDropdown(false);
       await loadCurrentCollection();
       onCollectionChange?.(collectionId);

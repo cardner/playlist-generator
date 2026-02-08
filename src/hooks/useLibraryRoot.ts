@@ -128,14 +128,16 @@ export function useLibraryRoot(
 
   /**
    * Shared logic for folder selection - used by both handleChooseFolder and handleReSelectFolder
+   * @param forceReset If true, resets picker state (for re-select flow)
+   * @param existingCollectionId When provided, updates existing collection's handle instead of creating new (re-select flow)
    */
   const selectFolder = useCallback(
-    async (forceReset: boolean) => {
+    async (forceReset: boolean, existingCollectionId?: string) => {
       setIsLoading(true);
       setError(null);
 
       try {
-        const root = await pickLibraryRoot(forceReset);
+        const root = await pickLibraryRoot(forceReset, existingCollectionId ? { existingCollectionId } : undefined);
 
         // Update local state first
         setCurrentRoot(root);
@@ -189,15 +191,16 @@ export function useLibraryRoot(
   }, [selectFolder]);
 
   /**
-   * Re-select folder (force reset picker state) - for permission flow when user needs fresh handle
+   * Re-select folder (force reset picker state) - updates current collection's handle instead of creating new
+   * For permission flow when user needs fresh handle after permissions were revoked
    */
   const handleReSelectFolder = useCallback(async () => {
     try {
-      await selectFolder(true);
+      await selectFolder(true, currentRootId ?? undefined);
     } catch {
       // User cancelled or error - already handled in selectFolder
     }
-  }, [selectFolder]);
+  }, [selectFolder, currentRootId]);
 
   /**
    * Clear error

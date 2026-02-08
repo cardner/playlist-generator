@@ -73,7 +73,6 @@ import { findFileIndexByGlobalTrackId } from "@/features/library/track-identity"
 import { RelinkLibraryRoot } from "./RelinkLibraryRoot";
 import { SpotifyPlaylistExport } from "./SpotifyPlaylistExport";
 import { hasSpotifyTracks } from "@/features/spotify-export/uri-resolver";
-import type { LibraryRootRecord, FileIndexRecord } from "@/db/schema";
 import { logger } from "@/lib/logger";
 import {
   Download,

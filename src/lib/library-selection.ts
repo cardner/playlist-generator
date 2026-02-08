@@ -53,14 +53,22 @@ import { pickLibraryRootWithFallback } from "./library-selection-fallback";
 import { getLibraryFilesWithFSAPI } from "./library-selection-fs-api";
 import type { LibraryRoot, LibraryFile } from "./library-selection-types";
 
+/** Options for pickLibraryRoot */
+export interface PickLibraryRootOptions {
+  /** When provided, updates the existing collection's handle instead of creating a new collection (FS API only, for re-select/permission flow) */
+  existingCollectionId?: string;
+}
+
 /**
  * Pick a library root using File System Access API or fallback
  * 
  * Automatically selects the appropriate method based on browser support.
  * 
  * @param forceReset If true, resets any existing picker state before opening (FS API only)
+ * @param options Options for the pick operation. When existingCollectionId is provided (re-select flow), updates the existing collection's handle instead of creating a new collection.
  * @returns Promise resolving to the selected library root
  * @throws Error if user cancels or selection fails
+ * @throws Error if existingCollectionId is provided but browser uses fallback (Re-select to fix permissions requires File System Access API)
  * 
  * @example
  * ```typescript
@@ -74,11 +82,14 @@ import type { LibraryRoot, LibraryFile } from "./library-selection-types";
  * }
  * ```
  */
-export async function pickLibraryRoot(forceReset: boolean = false): Promise<LibraryRoot> {
+export async function pickLibraryRoot(
+  forceReset: boolean = false,
+  options?: PickLibraryRootOptions
+): Promise<LibraryRoot> {
   if (supportsFileSystemAccess()) {
-    return pickLibraryRootWithFSAPI(forceReset);
+    return pickLibraryRootWithFSAPI(forceReset, options);
   } else {
-    return pickLibraryRootWithFallback();
+    return pickLibraryRootWithFallback(options);
   }
 }
 

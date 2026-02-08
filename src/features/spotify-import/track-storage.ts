@@ -40,7 +40,7 @@ export async function spotifyTrackToRecord(
     durationSeconds = Math.floor(spotifyTrack.duration / 1000);
   }
 
-  const metadataFingerprint = await buildMetadataFingerprint(
+  const metadataFingerprint = buildMetadataFingerprint(
     {
       title: spotifyTrack.track,
       artist: spotifyTrack.artist,
