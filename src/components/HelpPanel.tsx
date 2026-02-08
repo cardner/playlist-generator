@@ -38,7 +38,7 @@ function getTextFromChildren(children: ReactNode): string {
     return children.map((child) => getTextFromChildren(child)).join("");
   }
   if (children && typeof children === "object" && isValidElement(children)) {
-    return getTextFromChildren(children.props.children);
+    return getTextFromChildren((children as React.ReactElement<{ children?: ReactNode }>).props.children);
   }
   return "";
 }

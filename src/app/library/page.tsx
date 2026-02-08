@@ -5,7 +5,6 @@ import { LibrarySelector } from "@/components/LibrarySelector";
 import { LibraryScanner } from "@/components/LibraryScanner";
 import { LibraryBrowser } from "@/components/LibraryBrowser";
 import { LibrarySummary } from "@/components/LibrarySummary";
-import { MetadataEnhancement } from "@/components/MetadataEnhancement";
 import { StorageWarning } from "@/components/StorageWarning";
 import { getCurrentLibraryRoot, getCurrentCollectionId } from "@/db/storage";
 import { ensureMigrationComplete } from "@/db/migration-helper";
@@ -247,6 +246,9 @@ export default function LibraryPage() {
               setBrowserRefresh((prev) => prev + 1);
             }
           }}
+          onMetadataEnhancementComplete={() => {
+            setBrowserRefresh((prev) => prev + 1);
+          }}
         />
       </div>
 
@@ -272,18 +274,6 @@ export default function LibraryPage() {
           refreshTrigger={browserRefresh}
         />
       </div>
-
-      {currentLibraryRootId && (
-        <div className="mb-4">
-          <MetadataEnhancement
-            libraryRootId={currentLibraryRootId}
-            onComplete={() => {
-              // Refresh browser to show enhanced metadata
-              setBrowserRefresh((prev) => prev + 1);
-            }}
-          />
-        </div>
-      )}
 
       <div className="mb-4">
         <LibraryBrowser key={browserRefresh} />

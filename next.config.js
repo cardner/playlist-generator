@@ -1,4 +1,5 @@
 /** @type {import('next').NextConfig} */
+const path = require("path");
 const nextConfig = {
   reactStrictMode: true,
   // Enable static export for GitHub Pages
@@ -15,6 +16,15 @@ const nextConfig = {
   // Skip type checking during build (can speed up builds)
   typescript: {
     ignoreBuildErrors: false,
+  },
+  // Turbopack configuration (matches webpack alias behavior)
+  turbopack: {
+    resolveAlias: {
+      "@/workers/tempo-detection-worker": path.join(
+        __dirname,
+        "src/lib/empty-module.ts"
+      ),
+    },
   },
   // Exclude Figma reference files from compilation
   webpack: (config) => {

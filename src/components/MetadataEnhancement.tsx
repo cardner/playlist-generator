@@ -17,10 +17,10 @@
 
 "use client";
 
-import { useState } from "react";
-import { Sparkles, Loader2, CheckCircle, XCircle, AlertCircle } from "lucide-react";
-import { useMetadataEnhancement } from "@/hooks/useMetadataEnhancement";
+import { useCallback, useEffect, useState } from "react";
+import { Sparkles, Loader2, CheckCircle, XCircle, AlertCircle, Info } from "lucide-react";
 import { logger } from "@/lib/logger";
+import { useBackgroundLibraryTasks } from "./BackgroundLibraryTasksProvider";
 
 interface MetadataEnhancementProps {
   /** Library root ID to enhance tracks for */
@@ -29,13 +29,20 @@ interface MetadataEnhancementProps {
   selectedTrackIds?: string[];
   /** Callback when enhancement completes */
   onComplete?: () => void;
+  /** Hide the internal action button (use external button instead) */
+  hideActionButton?: boolean;
+  /** Expose the start action to an external button */
+  onStartEnhancementReady?: (start: () => void) => void;
 }
 
 export function MetadataEnhancement({
   libraryRootId,
   selectedTrackIds,
   onComplete,
+  hideActionButton = false,
+  onStartEnhancementReady,
 }: MetadataEnhancementProps) {
+  const { metadataEnhancement } = useBackgroundLibraryTasks();
   const {
     isEnhancing,
     progress,
@@ -45,9 +52,9 @@ export function MetadataEnhancement({
     startSelectedEnhancement,
     cancelEnhancement,
     reset,
-  } = useMetadataEnhancement();
+  } = metadataEnhancement;
 
-  const handleStartEnhancement = async () => {
+  const handleStartEnhancement = useCallback(async () => {
     try {
       if (selectedTrackIds && selectedTrackIds.length > 0) {
         await startSelectedEnhancement(selectedTrackIds);
@@ -58,20 +65,47 @@ export function MetadataEnhancement({
     } catch (err) {
       logger.error("Enhancement failed:", err);
     }
-  };
+  }, [libraryRootId, onComplete, selectedTrackIds, startEnhancement, startSelectedEnhancement]);
 
+  useEffect(() => {
+    onStartEnhancementReady?.(handleStartEnhancement);
+  }, [handleStartEnhancement, onStartEnhancementReady]);
+
+  const [showInfo, setShowInfo] = useState(false);
   const progressPercent = progress
     ? Math.round((progress.processed / progress.total) * 100)
     : 0;
 
   return (
-    <div className="bg-app-surface rounded-sm shadow-2xl p-6 space-y-4">
+    <div className="bg-app-surface rounded-sm shadow-2xl space-y-2">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Sparkles className="size-5 text-accent-primary" />
-          <h2 className="text-app-primary font-semibold text-lg">
+        <div className="flex items-center gap-2 relative">
+          <Sparkles className="size-4 text-accent-primary" />
+          <h4 className="text-app-primary text-sm font-medium">
             Metadata Enhancement
-          </h2>
+          </h4>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowInfo((prev) => !prev)}
+              onBlur={() => setShowInfo(false)}
+              className="p-1 rounded-sm hover:bg-app-hover text-app-tertiary hover:text-app-primary transition-colors"
+              aria-label="Metadata enhancement info"
+            >
+              <Info className="size-4" />
+            </button>
+            {showInfo && (
+              <div className="absolute right-0 top-full mt-2 w-96 max-w-[calc(100vw-2rem)] bg-app-surface border border-app-border rounded-sm shadow-lg p-3 text-xs text-app-tertiary z-20">
+                <p className="font-medium mb-1">Note:</p>
+                <ul className="list-disc list-inside space-y-0.5">
+                  <li>MusicBrainz API rate limit: 1 request per second</li>
+                  <li>Enhancement may take several minutes for large libraries</li>
+                  <li>Tempo detection requires audio file access (may not work for all tracks)</li>
+                  <li>Manual edits take precedence over auto-enhanced data</li>
+                </ul>
+              </div>
+            )}
+          </div>
         </div>
         {!isEnhancing && result && (
           <button
@@ -83,7 +117,7 @@ export function MetadataEnhancement({
         )}
       </div>
 
-      <p className="text-app-secondary text-sm">
+      <p className="text-app-secondary text-xs leading-relaxed">
         Enhance track metadata using MusicBrainz API and audio analysis.
         This will add genres, similar artists, and tempo/BPM information.
       </p>
@@ -174,7 +208,7 @@ export function MetadataEnhancement({
         </div>
       )}
 
-      {!isEnhancing && !result && (
+      {!isEnhancing && !result && !hideActionButton && (
         <div className="flex items-center gap-2">
           <button
             onClick={handleStartEnhancement}
@@ -200,15 +234,7 @@ export function MetadataEnhancement({
         </div>
       )}
 
-      <div className="bg-app-hover rounded-sm p-3 text-xs text-app-tertiary">
-        <p className="font-medium mb-1">Note:</p>
-        <ul className="list-disc list-inside space-y-0.5">
-          <li>MusicBrainz API rate limit: 1 request per second</li>
-          <li>Enhancement may take several minutes for large libraries</li>
-          <li>Tempo detection requires audio file access (may not work for all tracks)</li>
-          <li>Manual edits take precedence over auto-enhanced data</li>
-        </ul>
-      </div>
+      
     </div>
   );
 }

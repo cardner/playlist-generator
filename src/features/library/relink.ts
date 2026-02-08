@@ -84,8 +84,8 @@ export async function relinkLibraryRoot(
       fallbackMap.get(key)!.push(fileEntry.trackFileId);
     }
 
-    // Prompt user to pick new root
-    const newRoot = await pickLibraryRoot();
+    // Prompt user to pick new root (forceReset clears any stale picker state from other components)
+    const newRoot = await pickLibraryRoot(true);
 
     // Ensure handle is stored (pickLibraryRoot should have done this, but verify)
     if (newRoot.mode === "handle" && !newRoot.handleId) {

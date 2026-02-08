@@ -40,7 +40,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X, Save, FolderOpen, AlertCircle, Calendar, HardDrive } from "lucide-react";
 import type { LibraryRootRecord } from "@/db/schema";
 import { updateCollection, relinkCollectionHandle, getAllCollections } from "@/db/storage";
@@ -62,6 +62,7 @@ export function CollectionConfigEditor({
   const [isRelinking, setIsRelinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const relinkInProgressRef = useRef(false);
 
   useEffect(() => {
     setName(collection.name);
@@ -90,18 +91,17 @@ export function CollectionConfigEditor({
       return;
     }
 
-    if (isRelinking) {
-      // Prevent multiple simultaneous calls
+    // Ref-based guard: blocks concurrent calls before React re-renders with disabled button
+    if (relinkInProgressRef.current) {
       return;
     }
-
+    relinkInProgressRef.current = true;
     setIsRelinking(true);
     setError(null);
 
     try {
-      // Use pickLibraryRoot instead of directly calling showDirectoryPicker
-      // This ensures we use the same guard logic
-      const root = await pickLibraryRoot();
+      // Use pickLibraryRoot with forceReset to clear any stale picker state from other components
+      const root = await pickLibraryRoot(true);
       
       if (root.mode !== "handle" || !root.handleId) {
         setError("Failed to get directory handle");
@@ -130,6 +130,7 @@ export function CollectionConfigEditor({
         }
       }
     } finally {
+      relinkInProgressRef.current = false;
       setIsRelinking(false);
     }
   };

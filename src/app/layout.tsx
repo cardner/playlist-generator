@@ -5,6 +5,8 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { PwaRegister } from "@/components/PwaRegister";
 import { HelpPanel } from "@/components/HelpPanel";
 import { getHelpContent } from "@/lib/help-content";
+import { BackgroundLibraryTasksProvider } from "@/components/BackgroundLibraryTasksProvider";
+import { BackgroundTaskOverlay } from "@/components/BackgroundTaskOverlay";
 
 export const metadata: Metadata = {
   title: "mixtape gen",
@@ -42,14 +44,17 @@ export default async function RootLayout({
       </head>
       <body>
         <ThemeProvider>
-          <PwaRegister />
-          <Navigation />
-          <HelpPanel markdown={helpContent} />
-          <main className="min-h-screen bg-app-bg">
-            <div className="container mx-auto px-4 py-8 md:py-12 max-w-6xl">
-              {children}
-            </div>
-          </main>
+          <BackgroundLibraryTasksProvider>
+            <PwaRegister />
+            <Navigation />
+            <BackgroundTaskOverlay />
+            <HelpPanel markdown={helpContent} />
+            <main className="min-h-screen bg-app-bg">
+              <div className="container mx-auto px-4 py-8 md:py-12 max-w-6xl">
+                {children}
+              </div>
+            </main>
+          </BackgroundLibraryTasksProvider>
         </ThemeProvider>
       </body>
     </html>
