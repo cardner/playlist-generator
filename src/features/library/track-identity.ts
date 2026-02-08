@@ -68,61 +68,106 @@ export async function resolveTrackIdentitiesForLibrary(
   libraryRootId: string,
   options?: { onlyMissing?: boolean; signal?: AbortSignal; onProgress?: (progress: { processed: number; total: number; updated: number }) => void }
 ): Promise<void> {
-  const tracks = await db.tracks
+  // First, get total count for progress reporting
+  const total = await db.tracks
     .where("libraryRootId")
     .equals(libraryRootId)
-    .toArray();
-  const fileIndexEntries = await db.fileIndex
-    .where("libraryRootId")
-    .equals(libraryRootId)
-    .toArray();
-  const fileIndexMap = new Map<string, FileIndexRecord>();
-  for (const entry of fileIndexEntries) {
-    fileIndexMap.set(entry.trackFileId, entry);
-  }
-  const total = tracks.length;
+    .count();
+  
   let processed = 0;
   let updated = 0;
   const updates: TrackRecord[] = [];
-  for (const track of tracks) {
+  
+  // Build fileIndex map incrementally using cursor-based iteration
+  // Note: This still loads all fileIndex entries into memory, but they are typically
+  // smaller than track records and we need to access them randomly during processing.
+  // An alternative would be to query the database for each track, but that would
+  // be significantly slower due to the I/O overhead.
+  const fileIndexMap = new Map<string, FileIndexRecord>();
+  await db.fileIndex
+    .where("libraryRootId")
+    .equals(libraryRootId)
+    .each((entry) => {
+      fileIndexMap.set(entry.trackFileId, entry);
+    });
+  
+  // Process tracks in chunks using cursor-based pagination to avoid loading all into memory
+  // and yield periodically to keep UI responsive
+  const CHUNK_SIZE = 100;
+  let lastId: string | undefined = undefined;
+  let hasMore = true;
+  
+  while (hasMore) {
     if (options?.signal?.aborted) {
       throw new DOMException("Identity resolution aborted", "AbortError");
     }
-    processed += 1;
-    const fileIndex = fileIndexMap.get(track.trackFileId);
-    const metadataFingerprint =
-      track.metadataFingerprint ?? buildMetadataFingerprint(track.tags, track.tech);
-    const identity = resolveGlobalTrackIdentity(
-      { ...track, metadataFingerprint },
-      fileIndex
-    );
-    const next = {
-      ...track,
-      metadataFingerprint,
-      globalTrackId: identity.globalTrackId,
-      globalTrackSource: identity.globalTrackSource,
-      globalTrackConfidence: identity.globalTrackConfidence,
-      updatedAt: Date.now(),
-    };
-    if (
-      !options?.onlyMissing ||
-      !track.globalTrackId ||
-      track.globalTrackId !== next.globalTrackId ||
-      track.metadataFingerprint !== next.metadataFingerprint
-    ) {
-      updates.push(next);
-      updated += 1;
+    
+    // Load next chunk of tracks using cursor-based pagination
+    // Note: Using .and() with a filter doesn't fully leverage the database index,
+    // but without a compound index on [libraryRootId, id], this is the best approach.
+    // The alternative of using offset() would be slower as it has O(n) complexity.
+    let query = db.tracks
+      .where("libraryRootId")
+      .equals(libraryRootId);
+    
+    if (lastId !== undefined) {
+      // Continue from where we left off using the primary key
+      query = query.and((track) => track.id > lastId!);
     }
-    if (updates.length >= 250) {
-      await db.tracks.bulkPut(updates.splice(0, updates.length));
+    
+    const chunk = await query.limit(CHUNK_SIZE).toArray();
+    
+    if (chunk.length === 0) {
+      hasMore = false;
+      break;
     }
-    if (processed % 100 === 0) {
-      options?.onProgress?.({ processed, total, updated });
+    
+    for (const track of chunk) {
+      processed += 1;
+      lastId = track.id; // Update cursor for next iteration
+      
+      const fileIndex = fileIndexMap.get(track.trackFileId);
+      const metadataFingerprint =
+        track.metadataFingerprint ?? buildMetadataFingerprint(track.tags, track.tech);
+      const identity = resolveGlobalTrackIdentity(
+        { ...track, metadataFingerprint },
+        fileIndex
+      );
+      const next = {
+        ...track,
+        metadataFingerprint,
+        globalTrackId: identity.globalTrackId,
+        globalTrackSource: identity.globalTrackSource,
+        globalTrackConfidence: identity.globalTrackConfidence,
+        updatedAt: Date.now(),
+      };
+      
+      if (
+        !options?.onlyMissing ||
+        !track.globalTrackId ||
+        track.globalTrackId !== next.globalTrackId ||
+        track.metadataFingerprint !== next.metadataFingerprint
+      ) {
+        updates.push(next);
+        updated += 1;
+      }
+      
+      // Batch updates to reduce transaction overhead
+      if (updates.length >= 250) {
+        await db.tracks.bulkPut(updates.splice(0, updates.length));
+      }
     }
+    
+    // Yield to event loop after each chunk to avoid UI freeze
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    options?.onProgress?.({ processed, total, updated });
   }
+  
+  // Write any remaining updates
   if (updates.length > 0) {
     await db.tracks.bulkPut(updates);
   }
+  
   options?.onProgress?.({ processed, total, updated });
 }
 
