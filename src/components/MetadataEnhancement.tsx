@@ -18,7 +18,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles, Loader2, CheckCircle, XCircle, AlertCircle, Info } from "lucide-react";
+import { Sparkles, Loader2, CheckCircle, XCircle, Info } from "lucide-react";
 import { logger } from "@/lib/logger";
 import { useBackgroundLibraryTasks } from "./BackgroundLibraryTasksProvider";
 
