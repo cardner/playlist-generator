@@ -105,6 +105,7 @@ export interface MetadataResult {
   trackFileId: string;
   tags?: NormalizedTags;
   tech?: TechInfo;
+  isrc?: string;
   warnings?: string[];
   error?: string;
 }
@@ -121,6 +122,7 @@ export interface MetadataWorkerResponse {
   trackFileId: string;
   tags?: NormalizedTags;
   tech?: TechInfo;
+  isrc?: string;
   warnings?: string[];
   error?: string;
 }
@@ -192,6 +194,36 @@ export function normalizeAlbum(album: string | undefined): string {
     return "Unknown Album";
   }
   return album.trim();
+}
+
+/**
+ * Normalize ISRC (International Standard Recording Code)
+ *
+ * ISRCs must be exactly 12 alphanumeric characters in format: CC-XXX-YY-NNNNN
+ * - CC: 2-letter country code
+ * - XXX: 3-character registrant code
+ * - YY: 2-digit year
+ * - NNNNN: 5-digit designation code
+ * 
+ * Hyphens are optional and stripped during normalization.
+ * Returns undefined for invalid ISRCs to prevent incorrect cross-collection matching.
+ */
+export function normalizeIsrc(isrc?: string | string[] | null): string | undefined {
+  if (!isrc) return undefined;
+  const value = Array.isArray(isrc) ? isrc[0] : isrc;
+  if (!value) return undefined;
+  
+  // Trim and convert to uppercase first
+  const trimmed = value.trim().toUpperCase();
+  
+  // Remove only hyphens (hyphens are optional in ISRC format)
+  const normalized = trimmed.replace(/-/g, '');
+  
+  // ISRC must be exactly 12 alphanumeric characters
+  if (normalized.length !== 12) return undefined;
+  if (!/^[A-Z0-9]{12}$/.test(normalized)) return undefined;
+  
+  return normalized;
 }
 
 /**
@@ -371,6 +403,10 @@ export interface EnhancedMetadata {
   activity?: string[];
   /** Additional tags from MusicBrainz */
   musicbrainzTags?: string[];
+  /** Release year from MusicBrainz */
+  musicbrainzReleaseYear?: number;
+  /** Duration (seconds) from MusicBrainz */
+  musicbrainzDurationSeconds?: number;
   /** Timestamp when manual edits were last made */
   manualEditDate?: number;
   /** Array of field names that were manually edited (e.g., ['genres', 'tempo']) */

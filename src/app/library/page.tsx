@@ -5,8 +5,8 @@ import { LibrarySelector } from "@/components/LibrarySelector";
 import { LibraryScanner } from "@/components/LibraryScanner";
 import { LibraryBrowser } from "@/components/LibraryBrowser";
 import { LibrarySummary } from "@/components/LibrarySummary";
-import { MetadataEnhancement } from "@/components/MetadataEnhancement";
 import { StorageWarning } from "@/components/StorageWarning";
+import { useBackgroundLibraryTasks } from "@/components/BackgroundLibraryTasksProvider";
 import { getCurrentLibraryRoot, getCurrentCollectionId } from "@/db/storage";
 import { ensureMigrationComplete } from "@/db/migration-helper";
 import type { LibraryRoot } from "@/lib/library-selection";
@@ -14,6 +14,7 @@ import type { PermissionStatus } from "@/lib/library-selection";
 import { logger } from "@/lib/logger";
 
 export default function LibraryPage() {
+  const backgroundTasks = useBackgroundLibraryTasks();
   const [libraryRoot, setLibraryRoot] = useState<LibraryRoot | null>(null);
   const [permissionStatus, setPermissionStatus] =
     useState<PermissionStatus | null>(null);
@@ -23,6 +24,10 @@ export default function LibraryPage() {
   const [hasExistingScans, setHasExistingScans] = useState<boolean | null>(null); // null = checking
   const [collectionRefresh, setCollectionRefresh] = useState(0);
   const [triggerScan, setTriggerScan] = useState(false);
+
+  useEffect(() => {
+    backgroundTasks.setLibraryRootId(currentLibraryRootId);
+  }, [backgroundTasks, currentLibraryRootId]);
 
   // Check for existing scans on mount (but not when isNewSelection is true)
   useEffect(() => {
@@ -247,6 +252,9 @@ export default function LibraryPage() {
               setBrowserRefresh((prev) => prev + 1);
             }
           }}
+          onMetadataEnhancementComplete={() => {
+            setBrowserRefresh((prev) => prev + 1);
+          }}
         />
       </div>
 
@@ -272,18 +280,6 @@ export default function LibraryPage() {
           refreshTrigger={browserRefresh}
         />
       </div>
-
-      {currentLibraryRootId && (
-        <div className="mb-4">
-          <MetadataEnhancement
-            libraryRootId={currentLibraryRootId}
-            onComplete={() => {
-              // Refresh browser to show enhanced metadata
-              setBrowserRefresh((prev) => prev + 1);
-            }}
-          />
-        </div>
-      )}
 
       <div className="mb-4">
         <LibraryBrowser key={browserRefresh} />

@@ -11,14 +11,22 @@
 import type { LibraryRoot, LibraryFile } from "./library-selection-types";
 import { normalizeRelativePath, generateFileIdFromPath, getFileExtension } from "./library-selection-utils";
 
+/** Options for pickLibraryRootWithFallback */
+export interface PickLibraryRootFallbackOptions {
+  /** When provided, indicates re-select flow - not supported in fallback mode (requires File System Access API) */
+  existingCollectionId?: string;
+}
+
 /**
  * Pick a library root using fallback file input
  * 
  * Creates a file input element with webkitdirectory attribute and
  * prompts the user to select a folder.
  * 
+ * @param options Options for the pick operation. When existingCollectionId is provided (re-select flow), throws - Re-select to fix permissions requires File System Access API.
  * @returns Promise resolving to the selected library root
  * @throws Error if user cancels or no files selected
+ * @throws Error if existingCollectionId is provided (Re-select to fix permissions requires File System Access API)
  * 
  * @example
  * ```typescript
@@ -32,7 +40,14 @@ import { normalizeRelativePath, generateFileIdFromPath, getFileExtension } from 
  * }
  * ```
  */
-export async function pickLibraryRootWithFallback(): Promise<LibraryRoot> {
+export async function pickLibraryRootWithFallback(
+  options?: PickLibraryRootFallbackOptions
+): Promise<LibraryRoot> {
+  if (options?.existingCollectionId) {
+    throw new Error(
+      "Re-select folder to fix permissions is only available in browsers that support the File System Access API. Please use a Chromium-based browser."
+    );
+  }
   return new Promise((resolve, reject) => {
     const input = document.createElement("input");
     input.type = "file";

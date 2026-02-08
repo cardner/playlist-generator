@@ -11,6 +11,10 @@ import { db, getCompositeId } from "@/db/schema";
 import type { TrackRecord } from "@/db/schema";
 import type { SpotifyTrack } from "./types";
 import { logger } from "@/lib/logger";
+import {
+  buildMetadataFingerprint,
+  resolveGlobalTrackIdentity,
+} from "@/features/library/track-identity-utils";
 
 /**
  * Convert Spotify track to TrackRecord format
@@ -22,11 +26,11 @@ import { logger } from "@/lib/logger";
  * @param trackFileId - Unique identifier for this track (generated from Spotify URI or artist+track)
  * @returns TrackRecord ready to be stored
  */
-export function spotifyTrackToRecord(
+export async function spotifyTrackToRecord(
   spotifyTrack: SpotifyTrack,
   libraryRootId: string,
   trackFileId: string
-): TrackRecord {
+): Promise<TrackRecord> {
   const id = getCompositeId(trackFileId, libraryRootId);
   const now = Date.now();
 
@@ -35,6 +39,23 @@ export function spotifyTrackToRecord(
   if (spotifyTrack.duration !== undefined && spotifyTrack.duration !== null) {
     durationSeconds = Math.floor(spotifyTrack.duration / 1000);
   }
+
+  const metadataFingerprint = buildMetadataFingerprint(
+    {
+      title: spotifyTrack.track,
+      artist: spotifyTrack.artist,
+      album: spotifyTrack.album || "",
+      genres: [],
+      year: undefined,
+      trackNo: undefined,
+      discNo: undefined,
+    },
+    durationSeconds ? { durationSeconds } : undefined
+  );
+  const identity = resolveGlobalTrackIdentity(
+    { musicbrainzId: undefined, isrc: undefined, metadataFingerprint },
+    undefined
+  );
 
   return {
     id,
@@ -57,6 +78,10 @@ export function spotifyTrackToRecord(
       : undefined,
     source: "spotify",
     spotifyUri: spotifyTrack.uri,
+    metadataFingerprint,
+    globalTrackId: identity.globalTrackId,
+    globalTrackSource: identity.globalTrackSource,
+    globalTrackConfidence: identity.globalTrackConfidence,
     updatedAt: now,
   };
 }
@@ -108,7 +133,7 @@ export async function saveSpotifyTracks(
   for (const track of tracks) {
     try {
       const trackFileId = generateTrackFileId(track);
-      const record = spotifyTrackToRecord(track, libraryRootId, trackFileId);
+      const record = await spotifyTrackToRecord(track, libraryRootId, trackFileId);
 
       // Use put to insert or update (in case of re-import)
       await db.tracks.put(record);

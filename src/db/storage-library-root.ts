@@ -29,7 +29,8 @@ import type { LibraryRoot } from "@/lib/library-selection";
  */
 export async function saveLibraryRoot(
   root: LibraryRoot,
-  handleRef?: string
+  handleRef?: string,
+  options?: { setAsCurrent?: boolean }
 ): Promise<LibraryRootRecord> {
   const now = Date.now();
   const id = root.handleId || `root-${now}`;
@@ -50,8 +51,9 @@ export async function saveLibraryRoot(
   // Use put to insert or update
   await db.libraryRoots.put(record);
   
-  // Set as current collection
-  await setCurrentCollectionId(id);
+  if (options?.setAsCurrent) {
+    await setCurrentCollectionId(id);
+  }
   
   return record;
 }

@@ -175,7 +175,9 @@ async function reconstructLibraryRootFromData(
     
     // Save the reconstructed root to the database for future use
     const { saveLibraryRoot } = await import("@/db/storage");
-    await saveLibraryRoot(libraryRoot, mode === "handle" ? libraryRootId : undefined);
+    await saveLibraryRoot(libraryRoot, mode === "handle" ? libraryRootId : undefined, {
+      setAsCurrent: false,
+    });
     
     return libraryRoot;
   } catch (error) {
@@ -192,6 +194,6 @@ async function reconstructLibraryRootFromData(
 export async function saveLibraryRootLegacy(root: LibraryRoot): Promise<void> {
   // Use new Dexie storage layer
   const { saveLibraryRoot: saveRoot } = await import("@/db/storage");
-  await saveRoot(root, root.handleId);
+  await saveRoot(root, root.handleId, { setAsCurrent: true });
 }
 

@@ -24,6 +24,7 @@ import { getLibraryRoot } from "@/db/storage-library-root";
 import { db, getCompositeId } from "@/db/schema";
 import { logger } from "@/lib/logger";
 import { inferActivityFromTrack } from "./activity-inference";
+import { updateTrackIdentity } from "./track-identity";
 
 const LOG_THROTTLE_MS = 2000;
 const logStates = new Map<string, { last: number; suppressed: number }>();
@@ -317,6 +318,7 @@ export async function enhanceTrackMetadata(
     const recording = await findRecordingByTrack(track);
     if (recording) {
       musicbrainzId = recording.mbid;
+      hasEnhancements = true;
       
       // Get enhanced genres
       const genres = await getRecordingGenres(recording.mbid);
@@ -335,6 +337,16 @@ export async function enhanceTrackMetadata(
       // Store MusicBrainz tags
       if (recording.tags && recording.tags.length > 0) {
         enhanced.musicbrainzTags = recording.tags;
+        hasEnhancements = true;
+      }
+
+      if (recording.releaseYear) {
+        enhanced.musicbrainzReleaseYear = recording.releaseYear;
+        hasEnhancements = true;
+      }
+
+      if (recording.duration) {
+        enhanced.musicbrainzDurationSeconds = recording.duration;
         hasEnhancements = true;
       }
     }
@@ -471,6 +483,10 @@ export async function enhanceTrackMetadata(
       metadataEnhancementDate: Date.now(),
       ...(musicbrainzId && { musicbrainzId }),
     });
+
+    if (musicbrainzId) {
+      await updateTrackIdentity(track.id);
+    }
 
     return enhanced;
   } catch (error) {

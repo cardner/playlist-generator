@@ -84,8 +84,27 @@ export async function relinkLibraryRoot(
       fallbackMap.get(key)!.push(fileEntry.trackFileId);
     }
 
-    // Prompt user to pick new root
-    const newRoot = await pickLibraryRoot();
+    const fullHashMap = new Map<string, string[]>();
+    const partialHashMap = new Map<string, string[]>();
+    for (const fileEntry of oldFileIndex) {
+      if (fileEntry.fullContentHash) {
+        const key = fileEntry.fullContentHash;
+        if (!fullHashMap.has(key)) {
+          fullHashMap.set(key, []);
+        }
+        fullHashMap.get(key)!.push(fileEntry.trackFileId);
+      }
+      if (fileEntry.contentHash) {
+        const key = fileEntry.contentHash;
+        if (!partialHashMap.has(key)) {
+          partialHashMap.set(key, []);
+        }
+        partialHashMap.get(key)!.push(fileEntry.trackFileId);
+      }
+    }
+
+    // Prompt user to pick new root (forceReset clears any stale picker state from other components)
+    const newRoot = await pickLibraryRoot(true);
 
     // Ensure handle is stored (pickLibraryRoot should have done this, but verify)
     if (newRoot.mode === "handle" && !newRoot.handleId) {
@@ -115,6 +134,8 @@ export async function relinkLibraryRoot(
       extension: string;
       size: number;
       mtime: number;
+      contentHash?: string;
+      fullContentHash?: string;
       updatedAt: number;
     }> = [];
 
@@ -134,7 +155,9 @@ export async function relinkLibraryRoot(
     let newRootRecord = await db.libraryRoots.get(newRoot.handleId || "");
     if (!newRootRecord) {
       // Root wasn't saved yet (shouldn't happen, but handle it)
-      newRootRecord = await saveLibraryRoot(newRoot, newRoot.handleId);
+      newRootRecord = await saveLibraryRoot(newRoot, newRoot.handleId, {
+        setAsCurrent: false,
+      });
     } else {
       // Update the existing root record to ensure handleRef is set
       if (newRoot.mode === "handle" && newRoot.handleId && newRootRecord.handleRef !== newRoot.handleId) {
@@ -155,7 +178,21 @@ export async function relinkLibraryRoot(
       // Try to match by relativePath + size + mtime
       let matchedOldTrackFileId: string | undefined;
 
-      if (newEntry.relativePath) {
+      if (!matchedOldTrackFileId && newEntry.fullContentHash) {
+        const candidates = fullHashMap.get(newEntry.fullContentHash);
+        if (candidates && candidates.length === 1) {
+          matchedOldTrackFileId = candidates[0];
+        }
+      }
+
+      if (!matchedOldTrackFileId && newEntry.contentHash) {
+        const candidates = partialHashMap.get(newEntry.contentHash);
+        if (candidates && candidates.length === 1) {
+          matchedOldTrackFileId = candidates[0];
+        }
+      }
+
+      if (!matchedOldTrackFileId && newEntry.relativePath) {
         const key = `${newEntry.relativePath}|${newEntry.size}|${newEntry.mtime}`;
         matchedOldTrackFileId = oldTrackMap.get(key);
       }
@@ -187,6 +224,8 @@ export async function relinkLibraryRoot(
         extension: newEntry.extension,
         size: newEntry.size,
         mtime: newEntry.mtime,
+        contentHash: newEntry.contentHash,
+        fullContentHash: newEntry.fullContentHash,
         updatedAt: Date.now(),
       });
 

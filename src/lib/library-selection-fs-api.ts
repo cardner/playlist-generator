@@ -26,12 +26,19 @@ export function resetPickerState(): void {
   isPickerOpen = false;
 }
 
+/** Options for pickLibraryRootWithFSAPI */
+export interface PickLibraryRootFSAPIOptions {
+  /** When provided, updates the existing collection's handle instead of creating a new collection (for re-select/permission flow) */
+  existingCollectionId?: string;
+}
+
 /**
  * Pick a library root using File System Access API
  * 
  * Opens a directory picker dialog and stores the selected directory handle.
  * 
  * @param forceReset If true, resets any existing picker state before opening
+ * @param options Options for the pick operation. When existingCollectionId is provided, updates the existing collection's handle instead of creating a new collection.
  * @returns Promise resolving to the selected library root
  * @throws Error if user cancels or selection fails
  * 
@@ -47,7 +54,10 @@ export function resetPickerState(): void {
  * }
  * ```
  */
-export async function pickLibraryRootWithFSAPI(forceReset: boolean = false): Promise<LibraryRoot> {
+export async function pickLibraryRootWithFSAPI(
+  forceReset: boolean = false,
+  options?: PickLibraryRootFSAPIOptions
+): Promise<LibraryRoot> {
   if (!supportsFileSystemAccess()) {
     throw new Error("File System Access API not supported");
   }
@@ -58,12 +68,19 @@ export async function pickLibraryRootWithFSAPI(forceReset: boolean = false): Pro
     resetPickerState();
   }
 
-  // If picker is already open and not forcing reset, reset and continue
-  // This ensures the picker can always be opened when user clicks the button
-  if (isPickerOpen) {
+  // Reject concurrent calls immediately - prevents double-clicks from opening multiple pickers
+  if (isPickerOpen && !forceReset) {
+    logger.warn("Blocked concurrent picker call - picker already in progress");
+    throw new Error(
+      "Folder selection already in progress. Please wait for the current dialog to complete."
+    );
+  }
+  if (isPickerOpen && forceReset) {
     logger.warn("File picker already active, resetting state and opening new picker");
     resetPickerState();
   }
+
+  const existingCollectionId = options?.existingCollectionId;
 
   let attempt = 0;
   while (true) {
@@ -85,9 +102,15 @@ export async function pickLibraryRootWithFSAPI(forceReset: boolean = false): Pro
     // Store handle in IndexedDB and get handleId
     root.handleId = await storeDirectoryHandle(handle);
 
-    // Save library root configuration
-    const { saveLibraryRootLegacy } = await import("./library-selection-root");
-    await saveLibraryRootLegacy(root);
+    if (existingCollectionId) {
+      // Update existing collection's handle (re-select/permission flow) - do not create new collection
+      const { relinkCollectionHandle } = await import("@/db/storage");
+      await relinkCollectionHandle(existingCollectionId, root.handleId!);
+    } else {
+      // Save as new library root collection
+      const { saveLibraryRootLegacy } = await import("./library-selection-root");
+      await saveLibraryRootLegacy(root);
+    }
 
       // Reset flag immediately after successful selection
       isPickerOpen = false;
@@ -115,7 +138,9 @@ export async function pickLibraryRootWithFSAPI(forceReset: boolean = false): Pro
           continue;
         }
         logger.error("Directory picker still active after retries");
-        throw new Error("File picker already active. Please close any open file picker dialogs and try again.");
+        throw new Error(
+          "File picker already active. Please close any open folder picker dialogs (in this or other tabs) and try again."
+        );
       }
 
       logger.error("Directory picker error:", error);

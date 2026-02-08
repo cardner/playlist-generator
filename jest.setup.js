@@ -1,6 +1,28 @@
 // Learn more: https://github.com/testing-library/jest-dom
 import '@testing-library/jest-dom'
 
+// Polyfill TextEncoder/TextDecoder for tests
+if (typeof globalThis.TextEncoder === 'undefined') {
+  const util = require('util');
+  globalThis.TextEncoder = util.TextEncoder;
+  globalThis.TextDecoder = util.TextDecoder;
+}
+
+// Polyfill Web Crypto API for tests
+if (!globalThis.crypto?.subtle) {
+  const crypto = require('crypto');
+  if (!globalThis.crypto) {
+    globalThis.crypto = {};
+  }
+  globalThis.crypto.subtle = {
+    digest: async (algorithm, data) => {
+      const hash = crypto.createHash(algorithm.toLowerCase().replace('-', ''));
+      hash.update(Buffer.from(data));
+      return hash.digest().buffer;
+    }
+  };
+}
+
 // Mock @ffmpeg/ffmpeg - FFmpeg WASM does not run in Jest (browser-only)
 jest.mock('@ffmpeg/ffmpeg', () => ({
   FFmpeg: jest.fn().mockImplementation(function () {

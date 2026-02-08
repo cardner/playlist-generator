@@ -9,6 +9,7 @@ import {
   normalizeAlbum,
   normalizeGenres,
   normalizeYear,
+  normalizeIsrc,
 } from "@/features/library/metadata";
 
 describe("normalizeTitle", () => {
@@ -94,6 +95,68 @@ describe("normalizeYear", () => {
 
   it("should return undefined if not provided", () => {
     expect(normalizeYear(undefined)).toBeUndefined();
+  });
+});
+
+describe("normalizeIsrc", () => {
+  it("should normalize valid ISRC with hyphens", () => {
+    expect(normalizeIsrc("US-ABC-12-34567")).toBe("USABC1234567");
+  });
+
+  it("should normalize valid ISRC without hyphens", () => {
+    expect(normalizeIsrc("USABC1234567")).toBe("USABC1234567");
+  });
+
+  it("should convert to uppercase", () => {
+    expect(normalizeIsrc("us-abc-12-34567")).toBe("USABC1234567");
+    expect(normalizeIsrc("usabc1234567")).toBe("USABC1234567");
+  });
+
+  it("should trim whitespace", () => {
+    expect(normalizeIsrc("  USABC1234567  ")).toBe("USABC1234567");
+    expect(normalizeIsrc("  US-ABC-12-34567  ")).toBe("USABC1234567");
+  });
+
+  it("should return undefined for ISRCs shorter than 12 characters", () => {
+    expect(normalizeIsrc("US-ABC-12")).toBeUndefined(); // 8 chars without hyphens
+    expect(normalizeIsrc("USABC12")).toBeUndefined(); // 7 chars
+    expect(normalizeIsrc("")).toBeUndefined();
+  });
+
+  it("should return undefined for ISRCs longer than 12 characters", () => {
+    expect(normalizeIsrc("USABC12345678")).toBeUndefined(); // 13 chars
+    expect(normalizeIsrc("US-ABC-12-345678")).toBeUndefined(); // 13 chars without hyphens
+  });
+
+  it("should return undefined for ISRCs with invalid characters", () => {
+    expect(normalizeIsrc("US-ABC-12-3456!")).toBeUndefined();
+    expect(normalizeIsrc("US-ABC-12-3456@")).toBeUndefined();
+    expect(normalizeIsrc("US ABC 12 34567")).toBeUndefined(); // spaces don't count as valid
+  });
+
+  it("should return undefined for null or undefined input", () => {
+    expect(normalizeIsrc(undefined)).toBeUndefined();
+    expect(normalizeIsrc(null)).toBeUndefined();
+  });
+
+  it("should handle array input and use first element", () => {
+    expect(normalizeIsrc(["US-ABC-12-34567", "GB-XYZ-11-11111"])).toBe("USABC1234567");
+  });
+
+  it("should return undefined for empty array", () => {
+    expect(normalizeIsrc([])).toBeUndefined();
+  });
+
+  it("should accept alphanumeric ISRCs", () => {
+    expect(normalizeIsrc("GB12A3456789")).toBe("GB12A3456789");
+    expect(normalizeIsrc("US1BC1234567")).toBe("US1BC1234567");
+  });
+
+  it("should validate real-world ISRCs", () => {
+    // Real ISRC examples
+    expect(normalizeIsrc("USRC17607839")).toBe("USRC17607839");
+    expect(normalizeIsrc("GBAYE0601477")).toBe("GBAYE0601477");
+    expect(normalizeIsrc("FRZ039800212")).toBe("FRZ039800212");
   });
 });
 

@@ -12759,6 +12759,16 @@
     }
     return album.trim();
   }
+  function normalizeIsrc(isrc) {
+    if (!isrc) return void 0;
+    const value = Array.isArray(isrc) ? isrc[0] : isrc;
+    if (!value) return void 0;
+    const trimmed = value.trim().toUpperCase();
+    const normalized = trimmed.replace(/-/g, "");
+    if (normalized.length !== 12) return void 0;
+    if (!/^[A-Z0-9]{12}$/.test(normalized)) return void 0;
+    return normalized;
+  }
   function normalizeGenres(genres) {
     if (!genres) {
       return [];
@@ -12878,6 +12888,7 @@
         trackFileId,
         tags,
         tech,
+        isrc: normalizeIsrc(metadata.common.isrc),
         warnings: warnings.length > 0 ? warnings : void 0
       };
       self.postMessage(response);

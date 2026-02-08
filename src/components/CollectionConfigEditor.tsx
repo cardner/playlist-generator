@@ -40,10 +40,10 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X, Save, FolderOpen, AlertCircle, Calendar, HardDrive } from "lucide-react";
 import type { LibraryRootRecord } from "@/db/schema";
-import { updateCollection, relinkCollectionHandle, getAllCollections } from "@/db/storage";
+import { updateCollection, getAllCollections } from "@/db/storage";
 import { pickLibraryRoot } from "@/lib/library-selection";
 import { supportsFileSystemAccess } from "@/lib/feature-detection";
 
@@ -62,6 +62,7 @@ export function CollectionConfigEditor({
   const [isRelinking, setIsRelinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const relinkInProgressRef = useRef(false);
 
   useEffect(() => {
     setName(collection.name);
@@ -90,28 +91,24 @@ export function CollectionConfigEditor({
       return;
     }
 
-    if (isRelinking) {
-      // Prevent multiple simultaneous calls
+    // Ref-based guard: blocks concurrent calls before React re-renders with disabled button
+    if (relinkInProgressRef.current) {
       return;
     }
-
+    relinkInProgressRef.current = true;
     setIsRelinking(true);
     setError(null);
 
     try {
-      // Use pickLibraryRoot instead of directly calling showDirectoryPicker
-      // This ensures we use the same guard logic
-      const root = await pickLibraryRoot();
+      // Use pickLibraryRoot with forceReset and existingCollectionId - updates collection's handle without creating new collection
+      const root = await pickLibraryRoot(true, { existingCollectionId: collection.id });
       
       if (root.mode !== "handle" || !root.handleId) {
         setError("Failed to get directory handle");
         return;
       }
 
-      // Update the collection's handleRef
-      await relinkCollectionHandle(collection.id, root.handleId);
-
-      // Update local state
+      // Update local state (relinkCollectionHandle already called by pickLibraryRoot when existingCollectionId provided)
       const updatedCollection: LibraryRootRecord = {
         ...collection,
         handleRef: root.handleId,
@@ -130,6 +127,7 @@ export function CollectionConfigEditor({
         }
       }
     } finally {
+      relinkInProgressRef.current = false;
       setIsRelinking(false);
     }
   };
