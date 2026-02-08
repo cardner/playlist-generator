@@ -199,14 +199,30 @@ export function normalizeAlbum(album: string | undefined): string {
 /**
  * Normalize ISRC (International Standard Recording Code)
  *
- * Ensures uppercase, trims whitespace, and validates basic length.
+ * ISRCs must be exactly 12 alphanumeric characters in format: CC-XXX-YY-NNNNN
+ * - CC: 2-letter country code
+ * - XXX: 3-character registrant code
+ * - YY: 2-digit year
+ * - NNNNN: 5-digit designation code
+ * 
+ * Hyphens are optional and stripped during normalization.
+ * Returns undefined for invalid ISRCs to prevent incorrect cross-collection matching.
  */
 export function normalizeIsrc(isrc?: string | string[] | null): string | undefined {
   if (!isrc) return undefined;
   const value = Array.isArray(isrc) ? isrc[0] : isrc;
   if (!value) return undefined;
-  const normalized = value.trim().toUpperCase();
-  if (normalized.length < 8) return undefined;
+  
+  // Trim and convert to uppercase first
+  const trimmed = value.trim().toUpperCase();
+  
+  // Remove only hyphens (hyphens are optional in ISRC format)
+  const normalized = trimmed.replace(/-/g, '');
+  
+  // ISRC must be exactly 12 alphanumeric characters
+  if (normalized.length !== 12) return undefined;
+  if (!/^[A-Z0-9]{12}$/.test(normalized)) return undefined;
+  
   return normalized;
 }
 
