@@ -40,12 +40,20 @@ export async function hashFileContent(
 }
 
 /**
- * Compute SHA-256 hash of file content using streaming/chunked approach.
- * This prevents loading entire file into memory at once.
+ * Compute SHA-256 hash of file content using chunked approach.
+ * 
+ * Note: Web Crypto API doesn't support true streaming digests, so we must
+ * read the entire content into memory before hashing. However, reading in
+ * chunks is still beneficial because:
+ * - It yields to the event loop between chunks, keeping UI responsive
+ * - It's more GC-friendly (smaller allocations)
+ * - It allows progress tracking for large files
+ * 
+ * For files exceeding MAX_FULL_HASH_BYTES, we skip hashing entirely.
  * 
  * @param file File to hash
- * @param maxBytes Maximum bytes to hash (default: MAX_FULL_HASH_BYTES)
- * @returns Hex string or undefined if hashing fails or file too large
+ * @param maxBytes Maximum bytes to hash
+ * @returns Hex string or undefined if hashing fails
  */
 async function hashFileContentStreaming(
   file: File,
@@ -57,32 +65,31 @@ async function hashFileContentStreaming(
 
   try {
     const bytesToHash = Math.min(file.size, maxBytes);
-    const chunks: Uint8Array[] = [];
+    const combined = new Uint8Array(bytesToHash);
     let offset = 0;
 
-    // Read file in chunks to avoid loading entire file into memory
+    // Read file in chunks, yielding to event loop between reads
     while (offset < bytesToHash) {
       const chunkSize = Math.min(HASH_CHUNK_SIZE, bytesToHash - offset);
       const slice = file.slice(offset, offset + chunkSize);
       const buffer = await slice.arrayBuffer();
-      chunks.push(new Uint8Array(buffer));
+      const chunk = new Uint8Array(buffer);
+      
+      // Copy chunk into combined buffer
+      combined.set(chunk, offset);
       offset += chunkSize;
-    }
-
-    // Concatenate all chunks for hashing
-    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-    const combined = new Uint8Array(totalLength);
-    let position = 0;
-    for (const chunk of chunks) {
-      combined.set(chunk, position);
-      position += chunk.length;
+      
+      // Yield to event loop to keep UI responsive
+      if (offset < bytesToHash) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
     }
 
     const digest = await globalThis.crypto.subtle.digest("SHA-256", combined);
     const hashArray = Array.from(new Uint8Array(digest));
     return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
   } catch (error) {
-    logger.warn("Failed to compute streaming content hash", error);
+    logger.warn("Failed to compute content hash", error);
     return undefined;
   }
 }

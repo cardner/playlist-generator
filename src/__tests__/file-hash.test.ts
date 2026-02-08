@@ -122,11 +122,78 @@ describe("hashFileContent", () => {
   });
 });
 
-describe("hashFullFileContent integration", () => {
-  // Note: We can't easily test hashFullFileContent directly because it uses
-  // a private function (hashFileContentStreaming), but we verify the behavior
-  // through integration tests in scanning.test.ts and device-sync.test.ts
-  it("should be tested via integration tests", () => {
-    expect(true).toBe(true);
+describe("hashFullFileContent", () => {
+  beforeAll(() => {
+    // Set up crypto mock
+    Object.defineProperty(global, "crypto", {
+      value: mockCrypto,
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Mock digest to return a predictable hash
+    mockCrypto.subtle.digest.mockResolvedValue(
+      new Uint8Array([
+        0x9f, 0x86, 0xd0, 0x81, 0x88, 0x4c, 0x7d, 0x65,
+        0x9a, 0x2f, 0xea, 0xa0, 0xc5, 0x5a, 0xd0, 0x15,
+        0xa3, 0xbf, 0x4f, 0x1b, 0x2b, 0x0b, 0x82, 0x2c,
+        0xd1, 0x5d, 0x6c, 0x15, 0xb0, 0xf0, 0x0a, 0x08,
+      ]).buffer
+    );
+  });
+
+  afterAll(() => {
+    // Clean up
+    delete (global as any).crypto;
+  });
+
+  it("should hash files under MAX_FULL_HASH_BYTES (10MB)", async () => {
+    // Dynamic import to access the function
+    const { hashFullFileContent } = await import("@/lib/file-hash");
+    
+    const file = createMockFile("test.mp3", 5 * 1024 * 1024); // 5MB
+    const hash = await hashFullFileContent(file);
+
+    expect(hash).toBeDefined();
+    expect(typeof hash).toBe("string");
+    expect(hash?.length).toBe(64);
+  });
+
+  it("should return undefined for files exceeding MAX_FULL_HASH_BYTES (10MB)", async () => {
+    const { hashFullFileContent } = await import("@/lib/file-hash");
+    
+    const file = createMockFile("large.mp3", 15 * 1024 * 1024); // 15MB
+    const hash = await hashFullFileContent(file);
+
+    expect(hash).toBeUndefined();
+    // Should not call digest for files that are too large
+    expect(mockCrypto.subtle.digest).not.toHaveBeenCalled();
+  });
+
+  it("should hash exactly MAX_FULL_HASH_BYTES (10MB)", async () => {
+    const { hashFullFileContent } = await import("@/lib/file-hash");
+    
+    const file = createMockFile("exact.mp3", 10 * 1024 * 1024); // Exactly 10MB
+    const hash = await hashFullFileContent(file);
+
+    expect(hash).toBeDefined();
+    expect(mockCrypto.subtle.digest).toHaveBeenCalled();
+  });
+
+  it("should return undefined if crypto is not available", async () => {
+    const originalCrypto = (global as any).crypto;
+    delete (global as any).crypto;
+
+    const { hashFullFileContent } = await import("@/lib/file-hash");
+    const file = createMockFile("test.mp3", 5 * 1024 * 1024);
+    const hash = await hashFullFileContent(file);
+
+    expect(hash).toBeUndefined();
+
+    // Restore crypto
+    (global as any).crypto = originalCrypto;
   });
 });
