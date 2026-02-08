@@ -13,6 +13,7 @@ module.exports = [
       "next-env.d.ts",
       "public/ffmpeg/**",
       "public/ipod/**",
+      "public/metadataWorker.js",
       "node_modules/**",
       "coverage/**",
     ],
