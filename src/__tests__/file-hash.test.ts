@@ -196,4 +196,31 @@ describe("hashFullFileContent", () => {
     // Restore crypto
     (global as any).crypto = originalCrypto;
   });
+
+  it("should read files in chunks", async () => {
+    const { hashFullFileContent } = await import("@/lib/file-hash");
+    
+    // Create a 3MB file (should be read in 3 chunks of 1MB each)
+    const fileSize = 3 * 1024 * 1024;
+    const file = createMockFile("chunked.mp3", fileSize);
+    
+    // Spy on file.slice to verify chunking
+    const sliceSpy = jest.spyOn(file, "slice");
+    
+    await hashFullFileContent(file);
+
+    // Should have called slice multiple times (once per chunk)
+    expect(sliceSpy).toHaveBeenCalled();
+    const callCount = sliceSpy.mock.calls.length;
+    
+    // With 1MB chunks and a 3MB file, we expect 3 slice calls
+    expect(callCount).toBe(3);
+    
+    // Verify the slice calls are for 1MB chunks
+    expect(sliceSpy).toHaveBeenNthCalledWith(1, 0, 1024 * 1024);
+    expect(sliceSpy).toHaveBeenNthCalledWith(2, 1024 * 1024, 2 * 1024 * 1024);
+    expect(sliceSpy).toHaveBeenNthCalledWith(3, 2 * 1024 * 1024, 3 * 1024 * 1024);
+    
+    sliceSpy.mockRestore();
+  });
 });

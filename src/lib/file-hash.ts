@@ -97,7 +97,7 @@ async function hashFileContentStreaming(
 /**
  * Compute SHA-256 hash of entire file content.
  * Falls back to undefined if file exceeds MAX_FULL_HASH_BYTES.
- * Uses streaming approach to prevent loading entire file into memory.
+ * Uses chunked reading to keep UI responsive while still loading full content for hashing.
  */
 export async function hashFullFileContent(
   file: File
