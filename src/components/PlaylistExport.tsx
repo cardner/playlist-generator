@@ -67,6 +67,7 @@ import { validatePlaylistPaths } from "@/features/playlists/path-validation";
 import { getAllTracks, getCurrentCollectionId, getCollection } from "@/db/storage";
 import { getFileIndexEntries } from "@/db/storage";
 import { db } from "@/db/schema";
+import type { LibraryRootRecord, FileIndexRecord } from "@/db/schema";
 import { hasRelativePaths } from "@/features/library/relink";
 import { findFileIndexByGlobalTrackId } from "@/features/library/track-identity";
 import { RelinkLibraryRoot } from "./RelinkLibraryRoot";

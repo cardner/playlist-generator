@@ -25,7 +25,7 @@ import {
   relinkCollectionHandle,
 } from "@/db/storage";
 import { db } from "@/db/schema";
-import type { DeviceProfileRecord } from "@/db/schema";
+import type { DeviceProfileRecord, FileIndexRecord } from "@/db/schema";
 import { supportsFileSystemAccess, supportsWebUSB } from "@/lib/feature-detection";
 import {
   getDeviceProfiles,
@@ -681,7 +681,7 @@ export function DeviceSyncPanel({
     }
 
     const trackLookups: TrackLookup[] = [];
-    const globalIndexCache = new Map<string, any>();
+    const globalIndexCache = new Map<string, FileIndexRecord | null>();
     for (const trackFileId of trackFileIds) {
       const track = allTracks.find((t) => t.trackFileId === trackFileId);
       if (!track) continue;
@@ -785,7 +785,7 @@ export function DeviceSyncPanel({
 
     const lookupMap = new Map(allTracks.map((track) => [track.trackFileId, track]));
     const trackLookups: TrackLookup[] = [];
-    const globalIndexCache = new Map<string, any>();
+    const globalIndexCache = new Map<string, FileIndexRecord | null>();
     for (const trackFileId of trackFileIds) {
       const track = lookupMap.get(trackFileId);
       if (!track) continue;
