@@ -80,6 +80,10 @@ jest.mock("@/features/library/scanning-persist", () => ({
   scanLibraryWithPersistence: jest.fn(async () => null),
 }));
 
+jest.mock("@/features/library/track-identity", () => ({
+  findFileIndexByGlobalTrackId: jest.fn(async () => undefined),
+}));
+
 jest.mock("@/components/Modal", () => ({
   Modal: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));

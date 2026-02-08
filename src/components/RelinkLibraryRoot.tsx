@@ -45,7 +45,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { relinkLibraryRoot, type RelinkProgress } from "@/features/library/relink";
 import { FolderOpen, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -63,6 +63,7 @@ export function RelinkLibraryRoot({
   onError,
 }: RelinkLibraryRootProps) {
   const [isRelinking, setIsRelinking] = useState(false);
+  const relinkInProgressRef = useRef(false);
   const [progress, setProgress] = useState<RelinkProgress | null>(null);
   const [result, setResult] = useState<{
     success: boolean;
@@ -73,6 +74,8 @@ export function RelinkLibraryRoot({
   } | null>(null);
 
   async function handleRelink() {
+    if (relinkInProgressRef.current) return;
+    relinkInProgressRef.current = true;
     setIsRelinking(true);
     setProgress(null);
     setResult(null);
@@ -106,6 +109,7 @@ export function RelinkLibraryRoot({
       // Notify parent of error
       onError?.();
     } finally {
+      relinkInProgressRef.current = false;
       setIsRelinking(false);
     }
   }

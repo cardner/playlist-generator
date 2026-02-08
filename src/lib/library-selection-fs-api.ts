@@ -58,9 +58,14 @@ export async function pickLibraryRootWithFSAPI(forceReset: boolean = false): Pro
     resetPickerState();
   }
 
-  // If picker is already open and not forcing reset, reset and continue
-  // This ensures the picker can always be opened when user clicks the button
-  if (isPickerOpen) {
+  // Reject concurrent calls immediately - prevents double-clicks from opening multiple pickers
+  if (isPickerOpen && !forceReset) {
+    logger.warn("Blocked concurrent picker call - picker already in progress");
+    throw new Error(
+      "Folder selection already in progress. Please wait for the current dialog to complete."
+    );
+  }
+  if (isPickerOpen && forceReset) {
     logger.warn("File picker already active, resetting state and opening new picker");
     resetPickerState();
   }
@@ -115,7 +120,9 @@ export async function pickLibraryRootWithFSAPI(forceReset: boolean = false): Pro
           continue;
         }
         logger.error("Directory picker still active after retries");
-        throw new Error("File picker already active. Please close any open file picker dialogs and try again.");
+        throw new Error(
+          "File picker already active. Please close any open folder picker dialogs (in this or other tabs) and try again."
+        );
       }
 
       logger.error("Directory picker error:", error);

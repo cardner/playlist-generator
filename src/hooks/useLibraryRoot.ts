@@ -60,6 +60,8 @@ export interface UseLibraryRootReturn {
   hasRelativePathsCheck: boolean | null;
   /** Select a new folder */
   handleChooseFolder: () => Promise<void>;
+  /** Re-select folder (force reset, for permission flow) */
+  handleReSelectFolder: () => Promise<void>;
   /** Load saved library root */
   loadSavedLibrary: () => Promise<void>;
   /** Clear error */
@@ -125,56 +127,77 @@ export function useLibraryRoot(
   }, []);
 
   /**
+   * Shared logic for folder selection - used by both handleChooseFolder and handleReSelectFolder
+   */
+  const selectFolder = useCallback(
+    async (forceReset: boolean) => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const root = await pickLibraryRoot(forceReset);
+
+        // Update local state first
+        setCurrentRoot(root);
+
+        // Notify parent immediately so UI updates
+        onLibrarySelected?.(root);
+
+        // Get root ID from database after saving (with small delay to ensure save completes)
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const rootRecord = await getCurrentLibraryRoot();
+        if (rootRecord) {
+          setCurrentRootId(rootRecord.id);
+
+          // Check if there's data to relink
+          const tracks = await getTracks(rootRecord.id);
+          const fileIndex = await getFileIndexEntries(rootRecord.id);
+          setCanRelink(tracks.length > 0 || fileIndex.length > 0);
+
+          // Check if scan has completed
+          const scanRuns = await getScanRuns(rootRecord.id);
+          const completedScan = scanRuns.some(
+            (run) => run.finishedAt && run.total > 0
+          );
+          setHasCompletedScan(completedScan);
+
+          if (completedScan) {
+            const hasPaths = await hasRelativePaths(rootRecord.id);
+            setHasRelativePathsCheck(hasPaths);
+          } else {
+            setHasRelativePathsCheck(null);
+          }
+        }
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : "Failed to select folder";
+        if (errorMessage !== "Folder selection cancelled") {
+          setError(errorMessage);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [onLibrarySelected]
+  );
+
+  /**
    * Select a new folder
    */
   const handleChooseFolder = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+    await selectFolder(false);
+  }, [selectFolder]);
 
+  /**
+   * Re-select folder (force reset picker state) - for permission flow when user needs fresh handle
+   */
+  const handleReSelectFolder = useCallback(async () => {
     try {
-      const root = await pickLibraryRoot();
-
-      // Update local state first
-      setCurrentRoot(root);
-
-      // Notify parent immediately so UI updates
-      onLibrarySelected?.(root);
-
-      // Get root ID from database after saving (with small delay to ensure save completes)
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      const rootRecord = await getCurrentLibraryRoot();
-      if (rootRecord) {
-        setCurrentRootId(rootRecord.id);
-
-        // Check if there's data to relink
-        const tracks = await getTracks(rootRecord.id);
-        const fileIndex = await getFileIndexEntries(rootRecord.id);
-        setCanRelink(tracks.length > 0 || fileIndex.length > 0);
-
-        // Check if scan has completed
-        const scanRuns = await getScanRuns(rootRecord.id);
-        const completedScan = scanRuns.some(
-          (run) => run.finishedAt && run.total > 0
-        );
-        setHasCompletedScan(completedScan);
-
-        if (completedScan) {
-          const hasPaths = await hasRelativePaths(rootRecord.id);
-          setHasRelativePathsCheck(hasPaths);
-        } else {
-          setHasRelativePathsCheck(null);
-        }
-      }
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to select folder";
-      if (errorMessage !== "Folder selection cancelled") {
-        setError(errorMessage);
-      }
-    } finally {
-      setIsLoading(false);
+      await selectFolder(true);
+    } catch {
+      // User cancelled or error - already handled in selectFolder
     }
-  }, [onLibrarySelected]);
+  }, [selectFolder]);
 
   /**
    * Clear error
@@ -199,6 +222,7 @@ export function useLibraryRoot(
     hasCompletedScan,
     hasRelativePathsCheck,
     handleChooseFolder,
+    handleReSelectFolder,
     loadSavedLibrary,
     clearError,
   };

@@ -8,7 +8,7 @@ import { getDirectoryHandle } from "@/lib/library-selection-fs-api";
 import type { TrackRecord } from "@/db/schema";
 import type { FileIndexRecord } from "@/db/schema";
 import { getCompositeId } from "@/db/schema";
-import { hashFileContent } from "@/lib/file-hash";
+import { hashFileContent, hashFullFileContent } from "@/lib/file-hash";
 
 function sanitizeForPath(s: string): string {
   return s
@@ -78,6 +78,7 @@ export async function tryLazyFileIndex(
     const result = await tryGetFileAtPath(handle, path);
     if (result) {
       const contentHash = await hashFileContent(result.file, 256 * 1024);
+      const fullContentHash = await hashFullFileContent(result.file);
       const ext = result.file.name.split(".").pop()?.toLowerCase() ?? "mp3";
       return {
         id: getCompositeId(track.trackFileId, libraryRootId),
@@ -89,6 +90,7 @@ export async function tryLazyFileIndex(
         size: result.file.size,
         mtime: result.file.lastModified,
         contentHash,
+        fullContentHash,
         updatedAt: Date.now(),
       };
     }

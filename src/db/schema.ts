@@ -149,6 +149,8 @@ export interface FileIndexRecord {
   mtime: number;
   /** Optional content hash (SHA-256 of first 256KB) for device path matching */
   contentHash?: string;
+  /** Optional full content hash (SHA-256 of entire file) for cross-collection matching */
+  fullContentHash?: string;
   /** Timestamp when this record was last updated (Unix epoch milliseconds) */
   updatedAt: number;
 }
@@ -218,6 +220,21 @@ export interface TrackRecord {
   linkedLocalTrackId?: string;
   /** MusicBrainz recording MBID */
   musicbrainzId?: string;
+  /** ISRC (International Standard Recording Code) */
+  isrc?: string;
+  /** Global track identifier for cross-collection matching */
+  globalTrackId?: string;
+  /** Source of the global track identifier */
+  globalTrackSource?:
+    | "musicbrainz"
+    | "isrc"
+    | "full-hash"
+    | "partial-hash"
+    | "metadata";
+  /** Confidence score for the global identifier (0-1) */
+  globalTrackConfidence?: number;
+  /** Metadata fingerprint hash used for fallback matching */
+  metadataFingerprint?: string;
   /** Enhanced metadata from MusicBrainz API and audio analysis */
   enhancedMetadata?: EnhancedMetadata;
   /** Timestamp of last metadata enhancement (Unix epoch milliseconds) */
@@ -562,6 +579,8 @@ export interface DeviceFileIndexRecord {
   relativePath: string;
   /** Optional content hash for improved reliability */
   contentHash?: string;
+  /** Optional full content hash for improved reliability */
+  fullContentHash?: string;
   /** Original filename */
   name: string;
   /** File size in bytes */
@@ -723,6 +742,7 @@ export interface SavedPlaylistRecord {
  * - Version 10: Added processing checkpoints for metadata parsing
  * - Version 11: Added metadata writeback status and checkpoints
  * - Version 12: Added device file index cache + device profile fields
+ * - Version 13: Added global track identifiers and full content hashes
  * 
  * @example
  * ```typescript
@@ -1033,6 +1053,24 @@ export class AppDatabase extends Dexie {
       deviceProfiles: "id, createdAt, updatedAt",
       deviceSyncManifests: "id, deviceId, playlistId, lastSyncedAt",
       deviceFileIndex: "id, deviceId, matchKey, contentHash, updatedAt",
+    });
+
+    // Version 13: Add global track identifiers and full content hashes
+    this.version(13).stores({
+      libraryRoots: "id, createdAt",
+      fileIndex: "id, trackFileId, libraryRootId, name, extension, fullContentHash, contentHash, updatedAt",
+      tracks: "id, trackFileId, libraryRootId, globalTrackId, isrc, updatedAt",
+      scanRuns: "id, libraryRootId, startedAt",
+      settings: "key",
+      directoryHandles: "id",
+      savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
+      scanCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+      processingCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+      trackWritebacks: "id, libraryRootId, pending, updatedAt",
+      writebackCheckpoints: "id, writebackRunId, libraryRootId, checkpointAt",
+      deviceProfiles: "id, createdAt, updatedAt",
+      deviceSyncManifests: "id, deviceId, playlistId, lastSyncedAt",
+      deviceFileIndex: "id, deviceId, matchKey, contentHash, fullContentHash, updatedAt",
     });
   }
 }

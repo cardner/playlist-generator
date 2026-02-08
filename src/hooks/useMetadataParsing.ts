@@ -411,6 +411,13 @@ export function useMetadataParsing(
             onProcessingProgressRef.current?.();
 
             await applySidecarEnhancements(libraryRootId, sidecarMap);
+            const { resolveTrackIdentitiesForTrackFileIds } = await import(
+              "@/features/library/track-identity"
+            );
+            await resolveTrackIdentitiesForTrackFileIds(
+              libraryRootId,
+              results.map((result) => result.trackFileId)
+            );
 
             // Verify data was saved successfully
             const { getTracks } = await import("@/db/storage");

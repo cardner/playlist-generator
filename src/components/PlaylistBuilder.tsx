@@ -70,6 +70,7 @@ import {
 import { cn } from "@/lib/utils";
 import { AgentSelector } from "./AgentSelector";
 import { ChipInput } from "./ChipInput";
+import { LibrarySearchCombo } from "./LibrarySearchCombo";
 import type { AgentType, LLMConfig } from "@/types/playlist";
 import { logger } from "@/lib/logger";
 import { usePlaylistForm } from "@/hooks/usePlaylistForm";
@@ -651,97 +652,64 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
         </div>
       </div>
 
-      {/* Disallowed Artists */}
-      <div>
-        <label className="flex items-center gap-2 text-app-primary mb-3">
-          <UserX className="size-5 text-accent-primary" />
-          <span className="font-medium uppercase tracking-wider text-sm">
-            Exclude Artists
-          </span>
-        </label>
-        <p className="text-app-secondary text-sm mb-3">
-          Artists to exclude from this playlist (optional)
-        </p>
-        <ChipInput
-          values={formData.disallowedArtists || []}
-          onChange={(values) =>
-            setFormData({ ...formData, disallowedArtists: values })
-          }
-          placeholder="Add artist to exclude..."
-          onSearch={handleSearchArtists}
-          icon={<UserX className="size-4" />}
-        />
-      </div>
-
-      {/* Suggested Artists */}
+      {/* Include & Exclude - side by side */}
       <div>
         <label className="flex items-center gap-2 text-app-primary mb-3">
           <Music className="size-5 text-accent-primary" />
           <span className="font-medium uppercase tracking-wider text-sm">
-            Include Artists
+            Include & Exclude
           </span>
         </label>
         <p className="text-app-secondary text-sm mb-3">
-          Artists to prioritize/include in this playlist (optional)
+          Artists, albums, or tracks to prioritize or exclude from this playlist (optional)
         </p>
-        <ChipInput
-          values={formData.suggestedArtists || []}
-          onChange={(values) =>
-            setFormData({ ...formData, suggestedArtists: values })
-          }
-          placeholder="Add artist to include..."
-          onSearch={handleSearchArtists}
-          icon={<Music className="size-4" />}
-        />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-app-secondary text-xs font-medium mb-1.5">
+              Include (prioritize)
+            </label>
+            <LibrarySearchCombo
+              filters={[
+                ...(formData.suggestedArtists || []).map((v) => ({ type: "artist" as const, value: v })),
+                ...(formData.suggestedAlbums || []).map((v) => ({ type: "album" as const, value: v })),
+                ...(formData.suggestedTracks || []).map((v) => ({ type: "title" as const, value: v })),
+              ]}
+              onChange={(f) => {
+                setFormData({
+                  ...formData,
+                  suggestedArtists: f.filter((x) => x.type === "artist").map((x) => x.value),
+                  suggestedAlbums: f.filter((x) => x.type === "album").map((x) => x.value),
+                  suggestedTracks: f.filter((x) => x.type === "title").map((x) => x.value),
+                });
+              }}
+              allowedTypes={["artist", "album", "title"]}
+              onSearchByType={{
+                artist: handleSearchArtists,
+                album: handleSearchAlbums,
+                title: handleSearchTracks,
+              }}
+              placeholder="Search artists, albums, tracks…"
+            />
+          </div>
+          <div>
+            <label className="block text-app-secondary text-xs font-medium mb-1.5">
+              Exclude
+            </label>
+            <LibrarySearchCombo
+              filters={(formData.disallowedArtists || []).map((v) => ({ type: "artist" as const, value: v }))}
+              onChange={(f) =>
+                setFormData({
+                  ...formData,
+                  disallowedArtists: f.map((x) => x.value),
+                })
+              }
+              allowedTypes={["artist"]}
+              onSearchByType={{ artist: handleSearchArtists }}
+              placeholder="Search artists to exclude…"
+            />
+          </div>
+        </div>
       </div>
-
-      {/* Suggested Albums - Shown in library mode only */}
-      {!discoveryMode && (
-        <div>
-          <label className="flex items-center gap-2 text-app-primary mb-3">
-            <Music className="size-5 text-accent-primary" />
-            <span className="font-medium uppercase tracking-wider text-sm">
-              Include Albums
-            </span>
-          </label>
-          <p className="text-app-secondary text-sm mb-3">
-            Albums to prioritize/include in this playlist (optional)
-          </p>
-          <ChipInput
-            values={formData.suggestedAlbums || []}
-            onChange={(values) =>
-              setFormData({ ...formData, suggestedAlbums: values })
-            }
-            placeholder="Add album to include..."
-            onSearch={handleSearchAlbums}
-            icon={<Music className="size-4" />}
-          />
-        </div>
-      )}
-
-      {/* Suggested Tracks - Shown in library mode only */}
-      {!discoveryMode && (
-        <div>
-          <label className="flex items-center gap-2 text-app-primary mb-3">
-            <Music className="size-5 text-accent-primary" />
-            <span className="font-medium uppercase tracking-wider text-sm">
-              Include Tracks
-            </span>
-          </label>
-          <p className="text-app-secondary text-sm mb-3">
-            Specific tracks to include in this playlist (optional)
-          </p>
-          <ChipInput
-            values={formData.suggestedTracks || []}
-            onChange={(values) =>
-              setFormData({ ...formData, suggestedTracks: values })
-            }
-            placeholder="Add track name to include..."
-            onSearch={handleSearchTracks}
-            icon={<Music className="size-4" />}
-          />
-        </div>
-      )}
 
       {/* Artist Variety */}
       <div>
@@ -791,78 +759,6 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
           )}
         </div>
       </div>
-
-      {/* Suggested Artists - Prominent in discovery mode, shown right after genres */}
-      {discoveryMode && (
-        <div>
-          <label className="flex items-center gap-2 text-app-primary mb-3">
-            <Users className="size-5 text-accent-primary" />
-            <span className="font-medium uppercase tracking-wider text-sm">
-              Select Artists from Your Collection
-            </span>
-          </label>
-          <p className="text-app-secondary text-sm mb-3">
-            Choose artists from your collection. We&apos;ll discover new tracks similar to these artists that aren&apos;t in your library.
-          </p>
-          <ChipInput
-            values={formData.suggestedArtists || []}
-            onChange={(values) =>
-              setFormData({ ...formData, suggestedArtists: values })
-            }
-            placeholder="Select artists from your collection..."
-            onSearch={handleSearchArtists}
-            icon={<Users className="size-4" />}
-          />
-        </div>
-      )}
-
-      {/* Suggested Albums - Prominent in discovery mode, shown right after genres */}
-      {discoveryMode && (
-        <div>
-          <label className="flex items-center gap-2 text-app-primary mb-3">
-            <Music className="size-5 text-accent-primary" />
-            <span className="font-medium uppercase tracking-wider text-sm">
-              Select Albums from Your Collection
-            </span>
-          </label>
-          <p className="text-app-secondary text-sm mb-3">
-            Choose albums from your collection. We&apos;ll discover new tracks similar to these albums that aren&apos;t in your library.
-          </p>
-          <ChipInput
-            values={formData.suggestedAlbums || []}
-            onChange={(values) =>
-              setFormData({ ...formData, suggestedAlbums: values })
-            }
-            placeholder="Select albums from your collection..."
-            onSearch={handleSearchAlbums}
-            icon={<Music className="size-4" />}
-          />
-        </div>
-      )}
-
-      {/* Suggested Tracks - Prominent in discovery mode, shown right after genres/albums */}
-      {discoveryMode && (
-        <div>
-          <label className="flex items-center gap-2 text-app-primary mb-3">
-            <Music className="size-5 text-accent-primary" />
-            <span className="font-medium uppercase tracking-wider text-sm">
-              Select Tracks from Your Collection
-            </span>
-          </label>
-          <p className="text-app-secondary text-sm mb-3">
-            Choose specific tracks from your collection. We&apos;ll discover new tracks similar to these that aren&apos;t in your library, with explanations of how they relate.
-          </p>
-          <ChipInput
-            values={formData.suggestedTracks || []}
-            onChange={(values) =>
-              setFormData({ ...formData, suggestedTracks: values })
-            }
-            placeholder="Select tracks from your collection..."
-            onSearch={handleSearchTracks}
-            icon={<Music className="size-4" />}
-          />
-        </div>
-      )}
 
       {/* Agent Selection */}
       <div>

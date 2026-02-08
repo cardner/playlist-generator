@@ -16,6 +16,7 @@ import {
   readSidecarMetadataForTracks,
 } from "./metadata-sidecar";
 import { logger } from "@/lib/logger";
+import { resolveTrackIdentitiesForTrackFileIds } from "./track-identity";
 
 export interface BatchedParseOptions {
   batchSize?: number; // Files per batch (default: 500)
@@ -151,6 +152,10 @@ export async function parseMetadataBatched(
           totalSaved += batchSuccessCount;
 
           await applySidecarEnhancements(libraryRootId, sidecarMap);
+          await resolveTrackIdentitiesForTrackFileIds(
+            libraryRootId,
+            results.map((result) => result.trackFileId)
+          );
 
           onProgress?.({
             batch: batchNumber,

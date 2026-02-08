@@ -11,6 +11,10 @@ import { db, getCompositeId } from "@/db/schema";
 import type { TrackRecord } from "@/db/schema";
 import type { SpotifyTrack } from "./types";
 import { logger } from "@/lib/logger";
+import {
+  buildMetadataFingerprint,
+  resolveGlobalTrackIdentity,
+} from "@/features/library/track-identity-utils";
 
 /**
  * Convert Spotify track to TrackRecord format
@@ -36,6 +40,23 @@ export function spotifyTrackToRecord(
     durationSeconds = Math.floor(spotifyTrack.duration / 1000);
   }
 
+  const metadataFingerprint = buildMetadataFingerprint(
+    {
+      title: spotifyTrack.track,
+      artist: spotifyTrack.artist,
+      album: spotifyTrack.album || "",
+      genres: [],
+      year: undefined,
+      trackNo: undefined,
+      discNo: undefined,
+    },
+    durationSeconds ? { durationSeconds } : undefined
+  );
+  const identity = resolveGlobalTrackIdentity(
+    { musicbrainzId: undefined, isrc: undefined, metadataFingerprint },
+    undefined
+  );
+
   return {
     id,
     trackFileId,
@@ -57,6 +78,10 @@ export function spotifyTrackToRecord(
       : undefined,
     source: "spotify",
     spotifyUri: spotifyTrack.uri,
+    metadataFingerprint,
+    globalTrackId: identity.globalTrackId,
+    globalTrackSource: identity.globalTrackSource,
+    globalTrackConfidence: identity.globalTrackConfidence,
     updatedAt: now,
   };
 }

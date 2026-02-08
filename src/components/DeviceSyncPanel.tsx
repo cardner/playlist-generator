@@ -69,6 +69,7 @@ import { logger } from "@/lib/logger";
 import { Modal } from "@/components/Modal";
 import { Usb, HardDrive, Loader2 } from "lucide-react";
 import { scanLibraryWithPersistence } from "@/features/library/scanning-persist";
+import { findFileIndexByGlobalTrackId } from "@/features/library/track-identity";
 
 interface PlaylistItem {
   playlist: GeneratedPlaylist;
@@ -680,12 +681,22 @@ export function DeviceSyncPanel({
     }
 
     const trackLookups: TrackLookup[] = [];
+    const globalIndexCache = new Map<string, any>();
     for (const trackFileId of trackFileIds) {
       const track = allTracks.find((t) => t.trackFileId === trackFileId);
       if (!track) continue;
       let fileIndex = fileIndexEntries.get(trackFileId);
       if (!fileIndex && track.libraryRootId) {
         fileIndex = await getFileIndexEntry(trackFileId, track.libraryRootId);
+        if (fileIndex) {
+          fileIndexEntries.set(trackFileId, fileIndex);
+        }
+      }
+      if (!fileIndex && track.globalTrackId) {
+        fileIndex = await findFileIndexByGlobalTrackId(track.globalTrackId, {
+          preferredRootId: rootId ?? track.libraryRootId,
+          cache: globalIndexCache,
+        });
         if (fileIndex) {
           fileIndexEntries.set(trackFileId, fileIndex);
         }
@@ -774,12 +785,22 @@ export function DeviceSyncPanel({
 
     const lookupMap = new Map(allTracks.map((track) => [track.trackFileId, track]));
     const trackLookups: TrackLookup[] = [];
+    const globalIndexCache = new Map<string, any>();
     for (const trackFileId of trackFileIds) {
       const track = lookupMap.get(trackFileId);
       if (!track) continue;
       let fileIndex = fileIndexEntries.get(trackFileId);
       if (!fileIndex && track.libraryRootId) {
         fileIndex = await getFileIndexEntry(trackFileId, track.libraryRootId);
+        if (fileIndex) {
+          fileIndexEntries.set(trackFileId, fileIndex);
+        }
+      }
+      if (!fileIndex && track.globalTrackId) {
+        fileIndex = await findFileIndexByGlobalTrackId(track.globalTrackId, {
+          preferredRootId: rootId ?? track.libraryRootId,
+          cache: globalIndexCache,
+        });
         if (fileIndex) {
           fileIndexEntries.set(trackFileId, fileIndex);
         }
@@ -845,9 +866,10 @@ export function DeviceSyncPanel({
 
   function buildTargetKeyMap(
     targetsWithLookups: Array<{ trackLookups: TrackLookup[] }>
-  ): { keyMap: Map<string, Set<string>>; trackCount: number } {
+  ): { keyMap: Map<string, Set<string>>; trackCount: number; hasFullHash: boolean } {
     const keyMap = new Map<string, Set<string>>();
     const trackIds = new Set<string>();
+    let hasFullHash = false;
     for (const target of targetsWithLookups) {
       for (const lookup of target.trackLookups) {
         const fileIndex = lookup.fileIndex;
@@ -857,6 +879,10 @@ export function DeviceSyncPanel({
           size: fileIndex.size,
           mtime: fileIndex.mtime,
         });
+        if (fileIndex.fullContentHash) {
+          candidates.push(fileIndex.fullContentHash);
+          hasFullHash = true;
+        }
         if (fileIndex.contentHash) {
           candidates.push(fileIndex.contentHash);
         }
@@ -872,7 +898,7 @@ export function DeviceSyncPanel({
         }
       }
     }
-    return { keyMap, trackCount: trackIds.size };
+    return { keyMap, trackCount: trackIds.size, hasFullHash };
   }
 
   function resolveLibraryRoot(recordId?: string): Promise<LibraryRoot | null> {
@@ -1333,7 +1359,7 @@ export function DeviceSyncPanel({
           "Walkman sync works best with device path detection. Enable device scan if paths fail."
         );
       }
-      const { keyMap: targetKeyMap, trackCount: targetTrackCount } =
+      const { keyMap: targetKeyMap, trackCount: targetTrackCount, hasFullHash } =
         buildTargetKeyMap(scanTargets);
 
       let activeDevicePathMap = devicePathMap;
@@ -1351,6 +1377,7 @@ export function DeviceSyncPanel({
               preview: false,
               targetKeyMap,
               targetTrackCount,
+              computeFullContentHash: hasFullHash,
             });
             activeDevicePathMap = scanResult.map;
             activeDeviceEntries = scanResult.entries;
@@ -1373,6 +1400,7 @@ export function DeviceSyncPanel({
                 preview: false,
                 targetKeyMap,
                 targetTrackCount,
+                computeFullContentHash: hasFullHash,
               });
               activeDevicePathMap = scanResult.map;
               activeDeviceEntries = scanResult.entries;
@@ -1660,6 +1688,7 @@ export function DeviceSyncPanel({
     preview: boolean;
     targetKeyMap?: Map<string, Set<string>>;
     targetTrackCount?: number;
+    computeFullContentHash?: boolean;
   }): Promise<{ map: Map<string, string>; entries: DeviceScanEntry[] }> {
     if (!deviceHandleRef) {
       throw new Error("Select a device folder before scanning");
@@ -1679,6 +1708,7 @@ export function DeviceSyncPanel({
       onProgress: (progress) => setDeviceScanProgress(progress),
       includePaths: includePaths.length > 0 ? includePaths : undefined,
       computeContentHash: true,
+      computeFullContentHash: options.computeFullContentHash,
       targetKeyMap: options.targetKeyMap,
       targetTrackCount: options.targetTrackCount,
     });
@@ -1694,6 +1724,7 @@ export function DeviceSyncPanel({
         matchKey: entry.matchKey,
         relativePath: entry.relativePath,
         contentHash: entry.contentHash,
+        fullContentHash: entry.fullContentHash,
         name: entry.name,
         size: entry.size,
         mtime: entry.mtime,
@@ -1885,7 +1916,7 @@ export function DeviceSyncPanel({
                 "Rescan your library to improve device path detection."
         );
       }
-      const { keyMap: targetKeyMap, trackCount: targetTrackCount } =
+      const { keyMap: targetKeyMap, trackCount: targetTrackCount, hasFullHash } =
         buildTargetKeyMap(normalizedTargets);
       if (targetTrackCount === 0) {
         setSyncWarning(
@@ -1899,6 +1930,7 @@ export function DeviceSyncPanel({
         preview: true,
         targetKeyMap,
         targetTrackCount,
+        computeFullContentHash: hasFullHash,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to scan device paths";

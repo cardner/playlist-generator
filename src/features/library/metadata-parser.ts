@@ -16,6 +16,7 @@ import {
   normalizeYear,
   normalizeTrackNo,
   normalizeDiscNo,
+  normalizeIsrc,
   extractCodecInfo,
 } from "./metadata";
 import { detectTempoWithConfidence } from "./audio-analysis";
@@ -197,6 +198,7 @@ async function parseSingleFileMainThread(file: LibraryFile): Promise<MetadataRes
       trackFileId: file.trackFileId,
       tags,
       tech,
+      isrc: normalizeIsrc(metadata.common.isrc),
       warnings: warnings.length > 0 ? warnings : undefined,
     };
   } catch (error) {

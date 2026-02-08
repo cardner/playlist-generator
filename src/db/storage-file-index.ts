@@ -44,6 +44,7 @@ export async function saveFileIndexEntries(
     size: entry.size,
     mtime: entry.mtime,
     contentHash: entry.contentHash,
+    fullContentHash: entry.fullContentHash,
     updatedAt: now,
   }));
 

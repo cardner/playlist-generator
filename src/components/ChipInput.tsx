@@ -70,6 +70,8 @@ export interface ChipInputProps {
   maxResults?: number;
   /** Debounce delay in milliseconds (default: 300) */
   debounceDelay?: number;
+  /** Compact size for toolbar/inline use */
+  compact?: boolean;
 }
 
 export function ChipInput({
@@ -85,6 +87,7 @@ export function ChipInput({
   minSearchLength = 2,
   maxResults = 50,
   debounceDelay = 300,
+  compact = false,
 }: ChipInputProps) {
   const [inputValue, setInputValue] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -199,13 +202,23 @@ export function ChipInput({
   );
 
   return (
-    <div className="space-y-2">
+    <div className={compact ? "space-y-1" : "space-y-2"}>
       <div className="relative">
-        <div className="flex flex-wrap gap-2 p-3 bg-app-hover rounded-sm border border-app-border min-h-[48px] focus-within:border-accent-primary">
+        <div
+          className={`flex flex-wrap gap-1.5 bg-app-hover rounded-sm border border-app-border focus-within:border-accent-primary ${
+            compact
+              ? "p-1.5 min-h-[32px]"
+              : "p-3 min-h-[48px] gap-2"
+          }`}
+        >
           {values.map((value) => (
             <span
               key={value}
-              className="inline-flex items-center gap-1.5 px-3 py-1 bg-app-surface text-app-primary rounded-sm text-sm border border-app-border"
+              className={`inline-flex items-center gap-1 bg-app-surface text-app-primary rounded-sm border border-app-border ${
+                compact
+                  ? "px-2 py-0.5 text-xs"
+                  : "px-3 py-1 text-sm gap-1.5"
+              }`}
             >
               {value}
               <button
@@ -213,7 +226,7 @@ export function ChipInput({
                 onClick={() => handleRemove(value)}
                 className="hover:text-red-500 transition-colors"
               >
-                <X className="size-3" />
+                <X className={compact ? "size-2.5" : "size-3"} />
               </button>
             </span>
           ))}
@@ -228,7 +241,9 @@ export function ChipInput({
             onFocus={() => setShowSuggestions(true)}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
             placeholder={values.length === 0 ? placeholder : ""}
-            className="flex-1 min-w-[120px] bg-transparent text-app-primary placeholder-app-tertiary outline-none"
+            className={`flex-1 bg-transparent text-app-primary placeholder-app-tertiary outline-none ${
+              compact ? "min-w-[80px] text-sm" : "min-w-[120px]"
+            }`}
           />
         </div>
         {shouldShowSuggestions && (

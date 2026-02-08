@@ -19,6 +19,7 @@ import {
   normalizeYear,
   normalizeTrackNo,
   normalizeDiscNo,
+  normalizeIsrc,
   extractCodecInfo,
 } from "@/features/library/metadata";
 
@@ -78,6 +79,7 @@ self.onmessage = async (event: MessageEvent<MetadataWorkerRequest>) => {
       trackFileId,
       tags,
       tech,
+      isrc: normalizeIsrc(metadata.common.isrc),
       warnings: warnings.length > 0 ? warnings : undefined,
     };
 

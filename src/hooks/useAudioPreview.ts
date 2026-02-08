@@ -60,7 +60,7 @@ export interface UseAudioPreviewOptions {
  */
 export interface UseAudioPreviewReturn {
   /** Ref to attach to the audio element */
-  audioRef: React.RefObject<HTMLAudioElement>;
+  audioRef: React.RefObject<HTMLAudioElement | null>;
   /** Whether the audio is currently loading */
   isLoading: boolean;
   /** Error message if an error occurred */

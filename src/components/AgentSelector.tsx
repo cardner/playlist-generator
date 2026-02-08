@@ -103,7 +103,7 @@ export function AgentSelector({
 
   // Update LLM config when provider or API key changes
   // Use a ref to prevent infinite loops from callback recreation
-  const prevConfigRef = useRef<string | undefined>();
+  const prevConfigRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     const newConfig = agentType === "llm" 
       ? { provider: selectedProvider, apiKey: apiKey || undefined }

@@ -83,6 +83,9 @@ export function applyDevicePathMap(
         break;
       }
     }
+    if (!mappedPath && lookup.fileIndex.fullContentHash) {
+      mappedPath = devicePathMap.get(lookup.fileIndex.fullContentHash);
+    }
     if (!mappedPath && lookup.fileIndex.contentHash) {
       mappedPath = devicePathMap.get(lookup.fileIndex.contentHash);
     }

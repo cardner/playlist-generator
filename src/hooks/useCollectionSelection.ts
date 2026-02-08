@@ -78,7 +78,7 @@ export interface UseCollectionSelectionReturn {
   /** Load all collections */
   loadCollections: () => Promise<void>;
   /** Ref for dropdown element (for click outside detection) */
-  dropdownRef: React.RefObject<HTMLDivElement>;
+  dropdownRef: React.RefObject<HTMLDivElement | null>;
 }
 
 /**

@@ -61,14 +61,13 @@ import { ScanResults } from "./ScanResults";
 import { MetadataProgress } from "./MetadataProgress";
 import { TempoDetectionProgress } from "./TempoDetectionProgress";
 import { InterruptedScanBanner } from "./InterruptedScanBanner";
-import { useLibraryScanning } from "@/hooks/useLibraryScanning";
-import { useMetadataParsing } from "@/hooks/useMetadataParsing";
 import { useMetadataWriteback } from "@/hooks/useMetadataWriteback";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { getResumableScans } from "@/db/storage-scan-checkpoints";
 import { getInterruptedProcessingCheckpoints } from "@/db/storage-processing-checkpoints";
 import { getInterruptedWritebackCheckpoints } from "@/db/storage-writeback-checkpoints";
 import { logger } from "@/lib/logger";
+import { useBackgroundLibraryTasks } from "./BackgroundLibraryTasksProvider";
 
 interface LibraryScannerProps {
   libraryRoot: LibraryRoot | null;
@@ -107,7 +106,28 @@ export function LibraryScanner({
     lastWrittenPath?: string;
   } | null>(null);
 
-  // Use hooks for scanning and metadata parsing logic
+  const backgroundTasks = useBackgroundLibraryTasks();
+
+  // Keep background task inputs up to date so work continues across pages.
+  useEffect(() => {
+    backgroundTasks.setLibraryRoot(libraryRoot);
+  }, [backgroundTasks, libraryRoot]);
+
+  useEffect(() => {
+    backgroundTasks.setPermissionStatus(permissionStatus);
+  }, [backgroundTasks, permissionStatus]);
+
+  useEffect(() => {
+    backgroundTasks.setOnScanComplete(onScanComplete);
+    return () => backgroundTasks.setOnScanComplete(undefined);
+  }, [backgroundTasks, onScanComplete]);
+
+  useEffect(() => {
+    backgroundTasks.setOnProcessingProgress(onProcessingProgress);
+    return () => backgroundTasks.setOnProcessingProgress(undefined);
+  }, [backgroundTasks, onProcessingProgress]);
+
+  // Use background hooks for scanning and metadata parsing logic
   const {
     isScanning,
     scanResult,
@@ -125,15 +145,9 @@ export function LibraryScanner({
     cancelReconnectionMonitoring,
     pauseScan,
     stopScan,
-  } = useLibraryScanning({
-    libraryRoot,
-    permissionStatus,
-    onScanComplete: () => {
-      // Scan complete callback is handled separately below
-    },
-  });
+  } = backgroundTasks.scanning;
 
-    const {
+  const {
     isParsingMetadata,
     metadataResults,
     metadataProgress,
@@ -141,19 +155,15 @@ export function LibraryScanner({
     tempoProgress,
     error: parseError,
     handleParseMetadata,
-      handleResumeProcessing,
-      handleProcessUnprocessed,
+    handleResumeProcessing,
+    handleProcessUnprocessed,
     clearError: clearParseError,
     clearMetadataResults,
     pauseProcessing,
     stopProcessing,
     pauseTempoDetection,
     stopTempoDetection,
-  } = useMetadataParsing({
-    onParseComplete: onScanComplete,
-    onProcessingProgress,
-    scanRunId,
-  });
+  } = backgroundTasks.metadataParsing;
 
   const {
     isWriting: isWritingWriteback,

@@ -1,33 +1,35 @@
 /**
  * LibraryBrowser Component
- * 
+ *
  * Component for browsing and searching the user's music library. Provides
- * filtering, sorting, and search capabilities for viewing scanned tracks.
- * 
+ * filtering, sorting, pagination, and search capabilities for viewing scanned tracks.
+ *
  * Features:
  * - Track search by title, artist, or album
  * - Genre filtering with normalized genre support
  * - Sortable columns (title, artist, duration)
+ * - Pagination (25/50/100/200 per page)
  * - Genre statistics display
  * - Clear library functionality
  * - Optimized rendering for large libraries (1000+ tracks)
- * 
+ *
  * State Management:
  * - Loads tracks from IndexedDB on mount
- * - Manages search query and filter state
+ * - Manages search query, filter, and pagination state
  * - Handles sorting configuration
- * - Uses `useMemo` for optimized filtering and sorting
- * 
+ * - Uses `useMemo` for optimized filtering, sorting, and pagination
+ *
  * Performance Optimizations:
  * - Memoized filtering and sorting to prevent unnecessary re-renders
- * - Efficient genre normalization and mapping
- * - Limits search results for performance
- * 
+ * - Memoized `LibraryBrowserTrackRow` to skip re-renders when props unchanged
+ * - `useCallback` for stable event handlers passed to rows
+ * - Pagination limits DOM nodes for large result sets
+ *
  * Props:
  * - `refreshTrigger`: Number to trigger refresh (for external updates)
- * 
+ *
  * @module components/LibraryBrowser
- * 
+ *
  * @example
  * ```tsx
  * <LibraryBrowser refreshTrigger={refreshCount} />
@@ -36,15 +38,10 @@
 
 "use client";
 
-import { useState, useEffect, useMemo, Fragment, useRef, useCallback } from "react";
-import { Edit2, Play, Pause, Loader2, Clock, AlertTriangle, Check } from "lucide-react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import type { TrackRecord, TrackWritebackRecord } from "@/db/schema";
 import {
-  getAllTracks,
   getTracks,
-  searchTracks,
-  filterTracksByGenre,
-  getAllGenres,
   getAllGenresWithStats,
   clearLibraryData,
   getWritebackStatuses,
@@ -52,14 +49,21 @@ import {
 import { getCurrentLibraryRoot } from "@/db/storage";
 import type { GenreWithStats } from "@/features/library/genre-normalization";
 import { normalizeGenre, buildGenreMappings } from "@/features/library/genre-normalization";
-import { TrackMetadataEditor } from "./TrackMetadataEditor";
-import { InlineAudioPlayer, type InlineAudioPlayerRef } from "./InlineAudioPlayer";
+import { mapMoodTagsToCategories } from "@/features/library/mood-mapping";
+import { mapActivityTagsToCategories } from "@/features/library/activity-mapping";
+import {
+  LibrarySearchCombo,
+  type FilterTag,
+} from "./LibrarySearchCombo";
+import type { InlineAudioPlayerRef } from "./InlineAudioPlayer";
 import { searchTrackSample } from "@/features/audio-preview/platform-searcher";
 import { useAudioPreviewState } from "@/hooks/useAudioPreviewState";
 import { useMetadataWriteback } from "@/hooks/useMetadataWriteback";
 import { MAX_PLAY_ATTEMPTS } from "@/lib/audio-playback-config";
 import type { LibraryRoot } from "@/lib/library-selection";
+import { Save, SearchCheck, Trash2 } from "lucide-react";
 import { logger } from "@/lib/logger";
+import { LibraryBrowserTrackRow } from "./LibraryBrowserTrackRow";
 
 type SortField = "title" | "artist" | "duration";
 type SortDirection = "asc" | "desc";
@@ -70,8 +74,7 @@ interface LibraryBrowserProps {
 
 export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
   const [tracks, setTracks] = useState<TrackRecord[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedGenre, setSelectedGenre] = useState<string>("");
+  const [filters, setFilters] = useState<FilterTag[]>([]);
   const [sortField, setSortField] = useState<SortField>("title");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [genres, setGenres] = useState<string[]>([]);
@@ -85,6 +88,8 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
   const [writebackStatuses, setWritebackStatuses] = useState<Map<string, TrackWritebackRecord>>(
     new Map()
   );
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
 
   // Audio preview state
   const audioPreviewState = useAudioPreviewState();
@@ -117,6 +122,46 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
     clearError: clearWritebackError,
     clearValidation,
   } = useMetadataWriteback();
+
+  const loadTracks = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const root = await getCurrentLibraryRoot();
+      if (!root) {
+        // No library root, don't load
+        setTracks([]);
+        setGenres([]);
+        setGenresWithStats([]);
+        setGenreMappings(null);
+        setIsLoading(false);
+        return;
+      }
+
+      setLibraryRootId(root.id);
+
+      // Load tracks for the current collection only
+      const collectionTracks = await getTracks(root.id);
+      setTracks(collectionTracks);
+
+      const writebackRecords = await getWritebackStatuses(root.id);
+      setWritebackStatuses(
+        new Map(writebackRecords.map((record) => [record.trackFileId, record]))
+      );
+
+      // Load normalized genres with stats
+      const genresStats = await getAllGenresWithStats(root.id);
+      setGenresWithStats(genresStats);
+      setGenres(genresStats.map((g) => g.normalized));
+
+      // Build genre mappings for filtering
+      const mappings = buildGenreMappings(collectionTracks);
+      setGenreMappings({ originalToNormalized: mappings.originalToNormalized });
+    } catch (error) {
+      logger.error("Failed to load tracks:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   // Check if we have a library root before loading
   useEffect(() => {
@@ -167,38 +212,119 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
       setWritebackStatuses(new Map());
       setIsLoading(false);
     }
-  }, [refreshTrigger, hasLibrary]);
+  }, [refreshTrigger, hasLibrary, loadTracks]);
 
   // Filter and sort tracks using useMemo for better performance
   const filteredTracks = useMemo(() => {
     let filtered = [...tracks];
 
-    // Apply search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (track) =>
-          track.tags.title.toLowerCase().includes(query) ||
-          track.tags.artist.toLowerCase().includes(query) ||
-          track.tags.album?.toLowerCase().includes(query)
-      );
-    }
+    const parseBpmFilter = (
+      value: string
+    ): ((bpm: number | undefined) => boolean) | null => {
+      const v = value.trim().toLowerCase();
+      if (v === "slow") return (b) => b != null && b < 100;
+      if (v === "medium") return (b) => b != null && b >= 100 && b <= 130;
+      if (v === "fast") return (b) => b != null && b > 130;
+      const rangeMatch = v.match(/^(\d+)\s*-\s*(\d+)$/);
+      if (rangeMatch) {
+        const min = Number(rangeMatch[1]);
+        const max = Number(rangeMatch[2]);
+        if (!Number.isNaN(min) && !Number.isNaN(max)) {
+          return (b) => b != null && b >= min && b <= max;
+        }
+      }
+      const num = Number(v);
+      if (!Number.isNaN(num)) {
+        return (b) => b != null && b >= num - 5 && b <= num + 5;
+      }
+      return null;
+    };
 
-    // Apply genre filter (using normalized genres)
-    if (selectedGenre) {
-      const normalizedSelected = normalizeGenre(selectedGenre);
-      filtered = filtered.filter((track) => {
-        // Get normalized genres for this track
-        const trackNormalizedGenres = track.tags.genres.map((g) => {
-          if (genreMappings?.originalToNormalized) {
-            return genreMappings.originalToNormalized.get(g) || normalizeGenre(g);
+    const getTrackMoods = (track: TrackRecord): string[] => {
+      const tags = track.enhancedMetadata?.mood || [];
+      return mapMoodTagsToCategories(tags);
+    };
+    const getTrackActivities = (track: TrackRecord): string[] => {
+      const tags = track.enhancedMetadata?.activity || [];
+      return mapActivityTagsToCategories(tags);
+    };
+
+    for (const f of filters) {
+      const val = f.value.trim().toLowerCase();
+      if (!val) continue;
+
+      switch (f.type) {
+        case "title":
+          filtered = filtered.filter((t) =>
+            t.tags.title.toLowerCase().includes(val)
+          );
+          break;
+        case "artist":
+          filtered = filtered.filter((t) =>
+            t.tags.artist.toLowerCase().includes(val)
+          );
+          break;
+        case "album":
+          filtered = filtered.filter((t) =>
+            (t.tags.album ?? "").toLowerCase().includes(val)
+          );
+          break;
+        case "genre": {
+          const normalizedVal = normalizeGenre(f.value).toLowerCase();
+          filtered = filtered.filter((t) => {
+            const trackGenres = t.tags.genres.map((g) => {
+              const norm = genreMappings?.originalToNormalized?.get(g) ?? normalizeGenre(g);
+              return norm.toLowerCase();
+            });
+            return trackGenres.includes(normalizedVal);
+          });
+          break;
+        }
+        case "bpm": {
+          const bpmPred = parseBpmFilter(f.value);
+          if (bpmPred) {
+            filtered = filtered.filter((t) => bpmPred(t.tech?.bpm));
           }
-          return normalizeGenre(g);
-        });
-        return trackNormalizedGenres.some(
-          (g) => g.toLowerCase() === normalizedSelected.toLowerCase()
-        );
-      });
+          break;
+        }
+        case "mood": {
+          const moodVal = f.value.trim();
+          filtered = filtered.filter((t) => {
+            const moods = getTrackMoods(t);
+            return moods.some(
+              (m) => m.toLowerCase() === moodVal.toLowerCase()
+            );
+          });
+          break;
+        }
+        case "intensity":
+          // Intensity maps to mood categories (Intense, Energetic, Calm, etc.)
+          filtered = filtered.filter((t) => {
+            const moods = getTrackMoods(t);
+            return moods.some(
+              (m) => m.toLowerCase() === f.value.trim().toLowerCase()
+            );
+          });
+          break;
+        case "activity": {
+          const actVal = f.value.trim();
+          filtered = filtered.filter((t) => {
+            const acts = getTrackActivities(t);
+            return acts.some(
+              (a) => a.toLowerCase() === actVal.toLowerCase()
+            );
+          });
+          break;
+        }
+        case "text":
+          filtered = filtered.filter(
+            (t) =>
+              t.tags.title.toLowerCase().includes(val) ||
+              t.tags.artist.toLowerCase().includes(val) ||
+              (t.tags.album ?? "").toLowerCase().includes(val)
+          );
+          break;
+      }
     }
 
     // Apply sorting (create new array to avoid mutating original)
@@ -227,7 +353,7 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
       if (aValue > bValue) return sortDirection === "asc" ? 1 : -1;
       return 0;
     });
-  }, [tracks, searchQuery, selectedGenre, sortField, sortDirection, genreMappings]);
+  }, [tracks, filters, sortField, sortDirection, genreMappings]);
 
   const pendingWritebackCount = useMemo(() => {
     let count = 0;
@@ -239,45 +365,26 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
     return count;
   }, [writebackStatuses]);
 
-  async function loadTracks() {
-    setIsLoading(true);
-    try {
-      const root = await getCurrentLibraryRoot();
-      if (!root) {
-        // No library root, don't load
-        setTracks([]);
-        setGenres([]);
-        setGenresWithStats([]);
-        setGenreMappings(null);
-        setIsLoading(false);
-        return;
-      }
+  // Reset to first page when filters or sort change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filteredTracks]);
 
-      setLibraryRootId(root.id);
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredTracks.length / pageSize)),
+    [filteredTracks.length, pageSize]
+  );
 
-      // Load tracks for the current collection only
-      const collectionTracks = await getTracks(root.id);
-      setTracks(collectionTracks);
+  const paginatedTracks = useMemo(
+    () =>
+      filteredTracks.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [filteredTracks, currentPage, pageSize]
+  );
 
-      const writebackRecords = await getWritebackStatuses(root.id);
-      setWritebackStatuses(
-        new Map(writebackRecords.map((record) => [record.trackFileId, record]))
-      );
-
-      // Load normalized genres with stats
-      const genresStats = await getAllGenresWithStats(root.id);
-      setGenresWithStats(genresStats);
-      setGenres(genresStats.map((g) => g.normalized));
-
-      // Build genre mappings for filtering
-      const mappings = buildGenreMappings(collectionTracks);
-      setGenreMappings({ originalToNormalized: mappings.originalToNormalized });
-    } catch (error) {
-      logger.error("Failed to load tracks:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  }
+  const handleTrackSave = useCallback(async () => {
+    setEditingTrackId(null);
+    await loadTracks();
+  }, [loadTracks]);
 
   async function handleClearLibrary() {
     if (
@@ -490,6 +597,38 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
     }
   }, []);
 
+  const handleEditClick = useCallback((trackId: string) => {
+    setEditingTrackId((prev) => (prev === trackId ? null : trackId));
+  }, []);
+
+  const handleEditCancel = useCallback(() => {
+    setEditingTrackId(null);
+  }, []);
+
+  const registerAudioRef = useCallback((trackFileId: string, ref: InlineAudioPlayerRef | null) => {
+    if (ref) {
+      audioRefs.current.set(trackFileId, ref);
+    } else {
+      audioRefs.current.delete(trackFileId);
+    }
+  }, []);
+
+  const handleAudioLoaded = useCallback(
+    (trackFileId: string) => {
+      if (playingTrackId === trackFileId && !searchingTrackId) {
+        const audioControls = audioRefs.current.get(trackFileId);
+        if (audioControls) {
+          void Promise.resolve(
+            (audioControls.play as () => unknown)()
+          ).catch(() => {
+            // Ignore play errors
+          });
+        }
+      }
+    },
+    [playingTrackId, searchingTrackId]
+  );
+
   // Cleanup when component unmounts
   useEffect(() => {
     const currentRefs = audioRefs.current;
@@ -535,73 +674,6 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
 
   return (
     <div className="space-y-4">
-      {/* Search and Filters */}
-      <div className="bg-app-surface rounded-sm shadow-2xl p-6">
-        <div className="space-y-4">
-          {/* Search */}
-          <div>
-            <label className="block text-xs font-medium text-app-primary mb-2 uppercase tracking-wider">
-              Search
-            </label>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by title, artist, or album..."
-              className="w-full px-4 py-3 bg-app-hover text-app-primary rounded-sm border border-app-border placeholder-app-tertiary focus:outline-none focus:border-accent-primary"
-            />
-          </div>
-
-          {/* Genre Filter */}
-          <div>
-            <label className="block text-xs font-medium text-app-primary mb-2 uppercase tracking-wider">
-              Genre
-            </label>
-            <select
-              value={selectedGenre}
-              onChange={(e) => setSelectedGenre(e.target.value)}
-              className="w-full px-4 py-3 bg-app-hover text-app-primary rounded-sm border border-app-border focus:outline-none focus:border-accent-primary"
-            >
-              <option value="">All Genres</option>
-              {genresWithStats.map((genreStat) => (
-                <option key={genreStat.normalized} value={genreStat.normalized}>
-                  {genreStat.normalized} ({genreStat.trackCount} {genreStat.trackCount === 1 ? 'track' : 'tracks'})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Sort */}
-          <div className="flex items-center gap-4">
-            <label className="text-xs font-medium text-app-primary uppercase tracking-wider">
-              Sort by:
-            </label>
-            <select
-              value={sortField}
-              onChange={(e) => setSortField(e.target.value as SortField)}
-              className="px-4 py-2 bg-app-hover text-app-primary rounded-sm border border-app-border focus:outline-none focus:border-accent-primary"
-            >
-              <option value="title">Title</option>
-              <option value="artist">Artist</option>
-              <option value="duration">Duration</option>
-            </select>
-            <button
-              onClick={() =>
-                setSortDirection(sortDirection === "asc" ? "desc" : "asc")
-              }
-              className="px-4 py-2 bg-app-hover text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover transition-colors"
-            >
-              {sortDirection === "asc" ? "↑" : "↓"}
-            </button>
-          </div>
-
-          {/* Results count */}
-          <div className="text-sm text-app-secondary">
-            Showing {filteredTracks.length} of {tracks.length} tracks
-          </div>
-        </div>
-      </div>
-
       {writebackError && (
         <div className="bg-red-500/10 border border-red-500/20 rounded-sm p-4 text-sm text-red-500">
           {writebackError}
@@ -670,72 +742,112 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
       )}
 
       {/* Track List */}
-      <div className="bg-app-surface rounded-sm shadow-2xl p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-app-primary">Tracks</h2>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleWritebackClick}
-              disabled={!pendingWritebackCount || isWriting}
-              className="text-xs text-accent-primary hover:text-accent-hover uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Sync Metadata to Files{pendingWritebackCount ? ` (${pendingWritebackCount})` : ""}
-            </button>
-            <button
-              onClick={handleValidateWritebackClick}
-              disabled={isValidating}
-              className="text-xs text-app-tertiary hover:text-app-secondary uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isValidating ? "Validating..." : "Validate Writeback"}
-            </button>
-            <button
-              onClick={handleClearLibrary}
-              className="text-xs text-red-500 hover:text-red-400 uppercase tracking-wider"
-            >
-              Clear Library Data
-            </button>
+      <div className="bg-app-surface rounded-sm shadow-2xl">
+        {/* Sticky header: search, filters, pagination, actions — stays at top when scrolling */}
+        <div className="sticky top-0 z-10 bg-app-surface border-b border-app-border shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2">
+            <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
+              <LibrarySearchCombo
+                filters={filters}
+                onChange={setFilters}
+                tracks={tracks}
+                genres={genres}
+                genreStats={genresWithStats}
+                genreMappings={genreMappings}
+                placeholder="Search: title, artist, album, genre, BPM, mood, intensity…"
+                compact={true}
+              />
+              <select
+                value={sortField}
+                onChange={(e) => setSortField(e.target.value as SortField)}
+                className="px-2 py-1.5 text-sm bg-app-hover text-app-primary rounded-sm border border-app-border focus:outline-none focus:border-accent-primary"
+                aria-label="Sort by"
+              >
+                <option value="title">Title</option>
+                <option value="artist">Artist</option>
+                <option value="duration">Duration</option>
+              </select>
+              <button
+                onClick={() =>
+                  setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+                }
+                className="px-2 py-1.5 text-sm bg-app-hover text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover transition-colors"
+                aria-label={sortDirection === "asc" ? "Sort ascending" : "Sort descending"}
+                title={sortDirection === "asc" ? "Ascending" : "Descending"}
+              >
+                {sortDirection === "asc" ? "↑" : "↓"}
+              </button>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-app-primary text-sm font-medium mr-2">Tracks</span>
+              <button
+                onClick={handleWritebackClick}
+                disabled={!pendingWritebackCount || isWriting}
+                className="flex items-center justify-center size-8 text-accent-primary hover:text-accent-hover rounded-sm border border-app-border hover:bg-app-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                aria-label={pendingWritebackCount ? `Sync metadata to files (${pendingWritebackCount} pending)` : "Sync metadata to files"}
+                title={pendingWritebackCount ? `Sync metadata (${pendingWritebackCount} pending)` : "Sync metadata to files"}
+              >
+                <Save className="size-4" />
+              </button>
+              <button
+                onClick={handleValidateWritebackClick}
+                disabled={isValidating}
+                className="flex items-center justify-center size-8 text-app-tertiary hover:text-app-secondary rounded-sm border border-app-border hover:bg-app-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                aria-label="Validate writeback"
+                title="Validate writeback"
+              >
+                <SearchCheck className="size-4" />
+              </button>
+              <button
+                onClick={handleClearLibrary}
+                className="flex items-center justify-center size-8 text-red-500 hover:text-red-400 rounded-sm border border-app-border hover:bg-app-hover transition-colors"
+                aria-label="Clear library data"
+                title="Clear library data"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </div>
           </div>
         </div>
 
         {filteredTracks.length === 0 ? (
-          <p className="text-app-tertiary">
+          <p className="text-app-tertiary px-4 py-6 text-sm">
             No tracks match your filters.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <>
+          <div className="px-4">
+            <table className="w-full text-sm relative">
               <thead>
-                <tr className="border-b border-app-border">
-                  <th className="text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider w-12">
+                <tr className="z-[5] border-b border-app-border bg-app-surface">
+                  <th className="sticky top-12 bg-app-surface border-b border-app-border text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider w-12">
                     Play
                   </th>
-                  <th className="text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
+                  <th className="sticky top-12 bg-app-surface border-b border-app-border text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
                     Title
                   </th>
-                  <th className="text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
+                  <th className="sticky top-12 bg-app-surface border-b border-app-border text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
                     Artist
                   </th>
-                  <th className="text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
+                  <th className="sticky top-12 bg-app-surface border-b border-app-border text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
                     Album
                   </th>
-                  <th className="text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
+                  <th className="sticky top-12 bg-app-surface border-b border-app-border text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
                     Genre
                   </th>
-                  <th className="text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
+                  <th className="sticky top-12 bg-app-surface border-b border-app-border text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
                     Duration
                   </th>
-                  <th className="text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
+                  <th className="sticky top-12 bg-app-surface border-b border-app-border text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
                     BPM
                   </th>
-                  <th className="text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider w-16">
+                  <th className="sticky top-12 bg-app-surface border-b border-app-border text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider w-16">
                     Actions
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {filteredTracks.map((track) => {
-                  const isEditing = editingTrackId === track.id;
-                  const currentGenres = track.enhancedMetadata?.genres || track.tags.genres || [];
+                {paginatedTracks.map((track) => {
                   const writebackStatus = writebackStatuses.get(track.trackFileId);
                   const writebackState = writebackStatus?.pending
                     ? writebackStatus.lastWritebackError
@@ -744,187 +856,89 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
                     : writebackStatus?.lastWritebackAt
                     ? "synced"
                     : null;
-                  
+
                   return (
-                    <Fragment key={track.trackFileId}>
-                      <tr
-                        className="border-b border-app-border hover:bg-app-hover transition-colors group"
-                        onMouseEnter={() =>
-                          handleTrackRowMouseEnter(track.trackFileId, {
-                            title: track.tags.title || "Unknown Title",
-                            artist: track.tags.artist || "Unknown Artist",
-                            album: track.tags.album,
-                          })
-                        }
-                        onMouseLeave={handleTrackRowMouseLeave}
-                      >
-                        <td className="py-2 px-4">
-                          <button
-                            onClick={() => handleInlinePlayClick(track.trackFileId, {
-                              title: track.tags.title || "Unknown Title",
-                              artist: track.tags.artist || "Unknown Artist",
-                              album: track.tags.album,
-                            })}
-                            disabled={searchingTrackId === track.trackFileId}
-                            className="flex items-center justify-center size-8 text-app-tertiary group-hover:text-accent-primary transition-colors shrink-0 cursor-pointer disabled:opacity-50"
-                            aria-label={playingTrackId === track.trackFileId ? "Pause" : "Play"}
-                            title={playingTrackId === track.trackFileId ? "Pause" : "Play 30-second preview"}
-                          >
-                            {searchingTrackId === track.trackFileId ? (
-                              <Loader2 className="size-4 animate-spin" />
-                            ) : playingTrackId === track.trackFileId ? (
-                              <Pause className="size-4" />
-                            ) : (
-                              <Play className="size-4" />
-                            )}
-                          </button>
-                        </td>
-                    <td className="py-2 px-4 text-app-primary">{track.tags.title}</td>
-                    <td className="py-2 px-4 text-app-primary">{track.tags.artist}</td>
-                    <td className="py-2 px-4 text-app-secondary">{track.tags.album}</td>
-                    <td className="py-2 px-4 text-app-secondary">
-                          {currentGenres.join(", ") || "—"}
-                    </td>
-                    <td className="py-2 px-4 text-app-secondary tabular-nums">
-                      {formatDuration(track.tech?.durationSeconds)}
-                        </td>
-                        <td className="py-2 px-4 text-app-secondary">
-                          {track.tech?.bpm ? (
-                            <div className="flex items-center gap-2">
-                              <span className="tabular-nums">{track.tech.bpm}</span>
-                              {track.tech.bpmConfidence !== undefined && (
-                                <span
-                                  className={`text-xs px-1.5 py-0.5 rounded ${
-                                    track.tech.bpmConfidence >= 0.7
-                                      ? "bg-green-500/20 text-green-400"
-                                      : track.tech.bpmConfidence >= 0.5
-                                      ? "bg-yellow-500/20 text-yellow-400"
-                                      : "bg-red-500/20 text-red-400"
-                                  }`}
-                                  title={`Confidence: ${Math.round(track.tech.bpmConfidence * 100)}% | Thresholds: ✓ ≥ 70%, ? 50–69%, ? < 50% | Source: ${track.tech.bpmSource || 'unknown'} | Method: ${track.tech.bpmMethod || 'unknown'}`}
-                                >
-                                  {track.tech.bpmConfidence >= 0.7 ? "✓" : "?"}
-                                </span>
-                              )}
-                              {track.tech.bpmSource === 'id3' && (
-                                <span className="text-xs text-app-tertiary" title="From ID3 tag">ID3</span>
-                              )}
-                            </div>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td className="py-2 px-4">
-                          <div className="flex items-center gap-2">
-                            {writebackState === "pending" && (
-                              <span title="Metadata sync pending">
-                                <Clock
-                                  className="size-4 text-yellow-500"
-                                  aria-label="Metadata sync pending"
-                                />
-                              </span>
-                            )}
-                            {writebackState === "error" && (
-                              <span
-                                title={writebackStatus?.lastWritebackError || "Metadata sync failed"}
-                              >
-                                <AlertTriangle
-                                  className="size-4 text-red-500"
-                                  aria-label="Metadata sync failed"
-                                />
-                              </span>
-                            )}
-                            {writebackState === "synced" && (
-                              <span title="Metadata synced to file or sidecar">
-                                <Check
-                                  className="size-4 text-green-500"
-                                  aria-label="Metadata synced to file or sidecar"
-                                />
-                              </span>
-                            )}
-                            <button
-                              onClick={() => setEditingTrackId(isEditing ? null : track.id)}
-                              className="p-1.5 hover:bg-app-surface rounded-sm transition-colors text-app-secondary hover:text-accent-primary"
-                              aria-label="Edit metadata"
-                              title="Edit metadata"
-                            >
-                              <Edit2 className="size-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      {isEditing && (
-                        <tr key={`${track.id}-editor`}>
-                          <td colSpan={8} className="p-0">
-                            <div className="px-4 py-2">
-                              <TrackMetadataEditor
-                                track={track}
-                                genreSuggestions={genres}
-                                onSave={async (trackId, edits) => {
-                                  setEditingTrackId(null);
-                                  // Reload tracks to show updated metadata
-                                  await loadTracks();
-                                }}
-                                onCancel={() => {
-                                  setEditingTrackId(null);
-                                }}
-                                inline={true}
-                              />
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                      {/* Inline Audio Player */}
-                      {hasSampleResult(track.trackFileId) && (
-                        <tr>
-                          <td colSpan={7} className="p-0">
-                            <InlineAudioPlayer
-                              ref={(ref) => {
-                                if (ref) {
-                                  audioRefs.current.set(track.trackFileId, ref);
-                                } else {
-                                  audioRefs.current.delete(track.trackFileId);
-                                }
-                              }}
-                              trackFileId={track.trackFileId}
-                              sampleResult={getSampleResult(track.trackFileId) || null}
-                              autoPlay={playingTrackId === track.trackFileId && !searchingTrackId && hasSampleResult(track.trackFileId)}
-                              onPlay={() => {
-                                setPlayingTrack(track.trackFileId);
-                                setSearchingTrack(null);
-                              }}
-                              onPause={() => clearPlayingTrack()}
-                              onEnded={() => clearPlayingTrack()}
-                              onError={(error) => {
-                                setError(track.trackFileId, error);
-                                clearPlayingTrack();
-                                setSearchingTrack(null);
-                              }}
-                              onLoaded={async () => {
-                                // Audio loaded successfully - trigger play if this track should be playing
-                                // This is a fallback in case autoPlay didn't work due to timing issues
-                                if (playingTrackId === track.trackFileId && !searchingTrackId) {
-                                  const audioControls = audioRefs.current.get(track.trackFileId);
-                                  if (audioControls) {
-                                    try {
-                                      await audioControls.play();
-                                    } catch {
-                                      // Ignore play errors - user may have paused or switched tracks
-                                      // The useAudioPreview hook should handle auto-play via the autoPlay prop
-                                    }
-                                  }
-                                }
-                              }}
-                            />
-                    </td>
-                  </tr>
-                      )}
-                    </Fragment>
+                    <LibraryBrowserTrackRow
+                      key={track.trackFileId}
+                      track={track}
+                      isEditing={editingTrackId === track.id}
+                      genres={genres}
+                      writebackStatus={writebackStatus}
+                      writebackState={writebackState}
+                      playingTrackId={playingTrackId}
+                      searchingTrackId={searchingTrackId}
+                      hasSampleResult={hasSampleResult}
+                      getSampleResult={getSampleResult}
+                      onPlayClick={handleInlinePlayClick}
+                      onMouseEnter={handleTrackRowMouseEnter}
+                      onMouseLeave={handleTrackRowMouseLeave}
+                      onEditClick={handleEditClick}
+                      onEditCancel={handleEditCancel}
+                      onSave={handleTrackSave}
+                      formatDuration={formatDuration}
+                      registerAudioRef={registerAudioRef}
+                      onAudioLoaded={handleAudioLoaded}
+                      setPlayingTrack={setPlayingTrack}
+                      setSearchingTrack={setSearchingTrack}
+                      setError={setError}
+                      clearPlayingTrack={clearPlayingTrack}
+                    />
                   );
                 })}
               </tbody>
             </table>
           </div>
+          {filteredTracks.length > pageSize && (
+            <div className="flex flex-col gap-2 px-4 py-3 border-t border-app-border bg-app-surface md:flex-row md:items-center md:justify-between">
+              <div className="flex items-center gap-2 text-xs text-app-tertiary">
+                <span className="tabular-nums">
+                  {`${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, filteredTracks.length)} of ${filteredTracks.length}`}
+                </span>
+                <label className="flex items-center gap-1">
+                  <span>Per page</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="px-1.5 py-1 text-xs bg-app-hover text-app-primary rounded-sm border border-app-border focus:outline-none focus:border-accent-primary"
+                  >
+                    {[25, 50, 100, 200, 300, 400, 500].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <nav
+                className="flex items-center gap-1 justify-end"
+                aria-label="Pagination"
+              >
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage <= 1}
+                  className="px-2 py-1 text-xs bg-app-hover text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Prev
+                </button>
+                <span className="px-2 py-1 text-xs text-app-secondary tabular-nums">
+                  {currentPage}/{totalPages}
+                </span>
+                <button
+                  onClick={() =>
+                    setCurrentPage((p) => Math.min(totalPages, p + 1))
+                  }
+                  disabled={currentPage >= totalPages}
+                  className="px-2 py-1 text-xs bg-app-hover text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+              </nav>
+            </div>
+          )}
+          </>
         )}
       </div>
     </div>

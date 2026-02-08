@@ -9,7 +9,7 @@ import {
   getLibraryFiles,
   getLibraryFilesFromFileList,
 } from "@/lib/library-selection";
-import { hashFileContent } from "@/lib/file-hash";
+import { hashFileContent, hashFullFileContent } from "@/lib/file-hash";
 import { logger } from "@/lib/logger";
 
 /**
@@ -41,6 +41,8 @@ export interface FileIndexEntry {
   mtime: number;
   /** Optional content hash (SHA-256 of first 256KB) for device path matching */
   contentHash?: string;
+  /** Optional full content hash (SHA-256 of entire file) for cross-collection matching */
+  fullContentHash?: string;
 }
 
 /**
@@ -235,6 +237,7 @@ export async function buildFileIndex(
               libraryFile.file,
               256 * 1024
             );
+            const fullContentHash = await hashFullFileContent(libraryFile.file);
 
             // Use the trackFileId from libraryFile (already generated correctly)
             const entry: FileIndexEntry = {
@@ -245,6 +248,7 @@ export async function buildFileIndex(
               size: libraryFile.size,
               mtime: libraryFile.mtime,
               contentHash,
+              fullContentHash,
             };
 
             index.set(entry.trackFileId, entry);
@@ -370,6 +374,7 @@ export async function buildFileIndexFromFileList(
           libraryFile.file,
           256 * 1024
         );
+        const fullContentHash = await hashFullFileContent(libraryFile.file);
 
         // Use the trackFileId from libraryFile (already generated correctly)
         const entry: FileIndexEntry = {
@@ -380,6 +385,7 @@ export async function buildFileIndexFromFileList(
           size: libraryFile.size,
           mtime: libraryFile.mtime,
           contentHash,
+          fullContentHash,
         };
 
         index.set(entry.trackFileId, entry);

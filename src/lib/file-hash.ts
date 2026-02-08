@@ -5,6 +5,8 @@
 
 import { logger } from "@/lib/logger";
 
+const MAX_FULL_HASH_BYTES = 512 * 1024 * 1024;
+
 /**
  * Compute SHA-256 hash of file content (first maxBytes).
  * Used for device path matching when filename|size fails.
@@ -30,4 +32,21 @@ export async function hashFileContent(
     logger.warn("Failed to compute content hash", error);
     return undefined;
   }
+}
+
+/**
+ * Compute SHA-256 hash of entire file content.
+ * Falls back to undefined if file exceeds MAX_FULL_HASH_BYTES.
+ */
+export async function hashFullFileContent(
+  file: File
+): Promise<string | undefined> {
+  if (file.size > MAX_FULL_HASH_BYTES) {
+    logger.warn("Skipping full hash for large file", {
+      name: file.name,
+      size: file.size,
+    });
+    return undefined;
+  }
+  return hashFileContent(file, file.size);
 }
