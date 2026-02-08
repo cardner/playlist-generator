@@ -26,11 +26,11 @@ import {
  * @param trackFileId - Unique identifier for this track (generated from Spotify URI or artist+track)
  * @returns TrackRecord ready to be stored
  */
-export function spotifyTrackToRecord(
+export async function spotifyTrackToRecord(
   spotifyTrack: SpotifyTrack,
   libraryRootId: string,
   trackFileId: string
-): TrackRecord {
+): Promise<TrackRecord> {
   const id = getCompositeId(trackFileId, libraryRootId);
   const now = Date.now();
 
@@ -40,7 +40,7 @@ export function spotifyTrackToRecord(
     durationSeconds = Math.floor(spotifyTrack.duration / 1000);
   }
 
-  const metadataFingerprint = buildMetadataFingerprint(
+  const metadataFingerprint = await buildMetadataFingerprint(
     {
       title: spotifyTrack.track,
       artist: spotifyTrack.artist,
@@ -133,7 +133,7 @@ export async function saveSpotifyTracks(
   for (const track of tracks) {
     try {
       const trackFileId = generateTrackFileId(track);
-      const record = spotifyTrackToRecord(track, libraryRootId, trackFileId);
+      const record = await spotifyTrackToRecord(track, libraryRootId, trackFileId);
 
       // Use put to insert or update (in case of re-import)
       await db.tracks.put(record);

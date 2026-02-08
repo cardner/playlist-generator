@@ -4,8 +4,8 @@ import {
 } from "@/features/library/track-identity-utils";
 
 describe("track identity utils", () => {
-  it("builds a metadata fingerprint from tags and duration", () => {
-    const fingerprint = buildMetadataFingerprint(
+  it("builds a metadata fingerprint from tags and duration", async () => {
+    const fingerprint = await buildMetadataFingerprint(
       {
         title: "Song Title",
         artist: "The Artist",
@@ -15,10 +15,13 @@ describe("track identity utils", () => {
       { durationSeconds: 245 }
     );
     expect(fingerprint).toBeTruthy();
+    expect(typeof fingerprint).toBe("string");
+    // SHA-256 based fingerprint should be 14 characters (base64url of 10 bytes)
+    expect(fingerprint?.length).toBe(14);
   });
 
-  it("returns undefined when required tag fields are missing", () => {
-    const fingerprint = buildMetadataFingerprint(
+  it("returns undefined when required tag fields are missing", async () => {
+    const fingerprint = await buildMetadataFingerprint(
       {
         title: "",
         artist: "Artist",
@@ -64,5 +67,36 @@ describe("track identity utils", () => {
       {}
     );
     expect(fromMetadata.globalTrackId).toBe("meta:meta456");
+  });
+
+  it("produces consistent hashes for same input", async () => {
+    const tags = {
+      title: "Test Song",
+      artist: "Test Artist",
+      album: "Test Album",
+      genres: [],
+    };
+    const tech = { durationSeconds: 180 };
+    
+    const hash1 = await buildMetadataFingerprint(tags, tech);
+    const hash2 = await buildMetadataFingerprint(tags, tech);
+    
+    expect(hash1).toBe(hash2);
+    expect(hash1).toBeTruthy();
+  });
+
+  it("produces different hashes for different inputs", async () => {
+    const hash1 = await buildMetadataFingerprint(
+      { title: "Song A", artist: "Artist", album: "", genres: [] },
+      { durationSeconds: 180 }
+    );
+    const hash2 = await buildMetadataFingerprint(
+      { title: "Song B", artist: "Artist", album: "", genres: [] },
+      { durationSeconds: 180 }
+    );
+    
+    expect(hash1).not.toBe(hash2);
+    expect(hash1).toBeTruthy();
+    expect(hash2).toBeTruthy();
   });
 });

@@ -14,7 +14,7 @@ export async function updateTrackIdentity(
   if (!track) return null;
   const fileIndex = await db.fileIndex.get(trackId);
   const metadataFingerprint =
-    track.metadataFingerprint ?? buildMetadataFingerprint(track.tags, track.tech);
+    track.metadataFingerprint ?? await buildMetadataFingerprint(track.tags, track.tech);
   const identity = resolveGlobalTrackIdentity(
     { ...track, metadataFingerprint },
     fileIndex
@@ -44,7 +44,7 @@ export async function resolveTrackIdentitiesForTrackFileIds(
     if (!track) continue;
     const fileIndex = fileIndexes[i];
     const metadataFingerprint =
-      track.metadataFingerprint ?? buildMetadataFingerprint(track.tags, track.tech);
+      track.metadataFingerprint ?? await buildMetadataFingerprint(track.tags, track.tech);
     const identity = resolveGlobalTrackIdentity(
       { ...track, metadataFingerprint },
       fileIndex
@@ -91,7 +91,7 @@ export async function resolveTrackIdentitiesForLibrary(
     processed += 1;
     const fileIndex = fileIndexMap.get(track.trackFileId);
     const metadataFingerprint =
-      track.metadataFingerprint ?? buildMetadataFingerprint(track.tags, track.tech);
+      track.metadataFingerprint ?? await buildMetadataFingerprint(track.tags, track.tech);
     const identity = resolveGlobalTrackIdentity(
       { ...track, metadataFingerprint },
       fileIndex
@@ -165,8 +165,8 @@ export async function findFileIndexByGlobalTrackId(
   return undefined;
 }
 
-export function buildTrackIdentityForResult(track: TrackRecord): GlobalTrackIdentity {
-  const metadataFingerprint = buildMetadataFingerprint(track.tags, track.tech);
+export async function buildTrackIdentityForResult(track: TrackRecord): Promise<GlobalTrackIdentity> {
+  const metadataFingerprint = await buildMetadataFingerprint(track.tags, track.tech);
   const identity = resolveGlobalTrackIdentity(
     { ...track, metadataFingerprint },
     undefined
