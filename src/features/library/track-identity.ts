@@ -158,11 +158,6 @@ export async function resolveTrackIdentitiesForLibrary(
       }
     }
     
-    // Mark as complete if we got fewer items than requested
-    if (chunk.length < CHUNK_SIZE) {
-      hasMore = false;
-    }
-    
     // Yield to event loop after each chunk to avoid UI freeze
     await new Promise((resolve) => setTimeout(resolve, 0));
     options?.onProgress?.({ processed, total, updated });
