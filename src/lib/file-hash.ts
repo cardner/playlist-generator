@@ -5,12 +5,13 @@
 
 import { logger } from "@/lib/logger";
 
-// Lower cap to prevent memory spikes during scans
-// 10MB is a reasonable limit - most audio files are under this size
-const MAX_FULL_HASH_BYTES = 10 * 1024 * 1024;
+// Cap to prevent memory spikes during scans
+// 256MB accommodates most FLAC files (typically 100-200MB)
+const MAX_FULL_HASH_BYTES = 256 * 1024 * 1024;
 
-// Chunk size for streaming hash (1MB chunks to keep memory usage low)
-const HASH_CHUNK_SIZE = 1024 * 1024;
+// Chunk size for streaming hash (2MB chunks for good balance between
+// memory usage and performance with larger files)
+const HASH_CHUNK_SIZE = 2 * 1024 * 1024;
 
 /**
  * Compute SHA-256 hash of file content (first maxBytes).

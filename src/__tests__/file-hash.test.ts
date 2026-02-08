@@ -150,11 +150,11 @@ describe("hashFullFileContent", () => {
     delete (global as any).crypto;
   });
 
-  it("should hash files under MAX_FULL_HASH_BYTES (10MB)", async () => {
+  it("should hash files under MAX_FULL_HASH_BYTES (256MB)", async () => {
     // Dynamic import to access the function
     const { hashFullFileContent } = await import("@/lib/file-hash");
     
-    const file = createMockFile("test.mp3", 5 * 1024 * 1024); // 5MB
+    const file = createMockFile("test.flac", 150 * 1024 * 1024); // 150MB (typical FLAC)
     const hash = await hashFullFileContent(file);
 
     expect(hash).toBeDefined();
@@ -162,10 +162,10 @@ describe("hashFullFileContent", () => {
     expect(hash?.length).toBe(64);
   });
 
-  it("should return undefined for files exceeding MAX_FULL_HASH_BYTES (10MB)", async () => {
+  it("should return undefined for files exceeding MAX_FULL_HASH_BYTES (256MB)", async () => {
     const { hashFullFileContent } = await import("@/lib/file-hash");
     
-    const file = createMockFile("large.mp3", 15 * 1024 * 1024); // 15MB
+    const file = createMockFile("large.flac", 300 * 1024 * 1024); // 300MB
     const hash = await hashFullFileContent(file);
 
     expect(hash).toBeUndefined();
@@ -173,10 +173,10 @@ describe("hashFullFileContent", () => {
     expect(mockCrypto.subtle.digest).not.toHaveBeenCalled();
   });
 
-  it("should hash exactly MAX_FULL_HASH_BYTES (10MB)", async () => {
+  it("should hash exactly MAX_FULL_HASH_BYTES (256MB)", async () => {
     const { hashFullFileContent } = await import("@/lib/file-hash");
     
-    const file = createMockFile("exact.mp3", 10 * 1024 * 1024); // Exactly 10MB
+    const file = createMockFile("exact.flac", 256 * 1024 * 1024); // Exactly 256MB
     const hash = await hashFullFileContent(file);
 
     expect(hash).toBeDefined();
@@ -188,7 +188,7 @@ describe("hashFullFileContent", () => {
     delete (global as any).crypto;
 
     const { hashFullFileContent } = await import("@/lib/file-hash");
-    const file = createMockFile("test.mp3", 5 * 1024 * 1024);
+    const file = createMockFile("test.flac", 150 * 1024 * 1024);
     const hash = await hashFullFileContent(file);
 
     expect(hash).toBeUndefined();
@@ -200,9 +200,9 @@ describe("hashFullFileContent", () => {
   it("should read files in chunks", async () => {
     const { hashFullFileContent } = await import("@/lib/file-hash");
     
-    // Create a 3MB file (should be read in 3 chunks of 1MB each)
-    const fileSize = 3 * 1024 * 1024;
-    const file = createMockFile("chunked.mp3", fileSize);
+    // Create a 6MB file (should be read in 3 chunks of 2MB each)
+    const fileSize = 6 * 1024 * 1024;
+    const file = createMockFile("chunked.flac", fileSize);
     
     // Spy on file.slice to verify chunking
     const sliceSpy = jest.spyOn(file, "slice");
@@ -213,13 +213,13 @@ describe("hashFullFileContent", () => {
     expect(sliceSpy).toHaveBeenCalled();
     const callCount = sliceSpy.mock.calls.length;
     
-    // With 1MB chunks and a 3MB file, we expect 3 slice calls
+    // With 2MB chunks and a 6MB file, we expect 3 slice calls
     expect(callCount).toBe(3);
     
-    // Verify the slice calls are for 1MB chunks
-    expect(sliceSpy).toHaveBeenNthCalledWith(1, 0, 1024 * 1024);
-    expect(sliceSpy).toHaveBeenNthCalledWith(2, 1024 * 1024, 2 * 1024 * 1024);
-    expect(sliceSpy).toHaveBeenNthCalledWith(3, 2 * 1024 * 1024, 3 * 1024 * 1024);
+    // Verify the slice calls are for 2MB chunks
+    expect(sliceSpy).toHaveBeenNthCalledWith(1, 0, 2 * 1024 * 1024);
+    expect(sliceSpy).toHaveBeenNthCalledWith(2, 2 * 1024 * 1024, 4 * 1024 * 1024);
+    expect(sliceSpy).toHaveBeenNthCalledWith(3, 4 * 1024 * 1024, 6 * 1024 * 1024);
     
     sliceSpy.mockRestore();
   });
