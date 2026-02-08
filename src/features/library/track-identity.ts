@@ -68,61 +68,96 @@ export async function resolveTrackIdentitiesForLibrary(
   libraryRootId: string,
   options?: { onlyMissing?: boolean; signal?: AbortSignal; onProgress?: (progress: { processed: number; total: number; updated: number }) => void }
 ): Promise<void> {
-  const tracks = await db.tracks
+  // First, get total count for progress reporting
+  const total = await db.tracks
     .where("libraryRootId")
     .equals(libraryRootId)
-    .toArray();
-  const fileIndexEntries = await db.fileIndex
-    .where("libraryRootId")
-    .equals(libraryRootId)
-    .toArray();
-  const fileIndexMap = new Map<string, FileIndexRecord>();
-  for (const entry of fileIndexEntries) {
-    fileIndexMap.set(entry.trackFileId, entry);
-  }
-  const total = tracks.length;
+    .count();
+  
   let processed = 0;
   let updated = 0;
   const updates: TrackRecord[] = [];
-  for (const track of tracks) {
+  
+  // Build fileIndex map incrementally using cursor-based iteration
+  // This avoids loading all fileIndex entries into memory at once
+  const fileIndexMap = new Map<string, FileIndexRecord>();
+  await db.fileIndex
+    .where("libraryRootId")
+    .equals(libraryRootId)
+    .each((entry) => {
+      fileIndexMap.set(entry.trackFileId, entry);
+    });
+  
+  // Process tracks in chunks to avoid loading all into memory
+  // and yield periodically to keep UI responsive
+  const CHUNK_SIZE = 100;
+  let offset = 0;
+  
+  while (offset < total) {
     if (options?.signal?.aborted) {
       throw new DOMException("Identity resolution aborted", "AbortError");
     }
-    processed += 1;
-    const fileIndex = fileIndexMap.get(track.trackFileId);
-    const metadataFingerprint =
-      track.metadataFingerprint ?? buildMetadataFingerprint(track.tags, track.tech);
-    const identity = resolveGlobalTrackIdentity(
-      { ...track, metadataFingerprint },
-      fileIndex
-    );
-    const next = {
-      ...track,
-      metadataFingerprint,
-      globalTrackId: identity.globalTrackId,
-      globalTrackSource: identity.globalTrackSource,
-      globalTrackConfidence: identity.globalTrackConfidence,
-      updatedAt: Date.now(),
-    };
-    if (
-      !options?.onlyMissing ||
-      !track.globalTrackId ||
-      track.globalTrackId !== next.globalTrackId ||
-      track.metadataFingerprint !== next.metadataFingerprint
-    ) {
-      updates.push(next);
-      updated += 1;
+    
+    // Load and process a chunk of tracks
+    const chunk = await db.tracks
+      .where("libraryRootId")
+      .equals(libraryRootId)
+      .offset(offset)
+      .limit(CHUNK_SIZE)
+      .toArray();
+    
+    if (chunk.length === 0) break;
+    
+    for (const track of chunk) {
+      if (options?.signal?.aborted) {
+        throw new DOMException("Identity resolution aborted", "AbortError");
+      }
+      
+      processed += 1;
+      const fileIndex = fileIndexMap.get(track.trackFileId);
+      const metadataFingerprint =
+        track.metadataFingerprint ?? buildMetadataFingerprint(track.tags, track.tech);
+      const identity = resolveGlobalTrackIdentity(
+        { ...track, metadataFingerprint },
+        fileIndex
+      );
+      const next = {
+        ...track,
+        metadataFingerprint,
+        globalTrackId: identity.globalTrackId,
+        globalTrackSource: identity.globalTrackSource,
+        globalTrackConfidence: identity.globalTrackConfidence,
+        updatedAt: Date.now(),
+      };
+      
+      if (
+        !options?.onlyMissing ||
+        !track.globalTrackId ||
+        track.globalTrackId !== next.globalTrackId ||
+        track.metadataFingerprint !== next.metadataFingerprint
+      ) {
+        updates.push(next);
+        updated += 1;
+      }
+      
+      // Batch updates to reduce transaction overhead
+      if (updates.length >= 250) {
+        await db.tracks.bulkPut(updates.splice(0, updates.length));
+      }
     }
-    if (updates.length >= 250) {
-      await db.tracks.bulkPut(updates.splice(0, updates.length));
-    }
-    if (processed % 100 === 0) {
-      options?.onProgress?.({ processed, total, updated });
-    }
+    
+    // Yield to event loop after each chunk to avoid UI freeze
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    options?.onProgress?.({ processed, total, updated });
+    
+    offset += CHUNK_SIZE;
   }
+  
+  // Write any remaining updates
   if (updates.length > 0) {
     await db.tracks.bulkPut(updates);
   }
+  
   options?.onProgress?.({ processed, total, updated });
 }
 
