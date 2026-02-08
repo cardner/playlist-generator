@@ -37,6 +37,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.4.0] - 2026-02-08
+
+### Added
+
+- increase MAX_FULL_HASH_BYTES to 256MB for FLAC support
+- upgrade hash function to SHA-256 for collision resistance
+- validate ISRC format to prevent incorrect cross-collection matching
+- implement streaming hash with lower memory cap
+- new universal track IDs
+- improve UI spacing and table search
+
+### Fixed
+
+- fixed a bunch of issues with collection management and permission
+- improve type safety for globalIndexCache in DeviceSyncPanel and PlaylistExport
+- improve type safety for globalIndexCache in PlaylistExport
+- **lint**: ignore generated public/metadataWorker.js
+
+### Performance
+
+- parallelize fingerprint generation in saveTrackMetadata
+- use bulkGet for parallel fileIndex queries in findFileIndexByGlobalTrackId
+
+### Changed
+
+- improve chunked hashing with better memory management
+
+### Other Changes
+
+- Merge pull request #39 from cardner/upgrades
+- Merge pull request #47 from cardner/copilot/sub-pr-39-9b9f772d-ec2d-4f20-8e37-0061aa2468eb
+- Merge pull request #40 from cardner/copilot/sub-pr-39
+- Merge pull request #48 from cardner/copilot/sub-pr-39-0640c6eb-4c23-44d8-bd50-3e3e71e7e25e
+- Merge branch 'upgrades' into copilot/sub-pr-39-0640c6eb-4c23-44d8-bd50-3e3e71e7e25e
+- Merge pull request #43 from cardner/copilot/sub-pr-39-yet-again
+- Merge pull request #45 from cardner/copilot/sub-pr-39-please-work
+- Merge branch 'upgrades' into copilot/sub-pr-39-please-work
+- Merge pull request #44 from cardner/copilot/sub-pr-39-one-more-time
+- Move BPM_PRESETS constant to module scope for better performance
+- Optimize LibrarySearchCombo performance by precomputing catalogs
+- Merge pull request #46 from cardner/copilot/sub-pr-39-edf9f06f-2f04-4618-be38-c8d4a95f2d80
+- Merge pull request #42 from cardner/copilot/sub-pr-39-another-one
+- Remove redundant pagination termination check
+- Add comments explaining memory tradeoffs and make code more defensive
+- Use cursor-based pagination and remove redundant abort check
+- Merge pull request #41 from cardner/copilot/sub-pr-39-again
+- Optimize resolveTrackIdentitiesForLibrary to use chunked iteration and yielding
+- Initial plan
+- Initial plan
+- Initial plan
+- Initial plan
+- Initial plan
+- Initial plan
+- Initial plan
+- Initial plan
+- Initial plan
+- Update src/components/MetadataEnhancement.tsx
+- Update src/components/LibrarySearchCombo.tsx
+
 ## [1.3.0] - 2026-02-07
 
 ### Added
