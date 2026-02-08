@@ -16,7 +16,6 @@ import { useDebounce } from "@/lib/hooks/useDebounce";
 import type { TrackRecord } from "@/db/schema";
 import type { GenreWithStats } from "@/features/library/genre-normalization";
 import { normalizeGenre } from "@/features/library/genre-normalization";
-import { getMoodCategories } from "@/features/library/mood-mapping";
 import { getActivityCategories } from "@/features/library/activity-mapping";
 import { mapMoodTagsToCategories } from "@/features/library/mood-mapping";
 import { mapActivityTagsToCategories } from "@/features/library/activity-mapping";
