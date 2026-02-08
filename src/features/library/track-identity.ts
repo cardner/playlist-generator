@@ -14,7 +14,7 @@ export async function updateTrackIdentity(
   if (!track) return null;
   const fileIndex = await db.fileIndex.get(trackId);
   const metadataFingerprint =
-    track.metadataFingerprint ?? buildMetadataFingerprint(track.tags, track.tech);
+    track.metadataFingerprint ?? await buildMetadataFingerprint(track.tags, track.tech);
   const identity = resolveGlobalTrackIdentity(
     { ...track, metadataFingerprint },
     fileIndex
@@ -44,7 +44,7 @@ export async function resolveTrackIdentitiesForTrackFileIds(
     if (!track) continue;
     const fileIndex = fileIndexes[i];
     const metadataFingerprint =
-      track.metadataFingerprint ?? buildMetadataFingerprint(track.tags, track.tech);
+      track.metadataFingerprint ?? await buildMetadataFingerprint(track.tags, track.tech);
     const identity = resolveGlobalTrackIdentity(
       { ...track, metadataFingerprint },
       fileIndex
@@ -101,6 +101,30 @@ export async function resolveTrackIdentitiesForLibrary(
     if (options?.signal?.aborted) {
       throw new DOMException("Identity resolution aborted", "AbortError");
     }
+    processed += 1;
+    const fileIndex = fileIndexMap.get(track.trackFileId);
+    const metadataFingerprint =
+      track.metadataFingerprint ?? await buildMetadataFingerprint(track.tags, track.tech);
+    const identity = resolveGlobalTrackIdentity(
+      { ...track, metadataFingerprint },
+      fileIndex
+    );
+    const next = {
+      ...track,
+      metadataFingerprint,
+      globalTrackId: identity.globalTrackId,
+      globalTrackSource: identity.globalTrackSource,
+      globalTrackConfidence: identity.globalTrackConfidence,
+      updatedAt: Date.now(),
+    };
+    if (
+      !options?.onlyMissing ||
+      !track.globalTrackId ||
+      track.globalTrackId !== next.globalTrackId ||
+      track.metadataFingerprint !== next.metadataFingerprint
+    ) {
+      updates.push(next);
+      updated += 1;
     
     // Load next chunk of tracks using cursor-based pagination
     // Note: Using .and() with a filter doesn't fully leverage the database index,
@@ -217,8 +241,8 @@ export async function findFileIndexByGlobalTrackId(
   return undefined;
 }
 
-export function buildTrackIdentityForResult(track: TrackRecord): GlobalTrackIdentity {
-  const metadataFingerprint = buildMetadataFingerprint(track.tags, track.tech);
+export async function buildTrackIdentityForResult(track: TrackRecord): Promise<GlobalTrackIdentity> {
+  const metadataFingerprint = await buildMetadataFingerprint(track.tags, track.tech);
   const identity = resolveGlobalTrackIdentity(
     { ...track, metadataFingerprint },
     undefined

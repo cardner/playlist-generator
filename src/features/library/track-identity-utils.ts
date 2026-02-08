@@ -25,10 +25,10 @@ function normalizeFingerprintValue(value?: string | number | null): string {
     .trim();
 }
 
-export function buildMetadataFingerprint(
+export async function buildMetadataFingerprint(
   tags?: NormalizedTags,
   tech?: TechInfo
-): string | undefined {
+): Promise<string | undefined> {
   if (!tags) return undefined;
   const title = normalizeFingerprintValue(tags.title);
   const artist = normalizeFingerprintValue(tags.artist);
@@ -37,7 +37,7 @@ export function buildMetadataFingerprint(
   if (!title || !artist) return undefined;
   const raw = [artist, title, album, duration].filter(Boolean).join("|");
   if (!raw) return undefined;
-  return hashStringToId(raw);
+  return await hashStringToId(raw);
 }
 
 export function resolveGlobalTrackIdentity(

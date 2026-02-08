@@ -36,18 +36,24 @@ export async function saveTrackMetadata(
   onProgress?: (progress: { processed: number; total: number }) => void
 ): Promise<void> {
   const now = Date.now();
-  const records: TrackRecord[] = results
-    .filter((result) => result.tags && !result.error)
-    .map((result) => ({
-      id: getCompositeId(result.trackFileId, libraryRootId),
-      trackFileId: result.trackFileId,
-      libraryRootId,
-      tags: result.tags!,
-      tech: result.tech,
-      isrc: result.isrc,
-      metadataFingerprint: buildMetadataFingerprint(result.tags!, result.tech),
-      updatedAt: now,
-    }));
+  const filtered = results.filter((result) => result.tags && !result.error);
+  
+  // Build all fingerprints in parallel for performance
+  const fingerprints = await Promise.all(
+    filtered.map(result => buildMetadataFingerprint(result.tags!, result.tech))
+  );
+  
+  // Build records with pre-computed fingerprints
+  const records: TrackRecord[] = filtered.map((result, index) => ({
+    id: getCompositeId(result.trackFileId, libraryRootId),
+    trackFileId: result.trackFileId,
+    libraryRootId,
+    tags: result.tags!,
+    tech: result.tech,
+    isrc: result.isrc,
+    metadataFingerprint: fingerprints[index],
+    updatedAt: now,
+  }));
 
   // Use chunked storage for large datasets
   if (records.length > 1000) {
