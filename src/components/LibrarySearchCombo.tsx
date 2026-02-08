@@ -16,6 +16,7 @@ import { useDebounce } from "@/lib/hooks/useDebounce";
 import type { TrackRecord } from "@/db/schema";
 import type { GenreWithStats } from "@/features/library/genre-normalization";
 import { normalizeGenre } from "@/features/library/genre-normalization";
+import { getMoodCategories } from "@/features/library/mood-mapping";
 import { getActivityCategories } from "@/features/library/activity-mapping";
 import { mapMoodTagsToCategories } from "@/features/library/mood-mapping";
 import { mapActivityTagsToCategories } from "@/features/library/activity-mapping";
@@ -160,11 +161,8 @@ export function LibrarySearchCombo({
     [allowedTypes]
   );
 
-  // Sync mode: build suggestions from tracks and catalogs
-  const syncSuggestionGroups = useMemo(() => {
-    const q = inputValue.trim().toLowerCase();
-    const filterMatch = (s: string) => !q || s.toLowerCase().includes(q);
-
+  // Precompute catalogs from tracks - expensive operation that should only run when tracks change
+  const precomputedCatalogs = useMemo(() => {
     const titles = [...new Set(tracks.map((t) => t.tags.title).filter(Boolean))] as string[];
     const artists = [...new Set(tracks.map((t) => t.tags.artist).filter(Boolean))] as string[];
     const albums = [...new Set(tracks.map((t) => t.tags.album).filter(Boolean))].filter(
@@ -179,6 +177,24 @@ export function LibrarySearchCombo({
 
     const bpmPresets = ["slow", "medium", "fast"];
 
+    return {
+      titles,
+      artists,
+      albums,
+      bpmValues,
+      moods,
+      activities,
+      moodCategories,
+      activityCategories,
+      bpmPresets,
+    };
+  }, [tracks]);
+
+  // Sync mode: filter precomputed catalogs by query
+  const syncSuggestionGroups = useMemo(() => {
+    const q = inputValue.trim().toLowerCase();
+    const filterMatch = (s: string) => !q || s.toLowerCase().includes(q);
+
     type Suggestion = { type: FilterType; value: string; label: string };
     const suggestions: Suggestion[] = [];
 
@@ -191,19 +207,24 @@ export function LibrarySearchCombo({
       suggestions.push({ type, value, label });
     };
 
-    titles.forEach((v) => addIfNotFiltered("title", v));
-    artists.forEach((v) => addIfNotFiltered("artist", v));
-    albums.forEach((v) => addIfNotFiltered("album", v));
+    precomputedCatalogs.titles.forEach((v) => addIfNotFiltered("title", v));
+    precomputedCatalogs.artists.forEach((v) => addIfNotFiltered("artist", v));
+    precomputedCatalogs.albums.forEach((v) => addIfNotFiltered("album", v));
     genres.forEach((v) => addIfNotFiltered("genre", v));
-    bpmPresets.forEach((v) => addIfNotFiltered("bpm", v));
-    bpmValues.forEach((v) => addIfNotFiltered("bpm", v));
-    [...new Set([...moods, ...moodCategories])].forEach((v) => addIfNotFiltered("mood", v));
-    [...new Set([...moods, ...INTENSITY_MOODS])].forEach((v) =>
+    precomputedCatalogs.bpmPresets.forEach((v) => addIfNotFiltered("bpm", v));
+    precomputedCatalogs.bpmValues.forEach((v) => addIfNotFiltered("bpm", v));
+    [...new Set([...precomputedCatalogs.moods, ...precomputedCatalogs.moodCategories])].forEach(
+      (v) => addIfNotFiltered("mood", v)
+    );
+    [...new Set([...precomputedCatalogs.moods, ...INTENSITY_MOODS])].forEach((v) =>
       addIfNotFiltered("intensity", v)
     );
-    [...new Set([...activities, ...activityCategories])].forEach((v) =>
-      addIfNotFiltered("activity", v)
-    );
+    [
+      ...new Set([
+        ...precomputedCatalogs.activities,
+        ...precomputedCatalogs.activityCategories,
+      ]),
+    ].forEach((v) => addIfNotFiltered("activity", v));
 
     if (q.length >= 1 && typesAllowed("text")) {
       const asText = inputValue.trim();
@@ -217,7 +238,7 @@ export function LibrarySearchCombo({
     }
 
     return suggestions.slice(0, 50);
-  }, [tracks, genres, filters, inputValue, typesAllowed]);
+  }, [precomputedCatalogs, genres, filters, inputValue, typesAllowed]);
 
   // Async mode: fetch suggestions when debounced input changes
   useEffect(() => {
