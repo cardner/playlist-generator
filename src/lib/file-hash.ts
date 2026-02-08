@@ -5,7 +5,13 @@
 
 import { logger } from "@/lib/logger";
 
-const MAX_FULL_HASH_BYTES = 512 * 1024 * 1024;
+// Cap to prevent memory spikes during scans
+// 256MB accommodates most FLAC files (typically 100-200MB)
+const MAX_FULL_HASH_BYTES = 256 * 1024 * 1024;
+
+// Chunk size for streaming hash (2MB chunks for good balance between
+// memory usage and performance with larger files)
+const HASH_CHUNK_SIZE = 2 * 1024 * 1024;
 
 /**
  * Compute SHA-256 hash of file content (first maxBytes).
@@ -35,8 +41,64 @@ export async function hashFileContent(
 }
 
 /**
+ * Compute SHA-256 hash of file content using chunked approach.
+ * 
+ * Note: Web Crypto API doesn't support true streaming digests, so we must
+ * read the entire content into memory before hashing. However, reading in
+ * chunks is still beneficial because:
+ * - It yields to the event loop between chunks, keeping UI responsive
+ * - It's more GC-friendly (smaller allocations)
+ * - It allows progress tracking for large files
+ * 
+ * For files exceeding MAX_FULL_HASH_BYTES, we skip hashing entirely.
+ * 
+ * @param file File to hash
+ * @param maxBytes Maximum bytes to hash
+ * @returns Hex string or undefined if hashing fails
+ */
+async function hashFileContentStreaming(
+  file: File,
+  maxBytes: number
+): Promise<string | undefined> {
+  if (!("crypto" in globalThis) || !globalThis.crypto?.subtle) {
+    return undefined;
+  }
+
+  try {
+    const bytesToHash = Math.min(file.size, maxBytes);
+    const combined = new Uint8Array(bytesToHash);
+    let offset = 0;
+
+    // Read file in chunks, yielding to event loop between reads
+    while (offset < bytesToHash) {
+      const chunkSize = Math.min(HASH_CHUNK_SIZE, bytesToHash - offset);
+      const slice = file.slice(offset, offset + chunkSize);
+      const buffer = await slice.arrayBuffer();
+      const chunk = new Uint8Array(buffer);
+      
+      // Copy chunk into combined buffer
+      combined.set(chunk, offset);
+      offset += chunkSize;
+      
+      // Yield to event loop to keep UI responsive
+      if (offset < bytesToHash) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+
+    const digest = await globalThis.crypto.subtle.digest("SHA-256", combined);
+    const hashArray = Array.from(new Uint8Array(digest));
+    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch (error) {
+    logger.warn("Failed to compute content hash", error);
+    return undefined;
+  }
+}
+
+/**
  * Compute SHA-256 hash of entire file content.
  * Falls back to undefined if file exceeds MAX_FULL_HASH_BYTES.
+ * Uses chunked reading to keep UI responsive while still loading full content for hashing.
  */
 export async function hashFullFileContent(
   file: File
@@ -48,5 +110,5 @@ export async function hashFullFileContent(
     });
     return undefined;
   }
-  return hashFileContent(file, file.size);
+  return hashFileContentStreaming(file, file.size);
 }
