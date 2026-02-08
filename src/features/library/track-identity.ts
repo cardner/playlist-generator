@@ -88,31 +88,36 @@ export async function resolveTrackIdentitiesForLibrary(
       fileIndexMap.set(entry.trackFileId, entry);
     });
   
-  // Process tracks in chunks to avoid loading all into memory
+  // Process tracks in chunks using cursor-based pagination to avoid loading all into memory
   // and yield periodically to keep UI responsive
   const CHUNK_SIZE = 100;
-  let offset = 0;
+  let lastId: string | undefined = undefined;
+  let hasMore = true;
   
-  while (offset < total) {
+  while (hasMore) {
     if (options?.signal?.aborted) {
       throw new DOMException("Identity resolution aborted", "AbortError");
     }
     
-    // Load and process a chunk of tracks
-    const chunk = await db.tracks
+    // Load next chunk of tracks using cursor-based pagination
+    // This is more efficient than offset-based pagination for large datasets
+    let query = db.tracks
       .where("libraryRootId")
-      .equals(libraryRootId)
-      .offset(offset)
-      .limit(CHUNK_SIZE)
-      .toArray();
+      .equals(libraryRootId);
     
-    if (chunk.length === 0) break;
+    if (lastId !== undefined) {
+      // Continue from where we left off using the primary key
+      query = query.and((track) => track.id > lastId!);
+    }
+    
+    const chunk = await query.limit(CHUNK_SIZE).toArray();
+    
+    if (chunk.length === 0) {
+      hasMore = false;
+      break;
+    }
     
     for (const track of chunk) {
-      if (options?.signal?.aborted) {
-        throw new DOMException("Identity resolution aborted", "AbortError");
-      }
-      
       processed += 1;
       const fileIndex = fileIndexMap.get(track.trackFileId);
       const metadataFingerprint =
@@ -146,11 +151,17 @@ export async function resolveTrackIdentitiesForLibrary(
       }
     }
     
+    // Update cursor to the last processed ID for next iteration
+    lastId = chunk[chunk.length - 1].id;
+    
+    // Mark as complete if we got fewer items than requested
+    if (chunk.length < CHUNK_SIZE) {
+      hasMore = false;
+    }
+    
     // Yield to event loop after each chunk to avoid UI freeze
     await new Promise((resolve) => setTimeout(resolve, 0));
     options?.onProgress?.({ processed, total, updated });
-    
-    offset += CHUNK_SIZE;
   }
   
   // Write any remaining updates
