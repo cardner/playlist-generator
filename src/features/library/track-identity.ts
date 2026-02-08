@@ -153,14 +153,21 @@ export async function findFileIndexByGlobalTrackId(
         ...matches.filter((t) => t.libraryRootId !== preferred),
       ]
     : matches;
-  for (const match of ordered) {
-    const id = getCompositeId(match.trackFileId, match.libraryRootId);
-    const entry = await db.fileIndex.get(id);
+  
+  // Build all composite IDs and fetch in parallel using bulkGet
+  const compositeIds = ordered.map((match) => 
+    getCompositeId(match.trackFileId, match.libraryRootId)
+  );
+  const entries = await db.fileIndex.bulkGet(compositeIds);
+  
+  // Find the first non-null entry (maintains ordering preference)
+  for (const entry of entries) {
     if (entry) {
       cache?.set(globalTrackId, entry);
       return entry;
     }
   }
+  
   cache?.set(globalTrackId, null);
   return undefined;
 }
