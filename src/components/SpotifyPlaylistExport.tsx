@@ -204,19 +204,26 @@ export function SpotifyPlaylistExport({ playlist, libraryRootId }: SpotifyPlayli
           <label className="block text-app-primary text-sm font-medium mb-2">
             Export Format
           </label>
-          <div className="grid grid-cols-3 gap-2">
-            {(["json", "csv", "m3u"] as ExportFormat[]).map((format) => (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {(
+              [
+                { value: "json", label: "JSON" },
+                { value: "spotify-json", label: "SPOTIFY JSON" },
+                { value: "csv", label: "CSV" },
+                { value: "m3u", label: "M3U" },
+              ] as Array<{ value: ExportFormat; label: string }>
+            ).map((format) => (
               <button
-                key={format}
-                onClick={() => setSelectedFormat(format)}
+                key={format.value}
+                onClick={() => setSelectedFormat(format.value)}
                 className={cn(
                   "px-3 py-2 rounded-sm border text-sm transition-colors",
-                  selectedFormat === format
+                  selectedFormat === format.value
                     ? "bg-accent-primary text-white border-accent-primary"
                     : "bg-app-surface text-app-primary border-app-border hover:bg-app-surface-hover"
                 )}
               >
-                {format.toUpperCase()}
+                {format.label}
               </button>
             ))}
           </div>

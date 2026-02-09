@@ -11,6 +11,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { Upload, FileJson, Loader2, CheckCircle2, AlertCircle, X, Music, Play, Users } from "lucide-react";
+import JSZip from "jszip";
 import { parseSpotifyExport, type SpotifyExportData } from "@/features/spotify-import/parser";
 import { createSpotifyCollection } from "@/features/spotify-import/collection-creator";
 import { checkReimport, updateCollectionWithExport } from "@/features/spotify-import/reimport";
@@ -90,14 +91,29 @@ export function SpotifyImport({ onImportComplete, onClose }: SpotifyImportProps)
 
       for (const file of files) {
         if (file.name.toLowerCase().endsWith(".zip")) {
-          // TODO: Handle ZIP extraction (would need JSZip library)
-          setError("ZIP archive support coming soon. Please extract and upload JSON files.");
-          setIsParsing(false);
-          return;
+          const zip = await JSZip.loadAsync(file);
+          const entries = Object.values(zip.files);
+
+          for (const entry of entries) {
+            if (entry.dir || !entry.name.toLowerCase().endsWith(".json")) {
+              continue;
+            }
+            const content = await entry.async("string");
+            const nameParts = entry.name.split("/");
+            const fileName = nameParts[nameParts.length - 1] || entry.name;
+            fileContents.push({ fileName, content });
+          }
+
+          continue;
         }
 
         const content = await file.text();
         fileContents.push({ fileName: file.name, content });
+      }
+
+      if (fileContents.length === 0) {
+        setError("No JSON files found in the selected files");
+        return;
       }
 
       const parsed = parseSpotifyExport(fileContents);

@@ -1,0 +1,19 @@
+{
+  "playlists": [
+    {
+      "name": "Sample Playlist",
+      "lastModifiedDate": "2024-01-01",
+      "items": [
+        {
+          "track": {
+            "trackName": "Song A",
+            "artistName": "Artist A",
+            "albumName": "Album A",
+            "trackUri": "spotify:track:abc123"
+          },
+          "addedDate": "2024-01-02"
+        }
+      ]
+    }
+  ]
+}

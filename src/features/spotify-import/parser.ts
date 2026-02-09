@@ -33,6 +33,7 @@ export function parseSpotifyFile(
   savedTracks?: SpotifyTrack[];
   followedArtists?: string[];
   playlist?: SpotifyPlaylist;
+  playlists?: SpotifyPlaylist[];
 } | null {
   try {
     const data = JSON.parse(fileContent);
@@ -51,6 +52,15 @@ export function parseSpotifyFile(
 
     // Handle playlist files (Playlist1.json, Playlist2.json, etc.)
     if (fileName.toLowerCase().includes("playlist")) {
+      if (Array.isArray(data.playlists)) {
+        const playlists = data.playlists
+          .map((playlistData: unknown, index: number) =>
+            extractPlaylist(playlistData, `${fileName}#${index + 1}`)
+          )
+          .filter(Boolean) as SpotifyPlaylist[];
+        return playlists.length > 0 ? { playlists } : null;
+      }
+
       const playlist = extractPlaylist(data, fileName);
       return playlist ? { playlist } : null;
     }
@@ -116,15 +126,18 @@ function extractTracksFromLibrary(data: any): SpotifyTrack[] {
 function normalizeTrack(item: any): SpotifyTrack | null {
   // Extract track name
   const trackName =
-    item.track ||
+    item.track?.trackName ||
+    item.track?.name ||
+    (typeof item.track === "string" ? item.track : undefined) ||
     item.name ||
     item.title ||
     item.trackName ||
-    (item.track && item.track.name) ||
     "";
 
   // Extract artist
   const artist =
+    item.track?.artistName ||
+    item.track?.artist ||
     item.artist ||
     item.artistName ||
     (item.artists && Array.isArray(item.artists) && item.artists[0]?.name) ||
@@ -133,6 +146,8 @@ function normalizeTrack(item: any): SpotifyTrack | null {
 
   // Extract album
   const album =
+    item.track?.albumName ||
+    item.track?.album ||
     item.album ||
     item.albumName ||
     item.collectionName ||
@@ -160,12 +175,14 @@ function normalizeTrack(item: any): SpotifyTrack | null {
   // Extract URI
   const uri =
     item.uri ||
+    item.track?.trackUri ||
     item.trackUri ||
     (item.track && item.track.uri) ||
     undefined;
 
   // Extract added date
   const addedAt =
+    item.addedDate ||
     item.addedAt ||
     item.added_at ||
     item.dateAdded ||
@@ -284,6 +301,7 @@ function extractPlaylist(data: any, fileName: string): SpotifyPlaylist | null {
     data.modified ||
     data.modifiedAt ||
     data.lastModified ||
+    data.lastModifiedDate ||
     data.updatedAt ||
     undefined;
 
@@ -326,6 +344,10 @@ export function parseSpotifyExport(
 
     if (result?.playlist) {
       playlists.push(result.playlist);
+    }
+
+    if (result?.playlists) {
+      playlists.push(...result.playlists);
     }
   }
 

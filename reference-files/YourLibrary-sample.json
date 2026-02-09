@@ -1,0 +1,10 @@
+{
+  "tracks": [
+    {
+      "artist": "Artist A",
+      "album": "Album A",
+      "track": "Song A",
+      "uri": "spotify:track:abc123"
+    }
+  ]
+}
