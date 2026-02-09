@@ -40,6 +40,9 @@ module.exports = {
     expect(image).toMatchImageSnapshot({
       customSnapshotsDir: path.join(process.cwd(), "__image_snapshots__"),
       customSnapshotIdentifier: context.id.replace(/\//g, "-"),
+      // Allow 0.5% pixel diff for cross-platform rendering (fonts, subpixel, DPI)
+      failureThreshold: 0.005,
+      failureThresholdType: "percent",
     });
   },
 };
