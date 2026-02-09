@@ -19,7 +19,10 @@ jobs:
           node-version: "22"
           cache: "yarn"
 
-      - run: yarn install --frozen-lockfile
+      - name: Enable Corepack
+        run: corepack enable
+
+      - run: yarn install --immutable
 
       - name: Install Playwright browsers
         run: yarn dlx playwright install --with-deps chromium
