@@ -39,6 +39,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.6.0] - 2026-02-09
+
+### Added
+
+- fix spotify import
+
+### Other Changes
+
+- Merge pull request #50 from cardner/spotify-import
+
 ## [1.5.0] - 2026-02-09
 
 ### Added
