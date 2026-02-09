@@ -1,0 +1,57 @@
+name: Storybook Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  storybook:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "yarn"
+
+      - run: yarn install --immutable
+
+      - name: Install Playwright browsers
+        run: yarn dlx playwright install --with-deps chromium
+
+      - name: Build Storybook
+        run: yarn build-storybook --quiet
+        env:
+          STORYBOOK_DISABLE_TELEMETRY: "1"
+
+      - name: Fetch baseline snapshots
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin main
+          git checkout origin/main -- __image_snapshots__/ || true
+
+      - name: Run Storybook tests
+        run: |
+          yarn dlx concurrently -k -s first -n "SB,TEST" -c "magenta,blue" \
+            "yarn dlx http-server storybook-static --port 6006 --silent" \
+            "yarn dlx wait-on tcp:127.0.0.1:6006 && yarn test-storybook:ci"
+        env:
+          STORYBOOK_DISABLE_TELEMETRY: "1"
+
+      - name: Upload screenshot diffs on failure
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: storybook-visual-diffs
+          path: |
+            __image_snapshots__/__diff_output__/
+            __image_snapshots__/__received_output__/
+          if-no-files-found: ignore

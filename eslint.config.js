@@ -10,6 +10,7 @@ module.exports = [
       ".next/**",
       "out/**",
       "build/**",
+      "storybook-static/**",
       "next-env.d.ts",
       "public/ffmpeg/**",
       "public/ipod/**",
