@@ -38,6 +38,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.5.0] - 2026-02-09
+
+### Added
+
+- add visual regression tests via storybook
+
+### Fixed
+
+- try fixing screen shot tolerances
+- move up enable corepack
+- make yarn behave in CI
+- fix node version
+
+### Other Changes
+
+- Merge pull request #49 from cardner/storybook
+
 ## [1.4.0] - 2026-02-08
 
 ### Added
