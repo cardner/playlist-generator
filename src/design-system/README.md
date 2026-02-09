@@ -145,9 +145,23 @@ Use semantic tokens from `globals.css`:
 - `border-app-border`
 - `bg-accent-primary`, `hover:bg-accent-hover`
 
+## Storybook and Visual Regression
+
+Stories are in `*.stories.tsx` next to each component. To run Storybook:
+
+```bash
+yarn storybook          # Dev server
+yarn build-storybook    # Static build
+yarn test-storybook     # Run tests (requires Playwright: npx playwright install chromium)
+yarn test-storybook -u  # Update screenshot snapshots
+```
+
+**First-time setup for screenshot tests:** Run `npx playwright install chromium` then `yarn test-storybook -u` to generate `__image_snapshots__/`. Commit the snapshots for CI.
+
 ## Adding New Components
 
 1. Create the component in `src/design-system/components/`
 2. Export from `src/design-system/components/index.ts`
 3. Add unit tests in `src/__tests__/design-system/`
-4. Document usage in this README
+4. Add stories in `Component.stories.tsx`
+5. Document usage in this README
