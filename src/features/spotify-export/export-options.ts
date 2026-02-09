@@ -7,12 +7,17 @@
  */
 
 import type { ExportResult } from "./playlist-exporter";
-import { generateSpotifyJSON, generateSpotifyCSV, generateSpotifyM3U } from "./playlist-exporter";
+import {
+  generateSpotifyJSON,
+  generateSpotifyExportJSON,
+  generateSpotifyCSV,
+  generateSpotifyM3U,
+} from "./playlist-exporter";
 
 /**
  * Export format options
  */
-export type ExportFormat = "json" | "csv" | "m3u";
+export type ExportFormat = "json" | "spotify-json" | "csv" | "m3u";
 
 /**
  * Export file metadata
@@ -51,6 +56,14 @@ export function generateExportFile(
       return {
         name: `${sanitizedName}.json`,
         content: generateSpotifyJSON(exportData),
+        mimeType: "application/json",
+        extension: "json",
+      };
+
+    case "spotify-json":
+      return {
+        name: `${sanitizedName}.spotify.json`,
+        content: generateSpotifyExportJSON(exportData),
         mimeType: "application/json",
         extension: "json",
       };

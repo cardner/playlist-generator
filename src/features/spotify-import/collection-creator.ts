@@ -8,9 +8,39 @@
 
 import { db } from "@/db/schema";
 import type { LibraryRootRecord } from "@/db/schema";
-import type { SpotifyExportData } from "./types";
-import { saveSpotifyTracks } from "./track-storage";
+import type { SpotifyExportData, SpotifyTrack } from "./types";
+import { saveSpotifyTracks } from "@/features/spotify-import/track-storage";
 import { logger } from "@/lib/logger";
+
+/**
+ * Get all unique tracks from export data
+ * 
+ * Combines saved tracks and playlist tracks, removing duplicates by URI
+ * (or artist+track fallback).
+ */
+export function getAllUniqueTracksFromExport(
+  exportData: SpotifyExportData
+): SpotifyTrack[] {
+  const combined: SpotifyTrack[] = [...exportData.savedTracks];
+
+  for (const playlist of exportData.playlists) {
+    combined.push(...playlist.tracks);
+  }
+
+  const seen = new Set<string>();
+  const unique: SpotifyTrack[] = [];
+
+  for (const track of combined) {
+    const key = track.uri || `${track.artist.toLowerCase()}|${track.track.toLowerCase()}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(track);
+  }
+
+  return unique;
+}
 
 /**
  * Create a Spotify collection from export data
@@ -45,12 +75,13 @@ export async function createSpotifyCollection(
   await db.libraryRoots.put(libraryRoot);
 
   // Save tracks
-  if (exportData.savedTracks.length > 0) {
-    await saveSpotifyTracks(exportData.savedTracks, collectionId);
+  const allTracks = getAllUniqueTracksFromExport(exportData);
+  if (allTracks.length > 0) {
+    await saveSpotifyTracks(allTracks, collectionId);
   }
 
   logger.info(
-    `Created Spotify collection "${collectionName}" with ${exportData.savedTracks.length} tracks`
+    `Created Spotify collection "${collectionName}" with ${allTracks.length} tracks`
   );
 
   return libraryRoot;

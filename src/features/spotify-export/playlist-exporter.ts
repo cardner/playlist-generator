@@ -32,6 +32,27 @@ export interface SpotifyPlaylistExport {
 }
 
 /**
+ * Spotify GDPR playlist export format
+ * 
+ * Matches the structure of Spotify's Playlist*.json files.
+ */
+export interface SpotifyPlaylistExportFile {
+  playlists: Array<{
+    name: string;
+    lastModifiedDate: string;
+    items: Array<{
+      track: {
+        trackName: string;
+        artistName: string;
+        albumName: string | null;
+        trackUri: string;
+      };
+      addedDate: string;
+    }>;
+  }>;
+}
+
+/**
  * Export result with statistics
  */
 export interface ExportResult {
@@ -132,6 +153,41 @@ export async function exportPlaylistToSpotify(
  */
 export function generateSpotifyJSON(exportData: ExportResult): string {
   return JSON.stringify(exportData.playlist, null, 2);
+}
+
+/**
+ * Generate Spotify GDPR playlist JSON (Playlist*.json style)
+ * 
+ * @param exportData - Export result
+ * @returns JSON string
+ */
+export function generateSpotifyExportJSON(exportData: ExportResult): string {
+  const formatDate = (value?: string) => {
+    if (!value) {
+      return new Date().toISOString().split("T")[0];
+    }
+    return value.split("T")[0];
+  };
+
+  const playlistFile: SpotifyPlaylistExportFile = {
+    playlists: [
+      {
+        name: exportData.playlist.name,
+        lastModifiedDate: formatDate(),
+        items: exportData.playlist.items.map((item) => ({
+          track: {
+            trackName: item.track.name,
+            artistName: item.track.artists.map((artist) => artist.name).join(", "),
+            albumName: item.track.album?.name ?? null,
+            trackUri: item.track.uri,
+          },
+          addedDate: formatDate(item.addedAt),
+        })),
+      },
+    ],
+  };
+
+  return JSON.stringify(playlistFile, null, 2);
 }
 
 /**
