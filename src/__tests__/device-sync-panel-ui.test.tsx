@@ -37,7 +37,11 @@ jest.mock("@/features/devices/device-sync", () => ({
 }));
 
 jest.mock("@/features/devices/device-scan", () => ({
-  scanDeviceForPaths: jest.fn(async () => ({ pathMap: new Map(), entries: [] })),
+  scanDeviceForPaths: jest.fn(async () => ({
+    pathMap: new Map(),
+    entries: [],
+    finalProgress: { scanned: 0, matched: 0, hashed: 0 },
+  })),
   buildDeviceMatchCandidates: jest.fn(() => []),
 }));
 

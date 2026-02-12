@@ -84,6 +84,8 @@ export function usePlaylistForm(
       llmConfig: undefined,
       enableDiscovery: discoveryMode, // Always enabled in discovery mode
       discoveryFrequency: discoveryMode ? "every_other" : undefined,
+      sourcePool: "all",
+      recentWindow: "30d",
     };
   });
 

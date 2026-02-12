@@ -43,17 +43,30 @@ export async function saveTrackMetadata(
     filtered.map(result => buildMetadataFingerprint(result.tags!, result.tech))
   );
   
+  // Fetch existing records to preserve addedAt on re-scan
+  const compositeIds = filtered.map((r) => getCompositeId(r.trackFileId, libraryRootId));
+  const existingTracks = await db.tracks.bulkGet(compositeIds);
+  const existingMap = new Map(
+    existingTracks.map((t, i) => (t ? [compositeIds[i], t] : null)).filter(Boolean) as [string, TrackRecord][]
+  );
+  
   // Build records with pre-computed fingerprints
-  const records: TrackRecord[] = filtered.map((result, index) => ({
-    id: getCompositeId(result.trackFileId, libraryRootId),
-    trackFileId: result.trackFileId,
-    libraryRootId,
-    tags: result.tags!,
-    tech: result.tech,
-    isrc: result.isrc,
-    metadataFingerprint: fingerprints[index],
-    updatedAt: now,
-  }));
+  const records: TrackRecord[] = filtered.map((result, index) => {
+    const id = getCompositeId(result.trackFileId, libraryRootId);
+    const existing = existingMap.get(id);
+    const addedAt = existing?.addedAt ?? now;
+    return {
+      id,
+      trackFileId: result.trackFileId,
+      libraryRootId,
+      tags: result.tags!,
+      tech: result.tech,
+      isrc: result.isrc,
+      metadataFingerprint: fingerprints[index],
+      updatedAt: now,
+      addedAt,
+    };
+  });
 
   // Use chunked storage for large datasets
   if (records.length > 1000) {

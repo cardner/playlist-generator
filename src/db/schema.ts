@@ -241,6 +241,8 @@ export interface TrackRecord {
   metadataEnhancementDate?: number;
   /** Timestamp when this record was last updated (Unix epoch milliseconds) */
   updatedAt: number;
+  /** Timestamp when track was added to collection (Unix epoch ms); used for "recent" source pool */
+  addedAt?: number;
 }
 
 /**
@@ -1072,6 +1074,37 @@ export class AppDatabase extends Dexie {
       deviceSyncManifests: "id, deviceId, playlistId, lastSyncedAt",
       deviceFileIndex: "id, deviceId, matchKey, contentHash, fullContentHash, updatedAt",
     });
+
+    // Version 14: Add addedAt for "recent" source pool; backfill existing tracks
+    this.version(14)
+      .stores({
+        libraryRoots: "id, createdAt",
+        fileIndex: "id, trackFileId, libraryRootId, name, extension, fullContentHash, contentHash, updatedAt",
+        tracks: "id, trackFileId, libraryRootId, globalTrackId, isrc, updatedAt, addedAt",
+        scanRuns: "id, libraryRootId, startedAt",
+        settings: "key",
+        directoryHandles: "id",
+        savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
+        scanCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+        processingCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+        trackWritebacks: "id, libraryRootId, pending, updatedAt",
+        writebackCheckpoints: "id, writebackRunId, libraryRootId, checkpointAt",
+        deviceProfiles: "id, createdAt, updatedAt",
+        deviceSyncManifests: "id, deviceId, playlistId, lastSyncedAt",
+        deviceFileIndex: "id, deviceId, matchKey, contentHash, fullContentHash, updatedAt",
+      })
+      .upgrade(async (trans) => {
+        const tracksStore = trans.table("tracks");
+        const allTracks = await tracksStore.toArray();
+        for (const record of allTracks) {
+          if (record.addedAt == null || record.addedAt === undefined) {
+            await tracksStore.put({
+              ...record,
+              addedAt: record.updatedAt,
+            });
+          }
+        }
+      });
   }
 }
 

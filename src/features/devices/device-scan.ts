@@ -37,6 +37,7 @@ export type DeviceScanEntry = {
 export type DeviceScanResult = {
   pathMap: Map<string, string>;
   entries: DeviceScanEntry[];
+  finalProgress: DeviceScanProgress;
 };
 
 export function buildDeviceMatchKey(
@@ -221,10 +222,8 @@ export async function scanDeviceForPaths(options: {
             }
           }
         }
-        if (!matchedTarget) {
-          onProgress?.(progress);
-          continue;
-        }
+        // Relaxed matching: always add all device files to map/entries
+        // so filename-only fallback can resolve paths when exact keys don't match
       }
 
       for (const candidate of candidates) {
@@ -278,20 +277,14 @@ export async function scanDeviceForPaths(options: {
       }
       onProgress?.(progress);
 
-      if (
-        targetKeyMap &&
-        targetTrackCount &&
-        matchedTrackIds.size >= targetTrackCount
-      ) {
-        break;
-      }
+      // No early exit: scan full device so map has all files for filename-only fallback
     }
   } catch (error) {
     logger.error("Device scan failed:", error);
     throw error;
   }
 
-  return { pathMap: map, entries };
+  return { pathMap: map, entries, finalProgress: { ...progress } };
 }
 
 /** @deprecated Use hashFileContent from @/lib/file-hash */

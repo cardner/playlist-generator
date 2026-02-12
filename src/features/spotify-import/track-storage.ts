@@ -57,6 +57,16 @@ export async function spotifyTrackToRecord(
     undefined
   );
 
+  // Parse addedAt from Spotify export (ISO string) to Unix ms
+  let addedAtMs: number | undefined;
+  if (spotifyTrack.addedAt) {
+    const parsed = Date.parse(spotifyTrack.addedAt);
+    addedAtMs = Number.isNaN(parsed) ? undefined : parsed;
+  }
+  if (addedAtMs == null) {
+    addedAtMs = now;
+  }
+
   return {
     id,
     trackFileId,
@@ -83,6 +93,7 @@ export async function spotifyTrackToRecord(
     globalTrackSource: identity.globalTrackSource,
     globalTrackConfidence: identity.globalTrackConfidence,
     updatedAt: now,
+    addedAt: addedAtMs,
   };
 }
 
@@ -133,7 +144,14 @@ export async function saveSpotifyTracks(
   for (const track of tracks) {
     try {
       const trackFileId = generateTrackFileId(track);
+      const compositeId = getCompositeId(trackFileId, libraryRootId);
+      const existing = await db.tracks.get(compositeId);
       const record = await spotifyTrackToRecord(track, libraryRootId, trackFileId);
+
+      // Preserve addedAt on re-import; only set from Spotify when inserting new
+      if (existing?.addedAt != null && record.addedAt != null) {
+        record.addedAt = existing.addedAt;
+      }
 
       // Use put to insert or update (in case of re-import)
       await db.tracks.put(record);

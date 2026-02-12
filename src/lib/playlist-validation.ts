@@ -24,10 +24,17 @@ export function validatePlaylistRequest(
   request: Partial<PlaylistRequest>
 ): PlaylistRequestErrors {
   const errors: PlaylistRequestErrors = {};
+  const isRecentOnly = request.sourcePool === "recent";
 
-  // Validate genres
-  if (!request.genres || request.genres.length === 0) {
-    errors.genres = "Please select at least one genre";
+  // Validate genres (optional when sourcePool is "recent")
+  if (!request.genres || !Array.isArray(request.genres)) {
+    if (!isRecentOnly) {
+      errors.genres = "Please select at least one genre";
+    }
+  } else if (request.genres.length === 0) {
+    if (!isRecentOnly) {
+      errors.genres = "Please select at least one genre";
+    }
   } else if (request.genres.some((g) => !g.trim())) {
     errors.genres = "Genres cannot be empty";
   }
@@ -47,16 +54,20 @@ export function validatePlaylistRequest(
     }
   }
 
-  // Validate mood
+  // Validate mood (optional when sourcePool is "recent")
   if (!request.mood || request.mood.length === 0) {
-    errors.mood = "Please select at least one mood";
+    if (!isRecentOnly) {
+      errors.mood = "Please select at least one mood";
+    }
   } else if (request.mood.some((m) => !m.trim())) {
     errors.mood = "Mood values cannot be empty";
   }
 
-  // Validate activity
+  // Validate activity (optional when sourcePool is "recent")
   if (!request.activity || request.activity.length === 0) {
-    errors.activity = "Please select at least one activity";
+    if (!isRecentOnly) {
+      errors.activity = "Please select at least one activity";
+    }
   } else if (request.activity.some((a) => !a.trim())) {
     errors.activity = "Activity values cannot be empty";
   }
