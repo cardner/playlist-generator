@@ -175,6 +175,34 @@ export default function SavedPlaylistsPage() {
     }
   }
 
+  async function handleExportPlaylist(playlistId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setIsExporting(true);
+    try {
+      const exportData = await exportPlaylists([playlistId]);
+      const playlist = exportData.playlists[0];
+      const safeTitle = playlist?.title.replace(/[^\w\s-]/g, "").replace(/\s+/g, "-") || "playlist";
+      const fileName = `${safeTitle}-${Date.now()}.json`;
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      logger.error("Failed to export playlist:", err);
+      alert(`Failed to export playlist: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
   function handleImportClick() {
     const input = document.createElement("input");
     input.type = "file";
@@ -278,7 +306,7 @@ export default function SavedPlaylistsPage() {
             <Button
               variant="secondary"
               size="sm"
-              leftIcon={isExporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+              leftIcon={isExporting ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
               onClick={handleExportPlaylists}
               disabled={isExporting || playlists.length === 0}
               title="Export all playlists to JSON"
@@ -288,7 +316,7 @@ export default function SavedPlaylistsPage() {
             <Button
               variant="secondary"
               size="sm"
-              leftIcon={isImporting ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+              leftIcon={isImporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
               onClick={handleImportClick}
               disabled={isImporting}
               title="Import playlists from JSON"
@@ -326,7 +354,7 @@ export default function SavedPlaylistsPage() {
             </Button>
             <Button
               variant="secondary"
-              leftIcon={isImporting ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+              leftIcon={isImporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
               onClick={handleImportClick}
               disabled={isImporting || collections.length === 0}
             >
@@ -361,6 +389,14 @@ export default function SavedPlaylistsPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={(e) => handleExportPlaylist(playlist.id, e)}
+                      disabled={isExporting}
+                      className="opacity-0 group-hover:opacity-100 p-2 text-app-secondary hover:text-app-primary hover:bg-app-hover rounded-sm transition-all disabled:opacity-50"
+                      title="Export playlist"
+                    >
+                      <Upload className="size-4" />
+                    </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
