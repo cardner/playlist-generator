@@ -41,6 +41,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.7.1] - 2026-02-12
+
+### Fixed
+
+- improve track matching between device and collections
+- improve fuzzy search look up
+
+### Other Changes
+
+- Merge pull request #52 from cardner/recent-playlists
+
 ## [1.7.0] - 2026-02-12
 
 ### Added
