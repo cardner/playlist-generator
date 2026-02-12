@@ -19,7 +19,9 @@ import { saveDeviceProfile, saveDeviceSyncManifest } from "./device-storage";
 import type { DeviceScanEntry } from "./device-scan";
 import { buildDeviceMatchCandidates } from "./device-scan";
 import {
-  buildFilenameToPathsMap,
+  buildNormalizedFilenameToPathsMap,
+  buildUniqueDevicePaths,
+  normalizeFilenameForMatch,
   pickBestDevicePath,
 } from "./path-matching";
 import { syncPlaylistsToIpod } from "./ipod";
@@ -34,6 +36,60 @@ export type PlaylistPathValidationResult = {
   missing: number;
   missingSamples: string[];
 };
+
+function resolveDevicePathMatch(
+  lookup: TrackLookup,
+  devicePathMap: DevicePathMap,
+  options?: {
+    normalizedFilenameToPaths?: Map<string, string[]>;
+    metadataCandidatePaths?: string[];
+  }
+): string | undefined {
+  if (!lookup.fileIndex) return undefined;
+
+  // 1) Primary: content hashes end-to-end
+  if (lookup.fileIndex.fullContentHash) {
+    const byFullHash = devicePathMap.get(lookup.fileIndex.fullContentHash);
+    if (byFullHash) return byFullHash;
+  }
+  if (lookup.fileIndex.contentHash) {
+    const byPartialHash = devicePathMap.get(lookup.fileIndex.contentHash);
+    if (byPartialHash) return byPartialHash;
+  }
+
+  // 2) Fallback: normalized filename match
+  const normalizedFilenameToPaths = options?.normalizedFilenameToPaths;
+  if (normalizedFilenameToPaths) {
+    const normalized = normalizeFilenameForMatch(lookup.fileIndex.name);
+    if (normalized) {
+      const candidatePaths = normalizedFilenameToPaths.get(normalized);
+      if (candidatePaths && candidatePaths.length > 0) {
+        const byNormalizedName = pickBestDevicePath(lookup, candidatePaths);
+        if (byNormalizedName) return byNormalizedName;
+      }
+    }
+  }
+
+  // 3) Final fallback: metadata/path scoring across scanned paths
+  const metadataCandidatePaths = options?.metadataCandidatePaths;
+  if (metadataCandidatePaths && metadataCandidatePaths.length > 0) {
+    const byMetadata = pickBestDevicePath(lookup, metadataCandidatePaths);
+    if (byMetadata) return byMetadata;
+  }
+
+  // Backward compatibility with legacy key maps (filename/size/mtime)
+  const candidates = buildDeviceMatchCandidates({
+    filename: lookup.fileIndex.name,
+    size: lookup.fileIndex.size,
+    mtime: lookup.fileIndex.mtime,
+  });
+  for (const candidate of candidates) {
+    const path = devicePathMap.get(candidate);
+    if (path) return path;
+  }
+
+  return undefined;
+}
 
 function normalizeAbsolutePrefix(prefix?: string): string | undefined {
   if (!prefix) return undefined;
@@ -63,39 +119,21 @@ export function applyDevicePathMap(
   const prefixTopSegment = normalizedPrefix
     ? normalizedPrefix.split(/[\\/]+/).filter(Boolean).pop()
     : undefined;
-  const filenameToPaths =
+  const normalizedFilenameToPaths =
     options?.deviceEntries && options.deviceEntries.length > 0
-      ? buildFilenameToPathsMap(options.deviceEntries)
+      ? buildNormalizedFilenameToPathsMap(options.deviceEntries)
+      : null;
+  const metadataCandidatePaths =
+    options?.deviceEntries && options.deviceEntries.length > 0
+      ? buildUniqueDevicePaths(options.deviceEntries)
       : null;
 
   return trackLookups.map((lookup) => {
     if (!lookup.fileIndex) return lookup;
-    const candidates = buildDeviceMatchCandidates({
-      filename: lookup.fileIndex.name,
-      size: lookup.fileIndex.size,
-      mtime: lookup.fileIndex.mtime,
+    let mappedPath = resolveDevicePathMatch(lookup, devicePathMap, {
+      normalizedFilenameToPaths: normalizedFilenameToPaths ?? undefined,
+      metadataCandidatePaths: metadataCandidatePaths ?? undefined,
     });
-    let mappedPath: string | undefined;
-    for (const candidate of candidates) {
-      const candidatePath = devicePathMap.get(candidate);
-      if (candidatePath) {
-        mappedPath = candidatePath;
-        break;
-      }
-    }
-    if (!mappedPath && lookup.fileIndex.fullContentHash) {
-      mappedPath = devicePathMap.get(lookup.fileIndex.fullContentHash);
-    }
-    if (!mappedPath && lookup.fileIndex.contentHash) {
-      mappedPath = devicePathMap.get(lookup.fileIndex.contentHash);
-    }
-    if (!mappedPath && filenameToPaths) {
-      const filename = lookup.fileIndex.name.toLowerCase();
-      const candidatePaths = filenameToPaths.get(filename);
-      if (candidatePaths && candidatePaths.length > 0) {
-        mappedPath = pickBestDevicePath(lookup, candidatePaths);
-      }
-    }
     if (!mappedPath) return lookup;
     if (normalizedPrefix && !mappedPath.startsWith("/")) {
       if (prefixTopSegment && mappedPath.toLowerCase().startsWith(`${prefixTopSegment.toLowerCase()}/`)) {
@@ -545,16 +583,23 @@ export async function syncPlaylistToDevice(options: {
     );
   }
 
+  const normalizedFilenameToPaths =
+    deviceEntries && deviceEntries.length > 0
+      ? buildNormalizedFilenameToPathsMap(deviceEntries)
+      : undefined;
+  const metadataCandidatePaths =
+    deviceEntries && deviceEntries.length > 0
+      ? buildUniqueDevicePaths(deviceEntries)
+      : undefined;
+
   const effectiveTrackLookups =
     onlyIncludeMatchedPaths && devicePathMap
       ? mappedTrackLookups.filter((lookup) => {
-          if (!lookup.fileIndex) return false;
-          const candidates = buildDeviceMatchCandidates({
-            filename: lookup.fileIndex.name,
-            size: lookup.fileIndex.size,
-            mtime: lookup.fileIndex.mtime,
+          const matchedPath = resolveDevicePathMatch(lookup, devicePathMap, {
+            normalizedFilenameToPaths,
+            metadataCandidatePaths,
           });
-          return candidates.some((candidate) => devicePathMap.has(candidate));
+          return Boolean(matchedPath);
         })
       : mappedTrackLookups;
 

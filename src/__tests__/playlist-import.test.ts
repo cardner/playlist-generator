@@ -117,6 +117,23 @@ describe("validatePlaylistExportFormat", () => {
     };
     expect(validatePlaylistExportFormat(data)).toBe(true);
   });
+
+  it("returns true for playlist with optional trackMetadata", () => {
+    const data: PlaylistExport = {
+      version: "1.0.0",
+      exportedAt: 123,
+      playlists: [
+        {
+          ...createMockPlaylistRecord(),
+          trackMetadata: [
+            { trackFileId: "track-1", title: "Song 1", artist: "Artist A", album: "Album 1", durationSeconds: 180 },
+            { trackFileId: "track-2", title: "Song 2", artist: "Artist B" },
+          ],
+        } as never,
+      ],
+    };
+    expect(validatePlaylistExportFormat(data)).toBe(true);
+  });
 });
 
 describe("importPlaylists", () => {

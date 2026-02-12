@@ -92,9 +92,8 @@ export function PlaylistImportDialog({
             Target Collection
           </h3>
           <p className="text-app-secondary text-sm mb-3">
-            Select the collection to assign these playlists to. Track
-            references (trackFileIds) must exist in that collection for tracks
-            to display correctly.
+            Select the collection to assign these playlists to. Tracks will be
+            fuzzy-matched by title, artist, and album when possible.
           </p>
           <select
             value={targetCollectionId}

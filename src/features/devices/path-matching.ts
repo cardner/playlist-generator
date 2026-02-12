@@ -105,3 +105,47 @@ export function buildFilenameToPathsMap(
   }
   return map;
 }
+
+function stripFileExtension(filename: string): string {
+  return filename.replace(/\.[a-z0-9]{1,5}$/i, "");
+}
+
+export function normalizeFilenameForMatch(filename: string): string {
+  return stripFileExtension(filename)
+    .toLowerCase()
+    .replace(/^[\s._-]*\d{1,3}[\s._-]+/, "")
+    .replace(/[\[\](){}]/g, " ")
+    .replace(/[^\w\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Build normalized filename -> paths[] from device scan entries.
+ * Used as fallback when exact filenames differ but represent the same track.
+ */
+export function buildNormalizedFilenameToPathsMap(
+  entries: DeviceScanEntry[]
+): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const entry of entries) {
+    const key = normalizeFilenameForMatch(entry.name);
+    if (!key) continue;
+    const existing = map.get(key);
+    if (existing) {
+      if (!existing.includes(entry.relativePath)) {
+        existing.push(entry.relativePath);
+      }
+    } else {
+      map.set(key, [entry.relativePath]);
+    }
+  }
+  return map;
+}
+
+/**
+ * Collect unique device file paths from scan entries.
+ */
+export function buildUniqueDevicePaths(entries: DeviceScanEntry[]): string[] {
+  return Array.from(new Set(entries.map((entry) => entry.relativePath)));
+}
