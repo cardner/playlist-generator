@@ -66,6 +66,7 @@ import {
   Users,
   FolderOpen,
   ChevronDown,
+  History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgentSelector } from "./AgentSelector";
@@ -393,6 +394,89 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
           )}
         </div>
       )}
+
+      {/* Source pool: preset and controls */}
+      <div>
+        <label className="flex items-center gap-2 text-app-primary mb-3">
+          <History className="size-5 text-accent-primary" />
+          <span className="font-medium uppercase tracking-wider text-sm">
+            Source
+          </span>
+        </label>
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                setFormData((prev) => ({
+                  ...prev,
+                  sourcePool: "recent",
+                  recentWindow: "30d",
+                  recentTrackCount: undefined,
+                }))
+              }
+              className={cn(
+                "px-3 py-1.5 rounded-sm text-sm font-medium transition-colors",
+                formData.sourcePool === "recent"
+                  ? "bg-accent-primary text-white"
+                  : "bg-app-hover text-app-secondary hover:bg-app-border hover:text-app-primary"
+              )}
+            >
+              Mix from recent additions
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setFormData((prev) => ({
+                  ...prev,
+                  sourcePool: "all",
+                }))
+              }
+              className={cn(
+                "px-3 py-1.5 rounded-sm text-sm font-medium transition-colors",
+                formData.sourcePool !== "recent"
+                  ? "bg-accent-primary text-white"
+                  : "bg-app-hover text-app-secondary hover:bg-app-border hover:text-app-primary"
+              )}
+            >
+              All tracks
+            </button>
+          </div>
+          {formData.sourcePool === "recent" && (
+            <div className="flex items-center gap-3 pl-1">
+              <span className="text-app-secondary text-sm">Recent window:</span>
+              <div className="flex gap-2">
+                {(["7d", "30d", "90d"] as const).map((w) => (
+                  <label
+                    key={w}
+                    className="flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <input
+                      type="radio"
+                      name="recentWindow"
+                      checked={formData.recentWindow === w}
+                      onChange={() =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          recentWindow: w,
+                        }))
+                      }
+                      className="text-accent-primary"
+                    />
+                    <span className="text-app-primary text-sm">
+                      {w === "7d"
+                        ? "Last 7 days"
+                        : w === "90d"
+                          ? "Last 90 days"
+                          : "Last 30 days"}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Discovery Mode Introduction */}
       {discoveryMode && (

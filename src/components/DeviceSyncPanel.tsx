@@ -67,7 +67,7 @@ import { getSavedLibraryRoot } from "@/lib/library-selection-root";
 import type { LibraryRoot } from "@/lib/library-selection";
 import { logger } from "@/lib/logger";
 import { Modal } from "@/components/Modal";
-import { Usb, HardDrive, Loader2 } from "lucide-react";
+import { Usb, HardDrive, Loader2, Save, Bug, ChevronDown, ChevronUp } from "lucide-react";
 import { scanLibraryWithPersistence } from "@/features/library/scanning-persist";
 import { findFileIndexByGlobalTrackId } from "@/features/library/track-identity";
 
@@ -111,6 +111,7 @@ export function DeviceSyncPanel({
   >("download");
   const [useCompanionApp, setUseCompanionApp] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [syncPhase, setSyncPhase] = useState<"idle" | "preparing" | "writing">("idle");
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncSuccess, setSyncSuccess] = useState<string | null>(null);
@@ -173,6 +174,19 @@ export function DeviceSyncPanel({
     matched: number;
     total: number;
     ratio: number;
+  } | null>(null);
+  const [showKeyCoverageLog, setShowKeyCoverageLog] = useState(false);
+  const [keyCoverageLog, setKeyCoverageLog] = useState<{
+    tracksWithMetadata: number;
+    totalTracks: number;
+    keyMapSize: number;
+    sampleLibraryKeys: string[];
+    scanMapSize: number;
+    scanEntriesCount: number;
+    scanned: number;
+    matched: number;
+    hashed: number;
+    sampleDevicePaths: string[];
   } | null>(null);
   const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<string[]>([]);
   const [syncQueueStatus, setSyncQueueStatus] = useState<{
@@ -1689,7 +1703,11 @@ export function DeviceSyncPanel({
     targetKeyMap?: Map<string, Set<string>>;
     targetTrackCount?: number;
     computeFullContentHash?: boolean;
-  }): Promise<{ map: Map<string, string>; entries: DeviceScanEntry[] }> {
+  }): Promise<{
+    map: Map<string, string>;
+    entries: DeviceScanEntry[];
+    finalProgress?: DeviceScanProgress;
+  }> {
     if (!deviceHandleRef) {
       throw new Error("Select a device folder before scanning");
     }
@@ -1745,7 +1763,11 @@ export function DeviceSyncPanel({
         buildDevicePreview(combinedLookups, map);
       }
     }
-    return { map, entries: result.entries };
+    return {
+      map,
+      entries: result.entries,
+      finalProgress: result.finalProgress,
+    };
   }
 
   function buildCompanionPayload(options: {
@@ -1924,18 +1946,49 @@ export function DeviceSyncPanel({
         );
         setDeviceScanStatus("done");
         setDeviceScanProgress({ scanned: 0, matched: 0, hashed: 0 });
+        const totalTracks = targetsWithLookups.flatMap((t) => t.trackLookups).length;
+        setKeyCoverageLog({
+          tracksWithMetadata: 0,
+          totalTracks,
+          keyMapSize: 0,
+          sampleLibraryKeys: [],
+          scanMapSize: 0,
+          scanEntriesCount: 0,
+          scanned: 0,
+          matched: 0,
+          hashed: 0,
+          sampleDevicePaths: [],
+        });
         return;
       }
-      await scanDevicePaths({
+      const scanResult = await scanDevicePaths({
         preview: true,
         targetKeyMap,
         targetTrackCount,
         computeFullContentHash: hasFullHash,
       });
+      const totalTracks = targetsWithLookups.flatMap((t) => t.trackLookups).length;
+      const tracksWithMetadata = normalizedTargets.flatMap((t) => t.trackLookups).length;
+      const sampleLibraryKeys = Array.from(targetKeyMap.keys()).slice(0, 8);
+      const pathValues = Array.from(scanResult.map.values());
+      const uniquePaths = Array.from(new Set(pathValues));
+      setKeyCoverageLog({
+        tracksWithMetadata,
+        totalTracks,
+        keyMapSize: targetKeyMap.size,
+        sampleLibraryKeys,
+        scanMapSize: scanResult.map.size,
+        scanEntriesCount: scanResult.entries.length,
+        scanned: scanResult.finalProgress?.scanned ?? 0,
+        matched: scanResult.finalProgress?.matched ?? 0,
+        hashed: scanResult.finalProgress?.hashed ?? 0,
+        sampleDevicePaths: uniquePaths.slice(0, 8),
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to scan device paths";
       setDeviceScanStatus("error");
       setSyncError(message);
+      setKeyCoverageLog(null);
     }
   }
 
@@ -2266,6 +2319,60 @@ export function DeviceSyncPanel({
     }
   }
 
+  async function handleSaveDeviceSettings() {
+    setIsSavingSettings(true);
+    setSyncError(null);
+    setSyncSuccess(null);
+    try {
+      const label = deviceLabel.trim() || (isJellyfinPreset ? "Jellyfin" : "USB Device");
+      const effectivePlaylistFolder = isWalkmanPreset ? "MUSIC" : devicePlaylistFolder.trim();
+      const effectivePathStrategy = isWalkmanPreset
+        ? "relative-to-playlist"
+        : devicePathStrategy;
+      const effectiveAbsolutePrefix =
+        effectivePathStrategy === "absolute" ? deviceAbsolutePrefix.trim() || undefined : undefined;
+      const modelInfo = ipodUsbInfo?.productId
+        ? getModelInfo(ipodUsbInfo.productId)
+        : null;
+
+      const profile = await saveDeviceProfile({
+        id: selectedDeviceId === "new" ? undefined : selectedDeviceId,
+        label,
+        handleRef: useCompanionApp ? undefined : deviceHandleRef || undefined,
+        deviceType: isIpodPreset ? "ipod" : devicePreset,
+        playlistFormat: devicePlaylistFormat,
+        playlistFolder: effectivePlaylistFolder,
+        pathStrategy: effectivePathStrategy,
+        absolutePathPrefix: effectiveAbsolutePrefix,
+        containerLibraryPrefix: isJellyfinPreset
+          ? normalizeContainerPrefix(jellyfinContainerPrefix) || undefined
+          : undefined,
+        jellyfinExportMode: isJellyfinPreset ? jellyfinExportMode : undefined,
+        usbVendorId: ipodUsbInfo?.productId ? 0x05ac : undefined,
+        usbProductId: ipodUsbInfo?.productId,
+        usbSerialNumber: ipodUsbInfo?.serialNumber,
+        usbProductName: ipodUsbInfo?.productName,
+        usbManufacturerName: ipodUsbInfo?.manufacturerName,
+        ipodModelName: modelInfo?.name,
+        ipodModelNumber: modelInfo?.modelNumStr,
+        ipodRequiresEncryption: ipodUsbInfo?.productId
+          ? requiresEncryption(ipodUsbInfo.productId)
+          : undefined,
+      });
+      await refreshDeviceProfiles();
+      if (selectedDeviceId === "new") {
+        setSelectedDeviceId(profile.id);
+      }
+      setSyncSuccess("Device settings saved.");
+      onDeviceProfileUpdated?.(profile);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save device settings";
+      setSyncError(message);
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
   const selectedDeviceProfile =
     deviceProfileOverride ||
     (selectedDeviceId === "new"
@@ -2350,13 +2457,28 @@ export function DeviceSyncPanel({
           <label className="block text-app-primary text-xs font-medium mb-2 uppercase tracking-wider">
             Device Name
           </label>
-          <input
-            type="text"
-            value={deviceLabel}
-            onChange={(e) => setDeviceLabel(e.target.value)}
-            placeholder="My Walkman"
-            className="w-full px-4 py-2 bg-app-surface text-app-primary border border-app-border rounded-sm focus:outline-none focus:ring-2 focus:ring-accent-primary text-sm"
-          />
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={deviceLabel}
+              onChange={(e) => setDeviceLabel(e.target.value)}
+              placeholder="My Walkman"
+              className="flex-1 px-4 py-2 bg-app-surface text-app-primary border border-app-border rounded-sm focus:outline-none focus:ring-2 focus:ring-accent-primary text-sm"
+            />
+            <button
+              type="button"
+              onClick={handleSaveDeviceSettings}
+              disabled={isSavingSettings || isSyncing}
+              className="flex items-center gap-1.5 px-3 py-2 bg-accent-primary text-white rounded-sm hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium shrink-0"
+            >
+              {isSavingSettings ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Save className="size-4" />
+              )}
+              Save
+            </button>
+          </div>
         </div>
 
         {isJellyfinPreset && (
@@ -2998,6 +3120,67 @@ export function DeviceSyncPanel({
               <p className="text-app-tertiary text-[11px] mt-1">
                 Keep device folder structure aligned with your library for best results.
               </p>
+            </div>
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={() => setShowKeyCoverageLog(!showKeyCoverageLog)}
+                className="flex items-center gap-1.5 text-[11px] text-app-tertiary hover:text-app-secondary uppercase tracking-wider"
+              >
+                {showKeyCoverageLog ? (
+                  <ChevronUp className="size-3.5" />
+                ) : (
+                  <ChevronDown className="size-3.5" />
+                )}
+                <Bug className="size-3.5" />
+                Key coverage log
+              </button>
+              {showKeyCoverageLog && keyCoverageLog && (
+                <div className="mt-2 p-2.5 bg-app-surface border border-app-border rounded-sm font-mono text-[11px] text-app-secondary space-y-1.5 overflow-x-auto">
+                  <div>
+                    <span className="text-app-tertiary">Library:</span>{" "}
+                    {keyCoverageLog.tracksWithMetadata}/{keyCoverageLog.totalTracks} tracks with
+                    metadata
+                  </div>
+                  <div>
+                    <span className="text-app-tertiary">Keys:</span> {keyCoverageLog.keyMapSize}{" "}
+                    match keys for playlist targets
+                  </div>
+                  <div>
+                    <span className="text-app-tertiary">Scan:</span> {keyCoverageLog.scanned} files
+                    scanned, {keyCoverageLog.matched} matched, {keyCoverageLog.hashed} hashed
+                  </div>
+                  <div>
+                    <span className="text-app-tertiary">Map:</span> {keyCoverageLog.scanMapSize}{" "}
+                    path entries for resolution
+                  </div>
+                  {keyCoverageLog.sampleLibraryKeys.length > 0 && (
+                    <div>
+                      <span className="text-app-tertiary">Sample library keys:</span>
+                      <div className="mt-0.5 truncate">
+                        {keyCoverageLog.sampleLibraryKeys.join(", ")}
+                      </div>
+                    </div>
+                  )}
+                  {keyCoverageLog.sampleDevicePaths.length > 0 && (
+                    <div>
+                      <span className="text-app-tertiary">Sample device paths:</span>
+                      <div className="mt-0.5 space-y-0.5">
+                        {keyCoverageLog.sampleDevicePaths.map((p, i) => (
+                          <div key={i} className="truncate">
+                            {p}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {showKeyCoverageLog && !keyCoverageLog && deviceScanStatus !== "scanning" && (
+                <div className="mt-2 p-2.5 bg-app-surface border border-app-border rounded-sm text-[11px] text-app-tertiary">
+                  Run a scan to see key coverage data.
+                </div>
+              )}
             </div>
             {(missingMetadataCount > 0 ||
               (deviceScanStatus === "done" && devicePreviewPaths.missing.length > 0)) && (

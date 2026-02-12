@@ -13,6 +13,7 @@ import type { TrackRecord } from "@/db/schema";
 import { logger } from "@/lib/logger";
 import { applyTempoMappingsToRequest } from "@/lib/tempo-mapping";
 import { normalizePlaylistRequest } from "./request-normalization";
+import { applyRecentFilter } from "./recent-filter";
 
 // Re-export types from matching engine
 export type {
@@ -63,6 +64,18 @@ export async function generatePlaylistFromStrategy(
 
   if (allTracks.length === 0) {
     throw new Error("No tracks available after filtering");
+  }
+
+  // Apply recent filter when sourcePool is "recent"
+  allTracks = applyRecentFilter(allTracks, normalizedRequest);
+  if (normalizedRequest.sourcePool === "recent" && allTracks.length === 0) {
+    const windowLabel =
+      normalizedRequest.recentTrackCount != null
+        ? `last ${normalizedRequest.recentTrackCount} tracks`
+        : normalizedRequest.recentWindow ?? "30d";
+    throw new Error(
+      `No recent tracks in the selected window (${windowLabel}). Try a larger window or add more tracks to your collection.`
+    );
   }
 
   // Check if LLM is enabled for tempo detection
@@ -156,11 +169,12 @@ export async function generatePlaylistFromStrategy(
             allTracks = await getAllTracks();
           }
           
-          // Re-filter excluded tracks
+          // Re-filter excluded tracks and recent filter
           if (excludeTrackIds && excludeTrackIds.length > 0) {
             const excludeSet = new Set(excludeTrackIds);
             allTracks = allTracks.filter((t) => !excludeSet.has(t.trackFileId));
           }
+          allTracks = applyRecentFilter(allTracks, normalizedRequest);
         }
       }
     } catch (error) {
@@ -230,11 +244,12 @@ export async function generatePlaylistFromStrategy(
               allTracks = await getAllTracks();
             }
             
-            // Re-filter excluded tracks
+            // Re-filter excluded tracks and recent filter
             if (excludeTrackIds && excludeTrackIds.length > 0) {
               const excludeSet = new Set(excludeTrackIds);
               allTracks = allTracks.filter((t) => !excludeSet.has(t.trackFileId));
             }
+            allTracks = applyRecentFilter(allTracks, normalizedRequest);
             
             // Rebuild matching index with updated BPM values
             const updatedMatchingIndex = await buildMatchingIndex(libraryRootId);

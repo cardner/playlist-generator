@@ -82,7 +82,5 @@ export function supportsWebWorkers(): boolean {
 export function supportsWebUSB(): boolean {
   if (typeof window === "undefined") {
     return false;
-  }
-
-  return "usb" in navigator;
+  }  return "usb" in navigator;
 }

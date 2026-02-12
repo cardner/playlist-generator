@@ -173,6 +173,12 @@ export interface PlaylistRequest {
   enableDiscovery?: boolean;
   /** How often to insert discovery tracks: "every", "every_other", or "custom" */
   discoveryFrequency?: "every" | "every_other" | "custom";
+  /** Source pool for track selection: "all" (default) or "recent" (recent additions only) */
+  sourcePool?: "all" | "recent";
+  /** When sourcePool is "recent", time window for recent tracks (default "30d") */
+  recentWindow?: "7d" | "30d" | "90d";
+  /** When sourcePool is "recent", alternative to recentWindow: use last N tracks */
+  recentTrackCount?: number;
 }
 
 /**
@@ -352,17 +358,25 @@ export type PartialPlaylistRequest = Partial<PlaylistRequest>;
  * ```
  */
 export function isValidPlaylistRequest(request: Partial<PlaylistRequest>): request is PlaylistRequest {
+  const isRecentOnly = request.sourcePool === "recent";
+  const hasRequiredGenres = isRecentOnly
+    ? true
+    : Array.isArray(request.genres) && request.genres.length > 0;
+  const hasRequiredMood = isRecentOnly
+    ? true
+    : Array.isArray(request.mood) && request.mood.length > 0;
+  const hasRequiredActivity = isRecentOnly
+    ? true
+    : Array.isArray(request.activity) && request.activity.length > 0;
+
   return (
-    Array.isArray(request.genres) &&
-    request.genres.length > 0 &&
+    hasRequiredGenres &&
     request.length !== undefined &&
     request.length.type !== undefined &&
     request.length.value !== undefined &&
     request.length.value > 0 &&
-    Array.isArray(request.mood) &&
-    request.mood.length > 0 &&
-    Array.isArray(request.activity) &&
-    request.activity.length > 0 &&
+    hasRequiredMood &&
+    hasRequiredActivity &&
     request.tempo !== undefined &&
     typeof request.surprise === "number" &&
     request.surprise >= 0 &&

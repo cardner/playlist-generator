@@ -72,14 +72,28 @@ function normalizeActivityList(values: string[]): string[] {
  * Normalizes mood and activity arrays in a playlist request to canonical categories.
  * Trims whitespace, maps synonyms to categories, and deduplicates. Returns a new
  * request object; does not mutate the original.
+ * Also applies defaults for sourcePool and recentWindow when sourcePool is "recent".
  *
  * @param request - Raw playlist request from user input
  * @returns New request with normalized mood and activity arrays
  */
 export function normalizePlaylistRequest(request: PlaylistRequest): PlaylistRequest {
+  const sourcePool = request.sourcePool ?? "all";
+  const recentWindow =
+    sourcePool === "recent" && !request.recentWindow && !request.recentTrackCount
+      ? "30d"
+      : request.recentWindow;
+
+  const genres = Array.isArray(request.genres) ? request.genres : [];
+  const mood = normalizeMoodList(request.mood || []);
+  const activity = normalizeActivityList(request.activity || []);
+
   return {
     ...request,
-    mood: normalizeMoodList(request.mood || []),
-    activity: normalizeActivityList(request.activity || []),
+    genres,
+    mood,
+    activity,
+    sourcePool,
+    recentWindow,
   };
 }

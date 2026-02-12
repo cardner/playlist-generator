@@ -45,23 +45,37 @@ export async function clearOldDatabaseIfNeeded(): Promise<void> {
       class TestDB extends Dexie {
         constructor() {
           super(DB_NAME);
-          // Try to open with current schema version (13)
-          this.version(13).stores({
-            libraryRoots: "id, createdAt",
-            fileIndex: "id, trackFileId, libraryRootId, name, extension, fullContentHash, contentHash, updatedAt",
-            tracks: "id, trackFileId, libraryRootId, globalTrackId, isrc, updatedAt",
-            scanRuns: "id, libraryRootId, startedAt",
-            settings: "key",
-            directoryHandles: "id",
-            savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
-            scanCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
-            processingCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
-            trackWritebacks: "id, libraryRootId, pending, updatedAt",
-            writebackCheckpoints: "id, writebackRunId, libraryRootId, checkpointAt",
-            deviceProfiles: "id, createdAt, updatedAt",
-            deviceSyncManifests: "id, deviceId, playlistId, lastSyncedAt",
-            deviceFileIndex: "id, deviceId, matchKey, contentHash, fullContentHash, updatedAt",
-          });
+          // Try to open with current schema version (14)
+          this.version(14)
+            .stores({
+              libraryRoots: "id, createdAt",
+              fileIndex: "id, trackFileId, libraryRootId, name, extension, fullContentHash, contentHash, updatedAt",
+              tracks: "id, trackFileId, libraryRootId, globalTrackId, isrc, updatedAt, addedAt",
+              scanRuns: "id, libraryRootId, startedAt",
+              settings: "key",
+              directoryHandles: "id",
+              savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
+              scanCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+              processingCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+              trackWritebacks: "id, libraryRootId, pending, updatedAt",
+              writebackCheckpoints: "id, writebackRunId, libraryRootId, checkpointAt",
+              deviceProfiles: "id, createdAt, updatedAt",
+              deviceSyncManifests: "id, deviceId, playlistId, lastSyncedAt",
+              deviceFileIndex: "id, deviceId, matchKey, contentHash, fullContentHash, updatedAt",
+            })
+            .upgrade(async (trans) => {
+              // Mirror schema.ts v14: backfill addedAt for existing tracks
+              const tracksStore = trans.table("tracks");
+              const allTracks = await tracksStore.toArray();
+              for (const record of allTracks) {
+                if (record.addedAt == null || record.addedAt === undefined) {
+                  await tracksStore.put({
+                    ...record,
+                    addedAt: record.updatedAt,
+                  });
+                }
+              }
+            });
         }
       }
 
