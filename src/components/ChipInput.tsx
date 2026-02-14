@@ -72,6 +72,8 @@ export interface ChipInputProps {
   debounceDelay?: number;
   /** Compact size for toolbar/inline use */
   compact?: boolean;
+  /** Related/similar suggestions shown as quick-add pills when user has selected values */
+  relatedSuggestions?: string[];
 }
 
 export function ChipInput({
@@ -88,6 +90,7 @@ export function ChipInput({
   maxResults = 50,
   debounceDelay = 300,
   compact = false,
+  relatedSuggestions = [],
 }: ChipInputProps) {
   const [inputValue, setInputValue] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -194,6 +197,13 @@ export function ChipInput({
     return stat?.trackCount;
   };
 
+  /** Related suggestions not already selected */
+  const availableRelated = useMemo(
+    () => relatedSuggestions.filter((s) => !values.includes(s)),
+    [relatedSuggestions, values]
+  );
+  const showRelatedPills = availableRelated.length > 0 && values.length > 0;
+
   // Determine if we should show suggestions
   const shouldShowSuggestions = showSuggestions && (
     filteredSuggestions.length > 0 || 
@@ -289,6 +299,23 @@ export function ChipInput({
           </div>
         )}
       </div>
+      {showRelatedPills && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-app-tertiary text-xs mr-1">Similar:</span>
+          {availableRelated.map((suggestion) => (
+            <button
+              key={suggestion}
+              type="button"
+              onClick={() => handleAdd(suggestion)}
+              className={`inline-flex items-center px-2 py-0.5 rounded-sm border border-app-border bg-app-surface text-app-secondary hover:bg-app-hover hover:text-app-primary transition-colors ${
+                compact ? "text-xs" : "text-sm"
+              }`}
+            >
+              + {suggestion}
+            </button>
+          ))}
+        </div>
+      )}
       {error && (
         <p className="text-red-500 text-sm flex items-center gap-1">
           <AlertCircle className="size-4" />

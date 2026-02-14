@@ -33,3 +33,13 @@ export const WithSuggestions: Story = {
     suggestions: ["Rock", "Jazz", "Electronic", "Classical", "Pop"],
   },
 };
+
+export const WithRelatedSuggestions: Story = {
+  args: {
+    values: ["Rock"],
+    onChange: () => {},
+    placeholder: "Add genres...",
+    suggestions: ["Rock", "Jazz", "Electronic", "Classical", "Pop", "Indie Rock", "Alternative Rock", "Punk"],
+    relatedSuggestions: ["Indie Rock", "Alternative Rock", "Punk", "Classic Rock"],
+  },
+};

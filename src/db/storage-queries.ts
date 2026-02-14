@@ -10,6 +10,10 @@
 import { db } from "./schema";
 import type { TrackRecord } from "./schema";
 import { createGenreStatsAccumulator, type GenreWithStats } from "@/features/library/genre-normalization";
+import {
+  createGenreCoOccurrenceAccumulator,
+  type GenreCoOccurrenceMap,
+} from "@/features/library/genre-similarity";
 
 /**
  * Search tracks by query (searches title, artist, album)
@@ -721,6 +725,29 @@ export async function getAllGenresWithStats(
   }
 
   const accumulator = createGenreStatsAccumulator();
+  await collection.each((track) => {
+    accumulator.addTrack(track);
+  });
+  return accumulator.finalize();
+}
+
+/**
+ * Get genre co-occurrence map for similar-genre suggestions.
+ * For each genre, counts how often it appears on the same track as other genres.
+ *
+ * @param libraryRootId - Optional library root ID to limit scope
+ * @returns Map of genre -> Map of co-occurring genre -> count
+ */
+export async function getGenreCoOccurrence(
+  libraryRootId?: string
+): Promise<GenreCoOccurrenceMap> {
+  let collection = db.tracks.toCollection();
+
+  if (libraryRootId) {
+    collection = db.tracks.where("libraryRootId").equals(libraryRootId);
+  }
+
+  const accumulator = createGenreCoOccurrenceAccumulator();
   await collection.each((track) => {
     accumulator.addTrack(track);
   });
