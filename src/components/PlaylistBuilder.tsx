@@ -75,37 +75,16 @@ import { LibrarySearchCombo } from "./LibrarySearchCombo";
 import type { AgentType, LLMConfig } from "@/types/playlist";
 import { logger } from "@/lib/logger";
 import { usePlaylistForm } from "@/hooks/usePlaylistForm";
+import { getMoodCategories } from "@/features/library/mood-mapping";
+import { getActivityCategories } from "@/features/library/activity-mapping";
 
 interface PlaylistBuilderProps {
   onGenerate?: (request: PlaylistRequest) => void;
   discoveryMode?: boolean;
 }
 
-const MOOD_SUGGESTIONS = [
-  "Happy",
-  "Energetic",
-  "Relaxed",
-  "Melancholic",
-  "Upbeat",
-  "Calm",
-  "Intense",
-  "Peaceful",
-  "Exciting",
-  "Mellow",
-];
-
-const ACTIVITY_SUGGESTIONS = [
-  "Working Out",
-  "Running",
-  "Studying",
-  "Driving",
-  "Cooking",
-  "Relaxing",
-  "Partying",
-  "Sleeping",
-  "Meditating",
-  "Cleaning",
-];
+const MOOD_SUGGESTIONS = getMoodCategories();
+const ACTIVITY_SUGGESTIONS = getActivityCategories();
 
 export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistBuilderProps) {
   const router = useRouter();

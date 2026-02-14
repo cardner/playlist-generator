@@ -56,4 +56,29 @@ describe("normalizePlaylistRequest", () => {
       expect(result.recentWindow).toBeUndefined();
     });
   });
+
+  describe("mood and activity normalization", () => {
+    it("normalizes new mood synonyms to canonical categories", () => {
+      const result = normalizePlaylistRequest({
+        ...baseRequest,
+        mood: ["romantic", "dreamy", "uplifting"],
+        activity: ["workout"],
+      });
+      expect(result.mood).toContain("Romantic");
+      expect(result.mood).toContain("Dreamy");
+      expect(result.mood).toContain("Uplifting");
+    });
+
+    it("normalizes new activity synonyms to canonical categories", () => {
+      const result = normalizePlaylistRequest({
+        ...baseRequest,
+        mood: ["energetic"],
+        activity: ["yoga", "gaming", "cleaning", "cycling"],
+      });
+      expect(result.activity).toContain("Yoga");
+      expect(result.activity).toContain("Gaming");
+      expect(result.activity).toContain("Cleaning");
+      expect(result.activity).toContain("Cycling");
+    });
+  });
 });

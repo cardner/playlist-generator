@@ -54,10 +54,18 @@ export interface OrderedTracks {
   };
 }
 
-const LOW_MOODS = new Set(["calm", "relaxed", "peaceful", "mellow"]);
-const HIGH_MOODS = new Set(["energetic", "upbeat", "intense", "exciting"]);
-const LOW_ACTIVITIES = new Set(["sleep", "meditation", "relaxing", "reading"]);
-const HIGH_ACTIVITIES = new Set(["workout", "running", "party", "dance"]);
+const LOW_MOODS = new Set([
+  "calm", "relaxed", "peaceful", "mellow", "dreamy", "nostalgic", "reflective",
+]);
+const HIGH_MOODS = new Set([
+  "energetic", "upbeat", "intense", "exciting", "aggressive", "uplifting", "euphoric",
+]);
+const LOW_ACTIVITIES = new Set([
+  "sleep", "meditation", "relaxing", "reading", "yoga",
+]);
+const HIGH_ACTIVITIES = new Set([
+  "workout", "running", "party", "dance", "cycling",
+]);
 
 /**
  * Derives an energy level from mood and activity tags.

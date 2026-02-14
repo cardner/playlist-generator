@@ -26,6 +26,8 @@ import { ChipInput } from "./ChipInput";
 import { useTrackMetadataEditor } from "@/hooks/useTrackMetadataEditor";
 import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
+import { getMoodCategories } from "@/features/library/mood-mapping";
+import { getActivityCategories } from "@/features/library/activity-mapping";
 
 interface TrackMetadataEditorProps {
   /** Track to edit */
@@ -40,38 +42,8 @@ interface TrackMetadataEditorProps {
   inline?: boolean;
 }
 
-const MOOD_SUGGESTIONS = [
-  "Happy",
-  "Energetic",
-  "Relaxed",
-  "Melancholic",
-  "Upbeat",
-  "Calm",
-  "Intense",
-  "Peaceful",
-  "Exciting",
-  "Mellow",
-  "Sad",
-  "Aggressive",
-  "Dreamy",
-  "Romantic",
-  "Dark",
-];
-
-const ACTIVITY_SUGGESTIONS = [
-  "Workout",
-  "Running",
-  "Study",
-  "Work",
-  "Commute",
-  "Cooking",
-  "Party",
-  "Dance",
-  "Relaxing",
-  "Meditation",
-  "Reading",
-  "Sleep",
-];
+const MOOD_SUGGESTIONS = getMoodCategories();
+const ACTIVITY_SUGGESTIONS = getActivityCategories();
 
 /**
  * Get current metadata values from track, prioritizing manual edits

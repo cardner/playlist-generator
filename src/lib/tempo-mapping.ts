@@ -16,9 +16,9 @@ export const TEMPO_BUCKET_MOODS: Record<TempoBucket, string[]> = {
 };
 
 export const TEMPO_BUCKET_ACTIVITIES: Record<TempoBucket, string[]> = {
-  slow: ["sleep", "reading", "meditation", "relaxing"],
-  medium: ["work", "study", "commute", "cooking"],
-  fast: ["workout", "running", "party", "dance"],
+  slow: ["sleep", "reading", "meditation", "relaxing", "yoga"],
+  medium: ["work", "study", "commute", "cooking", "cleaning", "creative", "gaming", "walking"],
+  fast: ["workout", "running", "party", "dance", "cycling"],
 };
 
 function mergeUnique(base: string[], additions: string[]) {

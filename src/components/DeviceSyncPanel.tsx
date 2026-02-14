@@ -66,6 +66,7 @@ import { requestLibraryPermission } from "@/lib/library-selection-permissions";
 import { getSavedLibraryRoot } from "@/lib/library-selection-root";
 import type { LibraryRoot } from "@/lib/library-selection";
 import { logger } from "@/lib/logger";
+import { formatPlaylistFilenameStem } from "@/lib/playlist-filename";
 import { Modal } from "@/components/Modal";
 import { Usb, HardDrive, Loader2, Save, Bug, ChevronDown, ChevronUp } from "lucide-react";
 import { scanLibraryWithPersistence } from "@/features/library/scanning-persist";
@@ -944,10 +945,6 @@ export function DeviceSyncPanel({
       normalized = `/${normalized}`;
     }
     return normalized.replace(/\/+$/, "");
-  }
-
-  function sanitizeFilename(input: string): string {
-    return input.replace(/[^a-z0-9]/gi, "_").toLowerCase().substring(0, 50);
   }
 
   function filterTrackLookups(trackLookups: TrackLookup[]): {
@@ -2247,7 +2244,7 @@ export function DeviceSyncPanel({
             exportConfig,
             "jellyfin"
           );
-          const filename = `${sanitizeFilename(target.playlist.title)}.m3u`;
+          const filename = `${formatPlaylistFilenameStem(target.playlist.title)}.m3u`;
           const fileHandle = await handle.getFileHandle(filename, { create: true });
           const writable = await fileHandle.createWritable();
           await writable.write(result.content);
@@ -2262,7 +2259,7 @@ export function DeviceSyncPanel({
             exportConfig,
             "jellyfin"
           );
-          const filename = `${sanitizeFilename(target.playlist.title)}.m3u`;
+          const filename = `${formatPlaylistFilenameStem(target.playlist.title)}.m3u`;
           downloadFile(result.content, filename, result.mimeType);
         }
         setSyncSuccess(`Downloaded ${filteredTargets.length} playlist(s) for Jellyfin`);

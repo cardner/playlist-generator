@@ -14,6 +14,7 @@ import {
 import { supportsFileSystemAccess } from "@/lib/feature-detection";
 import { getDirectoryHandle, storeDirectoryHandle } from "@/lib/library-selection-fs-api";
 import { logger } from "@/lib/logger";
+import { formatPlaylistFilenameStem } from "@/lib/playlist-filename";
 import type { DeviceProfileRecord } from "@/db/schema";
 import { saveDeviceProfile, saveDeviceSyncManifest } from "./device-storage";
 import type { DeviceScanEntry } from "./device-scan";
@@ -490,10 +491,6 @@ async function ensureDirectoryPermission(
   }
 }
 
-function sanitizeFilename(input: string): string {
-  return input.replace(/[^a-z0-9]/gi, "_").toLowerCase().substring(0, 50);
-}
-
 function hashString(value: string): string {
   let hash = 0;
   for (let i = 0; i < value.length; i += 1) {
@@ -615,7 +612,7 @@ export async function syncPlaylistToDevice(options: {
     }
   })();
 
-  const filename = `${sanitizeFilename(playlist.title)}.${contentResult.extension}`;
+  const filename = `${formatPlaylistFilenameStem(playlist.title)}.${contentResult.extension}`;
   const targetDirectory = await getOrCreateDirectory(
     handle,
     deviceProfile.playlistFolder
