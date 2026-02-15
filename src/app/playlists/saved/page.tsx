@@ -50,16 +50,18 @@ export default function SavedPlaylistsPage() {
 
     // Refresh when collections might change (check periodically)
     const interval = setInterval(() => {
-      loadPlaylists();
+      loadPlaylists({ backgroundRefresh: true });
       getAllCollections().then(setCollections);
     }, 3000); // Check every 3 seconds
 
     return () => clearInterval(interval);
   }, []);
 
-  async function loadPlaylists() {
+  async function loadPlaylists(opts?: { backgroundRefresh?: boolean }) {
     try {
-      setIsLoading(true);
+      if (!opts?.backgroundRefresh) {
+        setIsLoading(true);
+      }
       const saved = await getAllSavedPlaylistsWithCollections();
       const currentId = await getCurrentCollectionId();
       setCurrentCollectionId(currentId || null);
