@@ -74,6 +74,28 @@ function parseToc(markdown: string): TocItem[] {
   return items;
 }
 
+type TocGroup = {
+  id: string;
+  text: string;
+  children: TocItem[];
+};
+
+function groupTocItems(items: TocItem[]): TocGroup[] {
+  const groups: TocGroup[] = [];
+  let current: TocGroup | null = null;
+
+  for (const item of items) {
+    if (item.level === 2) {
+      if (current) groups.push(current);
+      current = { id: item.id, text: item.text, children: [] };
+    } else if (item.level === 3 && current) {
+      current.children.push(item);
+    }
+  }
+  if (current) groups.push(current);
+  return groups;
+}
+
 function splitMarkdownSections(markdown: string): {
   intro: string;
   sections: MarkdownSection[];
@@ -124,6 +146,8 @@ export function HelpPanel({ markdown }: { markdown: string }) {
   );
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const tocItems = useMemo(() => parseToc(markdown), [markdown]);
+  const tocGroups = useMemo(() => groupTocItems(tocItems), [tocItems]);
+  const [expandedTocIds, setExpandedTocIds] = useState<Set<string>>(() => new Set());
   const { intro, sections } = useMemo(() => splitMarkdownSections(markdown), [markdown]);
   const headingToSection = useMemo(() => {
     const map = new Map<string, string>();
@@ -237,6 +261,18 @@ export function HelpPanel({ markdown }: { markdown: string }) {
     });
   };
 
+  const handleToggleTocGroup = (groupId: string) => {
+    setExpandedTocIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  };
+
   const markdownComponents: Components = {
     h1: ({ children }) => {
       const text = getTextFromChildren(children);
@@ -345,29 +381,63 @@ export function HelpPanel({ markdown }: { markdown: string }) {
               className="flex-1 overflow-y-auto p-6"
               onScroll={handleScroll}
             >
-              {tocItems.length > 0 && (
+              {tocGroups.length > 0 && (
                 <div className="bg-app-hover border border-app-border rounded-sm p-4">
                   <div className="text-app-secondary text-xs uppercase tracking-wider mb-3">
                     Contents
                   </div>
-                  <ul className="space-y-2 text-sm">
-                    {tocItems.map((item) => (
-                      <li key={`${item.level}-${item.id}`}>
-                        <a
-                          href={`#${item.id}`}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            handleTocClick(item.id);
-                          }}
-                          className={cn(
-                            "text-app-primary hover:text-accent-primary transition-colors",
-                            item.level === 3 && "pl-4 text-app-secondary"
+                  <ul className="space-y-1 text-sm">
+                    {tocGroups.map((group) => {
+                      const hasChildren = group.children.length > 0;
+                      const isExpanded = expandedTocIds.has(group.id);
+                      return (
+                        <li key={group.id}>
+                          <div className="flex items-center justify-start gap-2 min-w-0">
+                            <a
+                              href={`#${group.id}`}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleTocClick(group.id);
+                              }}
+                              className="text-app-primary hover:text-accent-primary transition-colors truncate min-w-0"
+                            >
+                              {group.text}
+                            </a>
+                            {hasChildren ? (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleTocGroup(group.id)}
+                                className="shrink-0 p-0.5 rounded text-app-secondary hover:text-app-primary hover:bg-app-surface transition-colors"
+                                aria-expanded={isExpanded}
+                                aria-label={isExpanded ? "Collapse" : "Expand"}
+                              >
+                                <ChevronDown
+                                  className={cn("size-3.5 transition-transform", isExpanded && "rotate-180")}
+                                />
+                              </button>
+                            ) : null}
+                          </div>
+                          {hasChildren && isExpanded && (
+                            <ul className="mt-1 ml-6 pl-3 space-y-1">
+                              {group.children.map((child) => (
+                                <li key={child.id}>
+                                  <a
+                                    href={`#${child.id}`}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      handleTocClick(child.id);
+                                    }}
+                                    className="text-app-secondary hover:text-accent-primary transition-colors"
+                                  >
+                                    {child.text}
+                                  </a>
+                                </li>
+                              ))}
+                            </ul>
                           )}
-                        >
-                          {item.text}
-                        </a>
-                      </li>
-                    ))}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               )}

@@ -60,6 +60,7 @@
 
 import { useEffect, useState } from "react";
 import { FolderOpen, Music, CheckCircle2, AlertCircle, RefreshCw, Database, ChevronDown, ChevronUp, Edit, X, Check, Settings, Download, AlertTriangle } from "lucide-react";
+import { Logo } from "./Logo";
 import { needsReimport, type LibraryRoot, type PermissionStatus } from "@/lib/library-selection";
 import { getScanRuns, getTracks } from "@/db/storage";
 import { supportsFileSystemAccess } from "@/lib/feature-detection";
@@ -263,9 +264,7 @@ export function LibrarySelector({
         <div className="bg-app-surface rounded-sm shadow-2xl p-6 md:p-8">
           <div className="flex items-start justify-between gap-4 mb-4">
             <div className="flex items-start gap-4">
-              <div className="inline-flex items-center justify-center size-12 bg-gradient-to-br from-accent-primary to-accent-secondary rounded-sm">
-                <Music className="size-6 text-white" />
-              </div>
+              <Logo width={48} height={48} className="shrink-0" />
               <div>
                 <h2 className="text-app-primary text-lg">Scan Your Music Library</h2>
                 <p className="text-app-secondary max-w-lg leading-relaxed text-sm">

@@ -7,6 +7,28 @@ const config: StorybookConfig = {
     "@storybook/addon-links",
     "@storybook/addon-essentials",
     "@storybook/addon-interactions",
+    {
+      name: "@storybook/addon-styling-webpack",
+      options: {
+        rules: [
+          {
+            test: /\.css$/,
+            use: [
+              "style-loader",
+              { loader: "css-loader", options: { importLoaders: 1 } },
+              {
+                loader: "postcss-loader",
+                options: {
+                  postcssOptions: {
+                    config: path.resolve(process.cwd(), "postcss.config.js"),
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
   ],
   framework: {
     name: "@storybook/react-webpack5",

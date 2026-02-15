@@ -55,6 +55,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { X } from "lucide-react";
 import type { LibraryRoot } from "@/lib/library-selection";
 import { ScanProgress } from "./ScanProgress";
 import { ScanResults } from "./ScanResults";
@@ -105,6 +106,9 @@ export function LibraryScanner({
     libraryRootId: string;
     lastWrittenPath?: string;
   } | null>(null);
+  const [dismissedInterruptedScanRunId, setDismissedInterruptedScanRunId] = useState<string | null>(null);
+  const [dismissedProcessingCheckpointKey, setDismissedProcessingCheckpointKey] = useState<string | null>(null);
+  const [dismissedWritebackCheckpointKey, setDismissedWritebackCheckpointKey] = useState<string | null>(null);
 
   const backgroundTasks = useBackgroundLibraryTasks();
 
@@ -184,6 +188,11 @@ export function LibraryScanner({
       return null;
     }
 
+    const processingKey = `${processingCheckpoint.libraryRootId}-${processingCheckpoint.scanRunId}`;
+    if (processingKey === dismissedProcessingCheckpointKey) {
+      return null;
+    }
+
     return (
       <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4 rounded">
         <div className="flex items-start">
@@ -200,10 +209,20 @@ export function LibraryScanner({
               />
             </svg>
           </div>
-          <div className="ml-3 flex-1">
-            <h3 className="text-sm font-medium text-yellow-800">
-              Processing Interrupted
-            </h3>
+          <div className="ml-3 flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="text-sm font-medium text-yellow-800">
+                Processing Interrupted
+              </h3>
+              <button
+                type="button"
+                onClick={() => setDismissedProcessingCheckpointKey(processingKey)}
+                className="p-1 rounded text-yellow-600 hover:bg-yellow-100 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-1"
+                aria-label="Dismiss"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
             <div className="mt-2 text-sm text-yellow-700">
               <p>
                 Metadata processing was interrupted. You can resume from where it
@@ -288,6 +307,11 @@ export function LibraryScanner({
       return null;
     }
 
+    const writebackKey = `${writebackCheckpoint.libraryRootId}-${writebackCheckpoint.writebackRunId}`;
+    if (writebackKey === dismissedWritebackCheckpointKey) {
+      return null;
+    }
+
     return (
       <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4 rounded">
         <div className="flex items-start">
@@ -304,10 +328,20 @@ export function LibraryScanner({
               />
             </svg>
           </div>
-          <div className="ml-3 flex-1">
-            <h3 className="text-sm font-medium text-yellow-800">
-              Metadata Sync Interrupted
-            </h3>
+          <div className="ml-3 flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="text-sm font-medium text-yellow-800">
+                Metadata Sync Interrupted
+              </h3>
+              <button
+                type="button"
+                onClick={() => setDismissedWritebackCheckpointKey(writebackKey)}
+                className="p-1 rounded text-yellow-600 hover:bg-yellow-100 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-1"
+                aria-label="Dismiss"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
             <div className="mt-2 text-sm text-yellow-700">
               <p>
                 Metadata sync was interrupted. You can resume from where it
@@ -517,6 +551,9 @@ export function LibraryScanner({
         setCurrentRootId(rootId);
         setHasCheckedResumable(false);
         setAutoProcessEnabled(false);
+        setDismissedInterruptedScanRunId(null);
+        setDismissedProcessingCheckpointKey(null);
+        setDismissedWritebackCheckpointKey(null);
         // If this is a new root (not initial mount), mark as new selection
         if (libraryRoot && !isInitialMount) {
           onNewSelection?.();
@@ -619,15 +656,18 @@ export function LibraryScanner({
 
   // Show folder info even if permission not granted yet
   if (permissionStatus !== "granted") {
+    const effectiveScanRunId = interruptedScanRunId || detectedResumableScanRunId;
+    const showScanBanner = effectiveScanRunId && effectiveScanRunId !== dismissedInterruptedScanRunId;
     return (
       <div className="">
-        {(isMonitoringReconnection || interruptedScanRunId || detectedResumableScanRunId) && (
+        {showScanBanner && (
           <InterruptedScanBanner
             isMonitoringReconnection={isMonitoringReconnection}
-            interruptedScanRunId={interruptedScanRunId || detectedResumableScanRunId}
+            interruptedScanRunId={effectiveScanRunId}
             lastScannedPath={interruptedScanRunId ? null : detectedResumableLastPath}
             onCancelAutoResume={cancelReconnectionMonitoring}
             onManualResume={handleManualResumeScan}
+            onDismiss={() => setDismissedInterruptedScanRunId(effectiveScanRunId)}
           />
         )}
         {renderProcessingResumeBanner()}
@@ -735,13 +775,14 @@ export function LibraryScanner({
     return (
       <div className="space-y-4 ">
         {/* Show interrupted scan banner if applicable */}
-        {(isMonitoringReconnection || interruptedScanRunId) && (
+        {interruptedScanRunId && interruptedScanRunId !== dismissedInterruptedScanRunId && (
           <InterruptedScanBanner
             isMonitoringReconnection={isMonitoringReconnection}
             interruptedScanRunId={interruptedScanRunId}
             lastScannedPath={null}
             onCancelAutoResume={cancelReconnectionMonitoring}
             onManualResume={handleManualResumeScan}
+            onDismiss={() => setDismissedInterruptedScanRunId(interruptedScanRunId)}
           />
         )}
         {renderProcessingResumeBanner()}
@@ -873,15 +914,19 @@ export function LibraryScanner({
       <div className="">
         <div className="space-y-4">
           {/* Show interrupted scan banner if applicable */}
-          {(isMonitoringReconnection || interruptedScanRunId || detectedResumableScanRunId) && (
-            <InterruptedScanBanner
-              isMonitoringReconnection={isMonitoringReconnection}
-              interruptedScanRunId={interruptedScanRunId || detectedResumableScanRunId}
-              lastScannedPath={interruptedScanRunId ? null : detectedResumableLastPath}
-              onCancelAutoResume={cancelReconnectionMonitoring}
-              onManualResume={handleManualResumeScan}
-            />
-          )}
+          {(() => {
+            const effectiveScanRunId = interruptedScanRunId || detectedResumableScanRunId;
+            return effectiveScanRunId && effectiveScanRunId !== dismissedInterruptedScanRunId ? (
+              <InterruptedScanBanner
+                isMonitoringReconnection={isMonitoringReconnection}
+                interruptedScanRunId={effectiveScanRunId}
+                lastScannedPath={interruptedScanRunId ? null : detectedResumableLastPath}
+                onCancelAutoResume={cancelReconnectionMonitoring}
+                onManualResume={handleManualResumeScan}
+                onDismiss={() => setDismissedInterruptedScanRunId(effectiveScanRunId)}
+              />
+            ) : null;
+          })()}
           {renderProcessingResumeBanner()}
           {renderUnprocessedBanner()}
           {renderWritebackResumeBanner()}
@@ -937,15 +982,19 @@ export function LibraryScanner({
       <div className="">
         <div className="space-y-4">
           {/* Show interrupted scan banner if applicable */}
-          {(isMonitoringReconnection || interruptedScanRunId || detectedResumableScanRunId) && (
-            <InterruptedScanBanner
-              isMonitoringReconnection={isMonitoringReconnection}
-              interruptedScanRunId={interruptedScanRunId || detectedResumableScanRunId}
-              lastScannedPath={interruptedScanRunId ? null : detectedResumableLastPath}
-              onCancelAutoResume={cancelReconnectionMonitoring}
-              onManualResume={handleManualResumeScan}
-            />
-          )}
+          {(() => {
+            const effectiveScanRunId = interruptedScanRunId || detectedResumableScanRunId;
+            return effectiveScanRunId && effectiveScanRunId !== dismissedInterruptedScanRunId ? (
+              <InterruptedScanBanner
+                isMonitoringReconnection={isMonitoringReconnection}
+                interruptedScanRunId={effectiveScanRunId}
+                lastScannedPath={interruptedScanRunId ? null : detectedResumableLastPath}
+                onCancelAutoResume={cancelReconnectionMonitoring}
+                onManualResume={handleManualResumeScan}
+                onDismiss={() => setDismissedInterruptedScanRunId(effectiveScanRunId)}
+              />
+            ) : null;
+          })()}
           {renderProcessingResumeBanner()}
           {renderUnprocessedBanner()}
           {renderWritebackResumeBanner()}
