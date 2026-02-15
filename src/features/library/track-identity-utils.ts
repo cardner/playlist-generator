@@ -4,6 +4,7 @@ import { hashStringToId } from "@/lib/string-hash";
 
 export type GlobalTrackSource =
   | "musicbrainz"
+  | "acoustid"
   | "isrc"
   | "full-hash"
   | "partial-hash"
@@ -43,7 +44,7 @@ export function buildMetadataFingerprint(
 export function resolveGlobalTrackIdentity(
   track: Pick<
     TrackRecord,
-    "musicbrainzId" | "isrc" | "metadataFingerprint"
+    "musicbrainzId" | "acoustidId" | "isrc" | "metadataFingerprint"
   >,
   fileIndex?: Pick<FileIndexRecord, "fullContentHash" | "contentHash">
 ): GlobalTrackIdentity {
@@ -53,6 +54,14 @@ export function resolveGlobalTrackIdentity(
       globalTrackId: `mbid:${track.musicbrainzId}`,
       globalTrackSource: "musicbrainz",
       globalTrackConfidence: 1.0,
+      metadataFingerprint,
+    };
+  }
+  if (track.acoustidId) {
+    return {
+      globalTrackId: `acoustid:${track.acoustidId}`,
+      globalTrackSource: "acoustid",
+      globalTrackConfidence: 0.95,
       metadataFingerprint,
     };
   }

@@ -1,7 +1,9 @@
 /**
  * DeviceSyncPanel Component
  *
- * Standalone UI for syncing playlists to USB devices.
+ * Standalone UI for syncing playlists to USB devices. For iPod, classifies tracks as
+ * on-device vs missing (using saved mappings and tag index), and shows a dialog when
+ * any are missing with options: Sync missing, Playlist only (reference existing only), or Cancel.
  */
 
 "use client";
@@ -25,12 +27,13 @@ import {
   getLibraryRoot,
   relinkCollectionHandle,
 } from "@/db/storage";
-import { db } from "@/db/schema";
+import { db, getCompositeId } from "@/db/schema";
 import type { DeviceProfileRecord, FileIndexRecord } from "@/db/schema";
 import { supportsFileSystemAccess, supportsWebUSB } from "@/lib/feature-detection";
 import {
   getDeviceProfiles,
   getDeviceFileIndexMap,
+  getDeviceTrackMappings,
   saveDeviceFileIndexEntries,
   saveDeviceProfile,
 } from "@/features/devices/device-storage";
@@ -242,6 +245,16 @@ export function DeviceSyncPanel({
     tagSize: Set<string>;
     tagOnly: Set<string>;
   }>({ tagSize: new Set(), tagOnly: new Set() });
+  const [showMissingTracksDialog, setShowMissingTracksDialog] = useState(false);
+  const [missingTrackCount, setMissingTrackCount] = useState(0);
+  const [pendingIpodSync, setPendingIpodSync] = useState<{
+    profile: DeviceProfileRecord;
+    scanTargets: Array<{
+      playlist: GeneratedPlaylist;
+      trackLookups: TrackLookup[];
+      libraryRootId?: string;
+    }>;
+  } | null>(null);
 
   const isIpodPreset = devicePreset === "ipod";
   const isJellyfinPreset = devicePreset === "jellyfin";
@@ -317,6 +330,44 @@ export function DeviceSyncPanel({
       return true;
     }
     return false;
+  }
+
+  async function handleMissingTracksDialogChoice(
+    choice: "sync" | "playlist-only" | "cancel"
+  ) {
+    const pending = pendingIpodSync;
+    setShowMissingTracksDialog(false);
+    if (!pending) return;
+    if (choice === "cancel") {
+      setPendingIpodSync(null);
+      return;
+    }
+    const onlyRef = choice === "playlist-only";
+    setIsSyncing(true);
+    setSyncPhase("writing");
+    setSyncError(null);
+    setSyncSuccess(null);
+    try {
+      await syncPlaylistsToDevice({
+        deviceProfile: pending.profile,
+        targets: pending.scanTargets,
+        onlyReferenceExistingTracks: onlyRef,
+      });
+      await refreshDeviceProfiles();
+      setSelectedDeviceId(pending.profile.id);
+      setSyncSuccess(
+        onlyRef
+          ? "Playlist updated with existing tracks only."
+          : "Synced playlist successfully."
+      );
+      onDeviceProfileUpdated?.(pending.profile);
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setIsSyncing(false);
+      setSyncPhase("idle");
+      setPendingIpodSync(null);
+    }
   }
 
   useEffect(() => {
@@ -1432,6 +1483,40 @@ export function DeviceSyncPanel({
         setSyncWarning(
           "Walkman playlists require exact on-device paths. Consider running Scan Device first."
         );
+      }
+
+      if (isIpodPreset) {
+        const mappings = await getDeviceTrackMappings(profile.id);
+        const libraryOnDevice = new Set(mappings.map((m) => m.libraryTrackId));
+        let missingCount = 0;
+        for (const target of scanTargets) {
+          for (const lookup of target.trackLookups) {
+            const libraryKey = getCompositeId(
+              lookup.track.trackFileId,
+              lookup.track.libraryRootId ?? target.libraryRootId ?? ""
+            );
+            if (libraryOnDevice.has(libraryKey)) continue;
+            const onDevice = isTrackOnDevice({
+              title: lookup.track.tags?.title,
+              artist: lookup.track.tags?.artist,
+              album: lookup.track.tags?.album,
+              trackNo: lookup.track.tags?.trackNo,
+              trackFileId: lookup.track.trackFileId,
+              fileSize: lookup.fileIndex?.size,
+            });
+            if (onDevice === true) continue;
+            missingCount += 1;
+          }
+        }
+        if (missingCount > 0) {
+          setMissingTrackCount(missingCount);
+          setPendingIpodSync({ profile, scanTargets });
+          setShowMissingTracksDialog(true);
+          setIsSyncing(false);
+          setSyncPhase("idle");
+          ipodMonitor?.resume();
+          return;
+        }
       }
 
       setSyncPhase("writing");
@@ -3429,6 +3514,42 @@ export function DeviceSyncPanel({
           )}
         </div>
       </div>
+      <Modal
+        isOpen={showMissingTracksDialog}
+        onClose={() => handleMissingTracksDialogChoice("cancel")}
+        title="Tracks not on device"
+      >
+        <div className="space-y-3 text-sm text-app-secondary">
+          <p>
+            {missingTrackCount} track{missingTrackCount === 1 ? "" : "s"} in the selected
+            playlist(s) {missingTrackCount === 1 ? "is" : "are"} not on the device.
+          </p>
+          <p>Copy missing tracks now, or update the playlist with existing tracks only?</p>
+          <div className="flex flex-wrap items-center gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => handleMissingTracksDialogChoice("sync")}
+              className="px-3 py-2 bg-accent-primary text-white rounded-sm hover:bg-accent-hover text-xs uppercase tracking-wider"
+            >
+              Sync missing
+            </button>
+            <button
+              type="button"
+              onClick={() => handleMissingTracksDialogChoice("playlist-only")}
+              className="px-3 py-2 bg-app-hover text-app-primary rounded-sm hover:bg-app-surface-hover text-xs uppercase tracking-wider"
+            >
+              Playlist only
+            </button>
+            <button
+              type="button"
+              onClick={() => handleMissingTracksDialogChoice("cancel")}
+              className="px-3 py-2 bg-app-hover text-app-primary rounded-sm hover:bg-app-surface-hover text-xs uppercase tracking-wider"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Modal>
       <Modal
         isOpen={showRescanPrompt}
         onClose={() => setShowRescanPrompt(false)}

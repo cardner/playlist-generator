@@ -48,6 +48,17 @@ describe("track identity utils", () => {
     expect(identity.globalTrackSource).toBe("musicbrainz");
   });
 
+  it("uses acoustidId when present and no MusicBrainz ID", () => {
+    const identity = resolveGlobalTrackIdentity({
+      acoustidId: "abc-def-123",
+      isrc: "USRC17607839",
+      metadataFingerprint: "meta123",
+    });
+    expect(identity.globalTrackId).toBe("acoustid:abc-def-123");
+    expect(identity.globalTrackSource).toBe("acoustid");
+    expect(identity.globalTrackConfidence).toBe(0.95);
+  });
+
   it("falls back to full content hash, then metadata fingerprint", () => {
     const fromHash = resolveGlobalTrackIdentity(
       {

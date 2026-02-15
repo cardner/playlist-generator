@@ -20,6 +20,8 @@ import {
   normalizeTrackNo,
   normalizeDiscNo,
   normalizeIsrc,
+  normalizeAcoustId,
+  extractAcoustId,
   extractCodecInfo,
 } from "@/features/library/metadata";
 
@@ -80,6 +82,7 @@ self.onmessage = async (event: MessageEvent<MetadataWorkerRequest>) => {
       tags,
       tech,
       isrc: normalizeIsrc(metadata.common.isrc),
+      acoustidId: normalizeAcoustId(extractAcoustId(metadata)),
       warnings: warnings.length > 0 ? warnings : undefined,
     };
 

@@ -7,6 +7,7 @@ import type {
   DeviceProfileRecord,
   DeviceSyncManifestRecord,
   DeviceFileIndexRecord,
+  DeviceTrackMappingRecord,
 } from "@/db/schema";
 
 export type DeviceProfileInput = Omit<
@@ -65,8 +66,9 @@ export async function deleteDeviceProfile(id: string): Promise<void> {
 }
 
 export async function deleteDeviceProfileWithManifests(id: string): Promise<void> {
-  await db.transaction("rw", [db.deviceProfiles, db.deviceSyncManifests], async () => {
+  await db.transaction("rw", [db.deviceProfiles, db.deviceSyncManifests, db.deviceTrackMappings], async () => {
     await db.deviceSyncManifests.where("deviceId").equals(id).delete();
+    await db.deviceTrackMappings.where("deviceId").equals(id).delete();
     await db.deviceProfiles.delete(id);
   });
 }
@@ -112,4 +114,45 @@ export async function getDeviceSyncManifest(
 ): Promise<DeviceSyncManifestRecord | undefined> {
   const id = `${deviceId}-${playlistId}`;
   return db.deviceSyncManifests.get(id);
+}
+
+/**
+ * Saves a mapping from a library track to an iPod device track.
+ * Used so the next sync reuses the same device track instead of copying the file again.
+ * Optional acoustidId is stored for AcoustID-based matching on future syncs.
+ */
+export async function saveDeviceTrackMapping(
+  deviceId: string,
+  libraryTrackId: string,
+  deviceTrackId: number,
+  acoustidId?: string
+): Promise<DeviceTrackMappingRecord> {
+  const now = Date.now();
+  const id = `${deviceId}-${libraryTrackId}`;
+  const record: DeviceTrackMappingRecord = {
+    id,
+    deviceId,
+    libraryTrackId,
+    deviceTrackId,
+    ...(acoustidId ? { acoustidId } : {}),
+    updatedAt: now,
+  };
+  await db.deviceTrackMappings.put(record);
+  return record;
+}
+
+/**
+ * Returns all library→device track mappings for a device (used at sync start to resolve existing tracks).
+ */
+export async function getDeviceTrackMappings(
+  deviceId: string
+): Promise<DeviceTrackMappingRecord[]> {
+  return db.deviceTrackMappings.where("deviceId").equals(deviceId).toArray();
+}
+
+/**
+ * Removes all track mappings for a device (e.g. when clearing device data or deleting the profile).
+ */
+export async function clearDeviceTrackMappings(deviceId: string): Promise<void> {
+  await db.deviceTrackMappings.where("deviceId").equals(deviceId).delete();
 }

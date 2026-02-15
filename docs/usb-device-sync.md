@@ -58,6 +58,10 @@ older iPods that appear as regular drives.
 - FLAC uploads require `ffmpeg.wasm` assets under `public/ffmpeg/` and
   hosting headers to enable `SharedArrayBuffer` (COOP/COEP).
 
+**Matching existing tracks:** To avoid duplicating files, the app tries to match each playlist track to a track already on the device. Order: saved mapping from a previous sync, then AcoustID (if present in file metadata), then content hash, then tag+size and tag+duration. When a match is found, the playlist is updated to reference that device track; when not, the file is copied and a mapping is stored for next time. Tracks with AcoustID in their tags (e.g. from MusicBrainz Picard) match across transcodes (e.g. FLAC vs ALAC).
+
+**Missing-tracks prompt:** If some playlist tracks are not on the device, a dialog appears before sync: you can **Sync missing** (copy them), **Playlist only** (update the playlist to reference only tracks already on the device), or **Cancel**.
+
 ## Notes
 
 - For iPod sync, the app writes audio files directly to `/iPod_Control/Music/F##`.

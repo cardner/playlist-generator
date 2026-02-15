@@ -90,6 +90,7 @@ export interface TechInfo {
  * 
  * Represents the result of parsing metadata from an audio file.
  * Includes normalized tags, technical information, and any warnings or errors.
+ * acoustidId is set when the file has AcoustID in its tags (for transcode-safe device matching).
  * 
  * @example
  * ```typescript
@@ -106,6 +107,8 @@ export interface MetadataResult {
   tags?: NormalizedTags;
   tech?: TechInfo;
   isrc?: string;
+  /** AcoustID from file tags when present (for iPod/device matching across transcodes) */
+  acoustidId?: string;
   warnings?: string[];
   error?: string;
 }
@@ -123,6 +126,7 @@ export interface MetadataWorkerResponse {
   tags?: NormalizedTags;
   tech?: TechInfo;
   isrc?: string;
+  acoustidId?: string;
   warnings?: string[];
   error?: string;
 }
@@ -224,6 +228,63 @@ export function normalizeIsrc(isrc?: string | string[] | null): string | undefin
   if (!/^[A-Z0-9]{12}$/.test(normalized)) return undefined;
   
   return normalized;
+}
+
+/** Known tag names for AcoustID across formats (ID3, iTunes, Vorbis, etc.) */
+const ACOUSTID_TAG_KEYS = [
+  "acoustid id",
+  "acoustid_id",
+  "acoustid fingerprint",
+  "acoustid_fingerprint",
+];
+
+/**
+ * Extract AcoustID from music-metadata result (common or native format-specific tags).
+ * Tries metadata.common first, then scans metadata.native for known AcoustID keys.
+ * Accepts IAudioMetadata or any object with common/native shape.
+ */
+export function extractAcoustId(metadata: unknown): string | string[] | undefined {
+  if (!metadata || typeof metadata !== "object") return undefined;
+  const m = metadata as Record<string, unknown>;
+  const common = m.common as Record<string, unknown> | undefined;
+  if (common && typeof common === "object") {
+    const fromCommon =
+      (common.acoustidId as string | undefined) ??
+      (common.acoustid_id as string | undefined);
+    if (fromCommon) return fromCommon;
+  }
+  const native = m.native as Record<string, Record<string, unknown[]>> | undefined;
+  if (!native || typeof native !== "object") return undefined;
+  for (const formatTags of Object.values(native)) {
+    if (!formatTags || typeof formatTags !== "object") continue;
+    for (const [key, value] of Object.entries(formatTags)) {
+      const keyLower = String(key).toLowerCase();
+      if (
+        ACOUSTID_TAG_KEYS.some((k) => keyLower.includes(k)) &&
+        Array.isArray(value) &&
+        value.length > 0
+      ) {
+        const first = value[0];
+        if (typeof first === "string" && first.trim()) return first;
+        if (first != null) return String(first).trim() || undefined;
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Normalize AcoustID to a single trimmed string (for storage and matching).
+ * Accepts string or array (takes first element).
+ */
+export function normalizeAcoustId(
+  value?: string | string[] | null
+): string | undefined {
+  if (!value) return undefined;
+  const single = Array.isArray(value) ? value[0] : value;
+  if (single == null) return undefined;
+  const trimmed = String(single).trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 /**

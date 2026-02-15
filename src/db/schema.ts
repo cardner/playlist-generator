@@ -222,11 +222,14 @@ export interface TrackRecord {
   musicbrainzId?: string;
   /** ISRC (International Standard Recording Code) */
   isrc?: string;
+  /** AcoustID from file metadata (for transcode-safe device matching) */
+  acoustidId?: string;
   /** Global track identifier for cross-collection matching */
   globalTrackId?: string;
   /** Source of the global track identifier */
   globalTrackSource?:
     | "musicbrainz"
+    | "acoustid"
     | "isrc"
     | "full-hash"
     | "partial-hash"
@@ -620,6 +623,25 @@ export interface DeviceSyncManifestRecord {
 }
 
 /**
+ * Device track mapping: library track -> device track (iPod sync).
+ * Persists so the next sync reuses the same device track instead of copying again.
+ */
+export interface DeviceTrackMappingRecord {
+  /** Unique identifier: `${deviceId}-${libraryTrackId}` */
+  id: string;
+  /** Device profile ID */
+  deviceId: string;
+  /** Library track composite id: `${trackFileId}-${libraryRootId}` */
+  libraryTrackId: string;
+  /** iPod track index (WASM track id) */
+  deviceTrackId: number;
+  /** AcoustID when known (for AcoustID-based lookup) */
+  acoustidId?: string;
+  /** Timestamp of last update */
+  updatedAt: number;
+}
+
+/**
  * Saved playlist record stored in database
  * 
  * Represents a generated playlist that has been saved by the user. Contains
@@ -781,6 +803,8 @@ export class AppDatabase extends Dexie {
   deviceSyncManifests!: Table<DeviceSyncManifestRecord, string>;
   /** Device file index cache (path mapping) */
   deviceFileIndex!: Table<DeviceFileIndexRecord, string>;
+  /** Device track mappings (library -> iPod track for sync dedupe) */
+  deviceTrackMappings!: Table<DeviceTrackMappingRecord, string>;
   /** Scan checkpoints table (for resuming interrupted scans) */
   scanCheckpoints!: Table<ScanCheckpointRecord, string>;
   /** Processing checkpoints table (for resuming metadata parsing) */
@@ -1105,6 +1129,25 @@ export class AppDatabase extends Dexie {
           }
         }
       });
+
+    // Version 15: Device track mappings for iPod sync (avoid duplicate copies)
+    this.version(15).stores({
+      libraryRoots: "id, createdAt",
+      fileIndex: "id, trackFileId, libraryRootId, name, extension, fullContentHash, contentHash, updatedAt",
+      tracks: "id, trackFileId, libraryRootId, globalTrackId, isrc, updatedAt, addedAt",
+      scanRuns: "id, libraryRootId, startedAt",
+      settings: "key",
+      directoryHandles: "id",
+      savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
+      scanCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+      processingCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+      trackWritebacks: "id, libraryRootId, pending, updatedAt",
+      writebackCheckpoints: "id, writebackRunId, libraryRootId, checkpointAt",
+      deviceProfiles: "id, createdAt, updatedAt",
+      deviceSyncManifests: "id, deviceId, playlistId, lastSyncedAt",
+      deviceFileIndex: "id, deviceId, matchKey, contentHash, fullContentHash, updatedAt",
+      deviceTrackMappings: "id, deviceId, libraryTrackId",
+    });
   }
 }
 
