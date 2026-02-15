@@ -343,13 +343,13 @@ export function HelpPanel({ markdown }: { markdown: string }) {
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-3 rounded-full bg-accent-primary text-white shadow-xl hover:bg-accent-hover transition-colors"
+        className="fixed bottom-6 right-6 z-40 flex items-center gap-1.5 px-3 py-2 rounded-full bg-accent-primary text-white shadow-lg hover:bg-accent-hover transition-colors"
         aria-label={isOpen ? "Close help panel" : "Open help panel"}
         aria-expanded={isOpen}
         aria-controls={PANEL_ID}
       >
-        <HelpCircle className="size-5" />
-        <span className="text-sm font-medium">Help</span>
+        <HelpCircle className="size-4" />
+        <span className="text-xs font-medium">Help</span>
       </button>
 
       {isOpen && (

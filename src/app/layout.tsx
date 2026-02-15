@@ -4,7 +4,9 @@ import { Navigation } from "@/components/Navigation";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { PwaRegister } from "@/components/PwaRegister";
 import { HelpPanel } from "@/components/HelpPanel";
+import { WhatsNewPanel } from "@/components/WhatsNewPanel";
 import { getHelpContent } from "@/lib/help-content";
+import { getChangelogContent } from "@/lib/changelog-content";
 import { BackgroundLibraryTasksProvider } from "@/components/BackgroundLibraryTasksProvider";
 import { BackgroundTaskOverlay } from "@/components/BackgroundTaskOverlay";
 
@@ -18,7 +20,10 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const helpContent = await getHelpContent();
+  const [helpContent, changelogContent] = await Promise.all([
+    getHelpContent(),
+    getChangelogContent(),
+  ]);
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -49,6 +54,7 @@ export default async function RootLayout({
             <Navigation />
             <BackgroundTaskOverlay />
             <HelpPanel markdown={helpContent} />
+            <WhatsNewPanel markdown={changelogContent} />
             <main className="min-h-screen bg-app-bg">
               <div className="container mx-auto px-4 py-8 md:py-12 max-w-6xl">
                 {children}
