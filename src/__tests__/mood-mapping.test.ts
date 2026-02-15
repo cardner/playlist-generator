@@ -2,6 +2,7 @@ import { describe, it, expect } from "@jest/globals";
 import {
   getMoodCategories,
   mapMoodTagsToCategories,
+  mapMusicBrainzTagsToMood,
   normalizeMoodCategory,
 } from "@/features/library/mood-mapping";
 
@@ -71,6 +72,19 @@ describe("mood-mapping", () => {
 
     it("returns null for unknown moods", () => {
       expect(normalizeMoodCategory("unknownxyz")).toBeNull();
+    });
+  });
+
+  describe("mapMusicBrainzTagsToMood", () => {
+    it("returns empty array for empty tags", () => {
+      expect(mapMusicBrainzTagsToMood([])).toEqual([]);
+      expect(mapMusicBrainzTagsToMood(undefined as unknown as string[])).toEqual([]);
+    });
+
+    it("maps MusicBrainz tags that overlap with mood keywords", () => {
+      expect(mapMusicBrainzTagsToMood(["sad", "melancholic"])).toContain("Melancholic");
+      expect(mapMusicBrainzTagsToMood(["energetic", "anthemic"])).toContain("Energetic");
+      expect(mapMusicBrainzTagsToMood(["chill", "calm"])).toContain("Calm");
     });
   });
 });

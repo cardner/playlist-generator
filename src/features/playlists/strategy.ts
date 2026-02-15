@@ -43,6 +43,7 @@ export const PlaylistStrategySchema = z.object({
     artistSpacing: z.number().int().min(1).default(5), // min tracks between same artist
     maxTracksPerGenre: z.number().int().min(1).optional(),
     genreSpacing: z.number().int().min(1).default(3), // min tracks between same genre
+    maxTracksPerAlbum: z.number().int().min(1).optional(), // default 2 when enforced
   }),
   orderingPlan: z.object({
     sections: z.array(
@@ -496,6 +497,7 @@ export function fallbackStrategy(
       maxTracksPerArtist,
       artistSpacing,
       genreSpacing: Math.max(1, Math.round(3 * diversityMultiplier)),
+      maxTracksPerAlbum: 2,
     },
     orderingPlan: {
       sections,

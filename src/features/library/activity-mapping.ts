@@ -115,3 +115,16 @@ export function normalizeActivityCategory(value: string): string | null {
   const match = ACTIVITY_CATEGORIES.find((category) => category.toLowerCase() === normalized);
   return match || null;
 }
+
+/**
+ * Maps MusicBrainz tags to canonical activity categories.
+ * MusicBrainz tags (e.g. "party", "workout", "chill") often overlap with
+ * activity keywords; this runs them through the same synonym mapping.
+ *
+ * @param tags - Raw tags from track.enhancedMetadata.musicbrainzTags
+ * @returns Canonical activity categories
+ */
+export function mapMusicBrainzTagsToActivity(tags: string[]): string[] {
+  if (!tags || tags.length === 0) return [];
+  return mapActivityTagsToCategories(tags);
+}

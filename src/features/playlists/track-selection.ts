@@ -15,9 +15,11 @@ import type { MatchingIndex } from "@/features/library/summarization";
 import type { TrackSelection, TrackReason } from "./matching-engine";
 import {
   calculateGenreMatch,
+  calculateGenreMixFit,
   calculateTempoMatch,
   calculateMoodMatch,
   calculateActivityMatch,
+  calculateMoodActivityConsistency,
   calculateDurationFit,
   calculateDiversity,
   calculateSurprise,
@@ -95,6 +97,11 @@ export function scoreTrack(
   );
   const moodMatch = calculateMoodMatch(track, request, matchingIndex);
   const activityMatch = calculateActivityMatch(track, request);
+  const moodActivityConsistency = calculateMoodActivityConsistency(
+    track,
+    request,
+    matchingIndex
+  );
   const instructionMatch = calculateInstructionMatch(
     track,
     request.llmAdditionalInstructions
@@ -106,6 +113,12 @@ export function scoreTrack(
     remainingSlots
   );
   const diversity = calculateDiversity(track, previousTracks, strategy);
+  const genreMixFit = calculateGenreMixFit(
+    track,
+    strategy,
+    previousTracks,
+    matchingIndex
+  );
   const surprise = calculateSurprise(
     track,
     request.genres,
@@ -192,6 +205,8 @@ export function scoreTrack(
   // Combine all reasons
   const reasons: TrackReason[] = [
     ...genreMatch.reasons,
+    ...genreMixFit.reasons,
+    ...moodActivityConsistency.reasons,
     ...tempoMatch.reasons,
     ...moodMatch.reasons,
     ...activityMatch.reasons,
@@ -204,10 +219,12 @@ export function scoreTrack(
   ];
 
   const instructionWeight = request.llmAdditionalInstructions?.trim() ? 0.1 : 0;
+  const genreMixWeight = 0.05; // Fixed weight for genre mix fit
 
-  // Calculate weighted score with suggestion bonus
-  const score =
+  // Calculate weighted score with suggestion bonus; apply mood-activity consistency as multiplier
+  let score =
     genreMatch.score * weights.genreMatch +
+    genreMixFit.score * genreMixWeight +
     tempoMatch.score * weights.tempoMatch +
     moodMatch.score * weights.moodMatch +
     activityMatch.score * weights.activityMatch +
@@ -217,6 +234,8 @@ export function scoreTrack(
     instructionMatch.score * instructionWeight +
     suggestionBonus +
     affinityBonus; // Add bonuses (can push score above 1.0)
+
+  score *= moodActivityConsistency.score; // 0.9–1.05 multiplier for mood-activity consistency
 
   return {
     trackFileId: track.trackFileId,

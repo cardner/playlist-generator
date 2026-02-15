@@ -275,9 +275,18 @@ export async function generatePlaylist(
   const candidateIds = new Set<string>();
   const affinityContext = buildAffinityContext(request, allTracks);
 
-  // Start with required genres or requested genres
-  const genresToMatch =
+  // Start with required genres or requested genres; include secondary genres from mix guidance when present
+  let genresToMatch =
     strategy.constraints.requiredGenres || request.genres;
+  if (strategy.genreMixGuidance) {
+    const mixGenres = [
+      ...(strategy.genreMixGuidance.primaryGenres || []),
+      ...(strategy.genreMixGuidance.secondaryGenres || []),
+    ];
+    if (mixGenres.length > 0) {
+      genresToMatch = [...new Set([...genresToMatch, ...mixGenres])];
+    }
+  }
 
   if (genresToMatch.length > 0) {
     for (const genre of genresToMatch) {
