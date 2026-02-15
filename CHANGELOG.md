@@ -46,6 +46,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.11.0] - 2026-02-15
+
+### Added
+
+- add what's new panel
+
+### Fixed
+
+- upgrade storybook
+- add new screenshots for testing
+
+### Other Changes
+
+- Merge pull request #57 from cardner/whats-new
+
 ## [1.10.1] - 2026-02-15
 
 ### Fixed
