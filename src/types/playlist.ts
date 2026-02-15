@@ -179,6 +179,8 @@ export interface PlaylistRequest {
   recentWindow?: "7d" | "30d" | "90d";
   /** When sourcePool is "recent", alternative to recentWindow: use last N tracks */
   recentTrackCount?: number;
+  /** Optional extra instructions for the LLM when agentType is "llm" (e.g. "favor 80s production", "no ballads") */
+  llmAdditionalInstructions?: string;
 }
 
 /**

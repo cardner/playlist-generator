@@ -61,35 +61,42 @@ export function usePlaylistForm(
 ): UsePlaylistFormReturn {
   const { discoveryMode = false, initialData } = options;
 
-  // Load draft from localStorage or use initial data
-  // Only access localStorage on client side (not during SSR)
-  const [formData, setFormData] = useState<Partial<PlaylistRequest>>(() => {
-    if (typeof window !== "undefined") {
-      const draft = loadPlaylistDraft();
-      if (draft) return draft;
-    }
-    return initialData || {
-      genres: [],
-      length: { type: "minutes", value: 30 },
-      mood: [],
-      activity: [],
-      tempo: { bucket: "medium" },
-      surprise: discoveryMode ? 0.7 : 0.5,
-      minArtists: undefined,
-      disallowedArtists: [],
-      suggestedArtists: [],
-      suggestedAlbums: [],
-      suggestedTracks: [],
-      agentType: "built-in",
-      llmConfig: undefined,
-      enableDiscovery: discoveryMode, // Always enabled in discovery mode
-      discoveryFrequency: discoveryMode ? "every_other" : undefined,
-      sourcePool: "all",
-      recentWindow: "30d",
-    };
-  });
+  // Use consistent initial state for both server and client to avoid hydration mismatch.
+  // Draft is loaded in useEffect after mount (client-only).
+  const defaultInitialData: Partial<PlaylistRequest> = {
+    genres: [],
+    length: { type: "minutes", value: 30 },
+    mood: [],
+    activity: [],
+    tempo: { bucket: "medium" },
+    surprise: discoveryMode ? 0.7 : 0.5,
+    minArtists: undefined,
+    disallowedArtists: [],
+    suggestedArtists: [],
+    suggestedAlbums: [],
+    suggestedTracks: [],
+    agentType: "built-in",
+    llmConfig: undefined,
+    enableDiscovery: discoveryMode,
+    discoveryFrequency: discoveryMode ? "every_other" : undefined,
+    sourcePool: "all",
+    recentWindow: "30d",
+    llmAdditionalInstructions: undefined,
+  };
+
+  const [formData, setFormData] = useState<Partial<PlaylistRequest>>(
+    () => initialData || defaultInitialData
+  );
 
   const [errors, setErrors] = useState<PlaylistRequestErrors>({});
+
+  // Load draft from localStorage after mount (client-only) to avoid hydration mismatch
+  useEffect(() => {
+    const draft = loadPlaylistDraft();
+    if (draft && Object.keys(draft).length > 0) {
+      setFormData(draft);
+    }
+  }, []); // Run once on mount
 
   // Auto-save draft to localStorage when form data changes
   // Only save on client side (not during SSR)

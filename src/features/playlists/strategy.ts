@@ -12,6 +12,10 @@ import type { AppSettings } from "@/lib/settings";
 import { buildLLMPayload } from "@/features/library/summarization";
 import { getSettings } from "@/lib/settings";
 import { logger } from "@/lib/logger";
+import {
+  parseStrategyHintsFromInstructions,
+  applyInstructionHintsToRequest,
+} from "./instruction-parsing";
 
 /**
  * Zod schema for PlaylistStrategy
@@ -77,9 +81,9 @@ export const PlaylistStrategySchema = z.object({
 export type PlaylistStrategy = z.infer<typeof PlaylistStrategySchema>;
 
 /**
- * Prompt template for LLM
+ * Prompt template for LLM (exported for tests).
  */
-function buildPrompt(
+export function buildPrompt(
   request: PlaylistRequest,
   summary: LibrarySummary,
   settings: AppSettings
@@ -96,6 +100,12 @@ IMPORTANT RULES:
 
 USER REQUEST:
 ${JSON.stringify(payload.request, null, 2)}
+${((): string => {
+  const extra = request.llmAdditionalInstructions?.trim();
+  return extra
+    ? `\nADDITIONAL USER INSTRUCTIONS (incorporate these into the strategy; still return only valid JSON):\n${extra}\n`
+    : "";
+})()}
 
 LIBRARY SUMMARY:
 - Total tracks: ${payload.librarySummary.totalTracks}
@@ -169,6 +179,7 @@ Generate a strategy that:
 3. Creates a good flow with warmup/peak/cooldown sections
 4. Ensures diversity (max ${payload.request.surprise < 0.5 ? "conservative" : payload.request.surprise < 0.8 ? "moderate" : "adventurous"} diversity based on surprise level ${payload.request.surprise})
 5. Uses appropriate tempo guidance based on the requested tempo (${JSON.stringify(payload.request.tempo)})
+${request.llmAdditionalInstructions?.trim() ? "6. Incorporates any ADDITIONAL USER INSTRUCTIONS above while still returning only valid JSON." : ""}
 
 Return ONLY the JSON object, no other text.`;
 }
@@ -341,32 +352,35 @@ export function fallbackStrategy(
   request: PlaylistRequest,
   summary: LibrarySummary
 ): PlaylistStrategy {
+  const hints = parseStrategyHintsFromInstructions(request.llmAdditionalInstructions);
+  const patchedRequest = applyInstructionHintsToRequest(request, hints);
+
   // Calculate target track count
   const targetTracks =
-    request.length.type === "tracks"
-      ? request.length.value
-      : Math.ceil(request.length.value / (summary.durationStats.avg / 60));
+    patchedRequest.length.type === "tracks"
+      ? patchedRequest.length.value
+      : Math.ceil(patchedRequest.length.value / (summary.durationStats.avg / 60));
 
-  // Determine tempo target from request
+  // Determine tempo target from request (may be overridden by instruction hints)
   const tempoTarget =
-    request.tempo.bucket ||
-    (request.tempo.bpmRange
-      ? request.tempo.bpmRange.min < 90
+    patchedRequest.tempo?.bucket ||
+    (patchedRequest.tempo?.bpmRange
+      ? patchedRequest.tempo.bpmRange.min < 90
         ? "slow"
-        : request.tempo.bpmRange.max > 140
+        : patchedRequest.tempo.bpmRange.max > 140
         ? "fast"
         : "medium"
       : "medium");
 
   // Determine energy level from mood
   const energyLevel =
-    request.mood.some((m) =>
+    patchedRequest.mood.some((m) =>
       ["energetic", "upbeat", "exciting", "intense"].includes(
         m.toLowerCase()
       )
     )
       ? "high"
-      : request.mood.some((m) =>
+      : patchedRequest.mood.some((m) =>
           ["calm", "relaxed", "peaceful", "mellow"].includes(m.toLowerCase())
         )
       ? "low"
@@ -420,14 +434,14 @@ export function fallbackStrategy(
   }
 
   // Calculate diversity based on surprise level and minArtists constraint
-  const diversityMultiplier = 0.5 + request.surprise * 0.5; // 0.5 to 1.0
+  const diversityMultiplier = 0.5 + patchedRequest.surprise * 0.5; // 0.5 to 1.0
   
   // If minArtists is specified, calculate maxTracksPerArtist to ensure we meet that requirement
   let maxTracksPerArtist: number;
-  if (request.minArtists && request.minArtists > 0) {
+  if (patchedRequest.minArtists && patchedRequest.minArtists > 0) {
     // Ensure we can fit at least minArtists artists
     // If we have targetTracks and want minArtists, max tracks per artist should be roughly targetTracks / minArtists
-    maxTracksPerArtist = Math.max(1, Math.floor(targetTracks / request.minArtists));
+    maxTracksPerArtist = Math.max(1, Math.floor(targetTracks / patchedRequest.minArtists));
     // But don't make it too restrictive - cap at a reasonable maximum
     maxTracksPerArtist = Math.min(maxTracksPerArtist, Math.max(1, Math.round(3 * diversityMultiplier)));
   } else {
@@ -439,37 +453,37 @@ export function fallbackStrategy(
 
   // Genre mix guidance
   const primaryGenres =
-    request.genres.length > 0
-      ? request.genres.slice(0, 3)
+    patchedRequest.genres.length > 0
+      ? patchedRequest.genres.slice(0, 3)
       : summary.genreCounts.slice(0, 3).map((g) => g.genre);
   const secondaryGenres =
-    request.genres.length > 3
-      ? request.genres.slice(3)
+    patchedRequest.genres.length > 3
+      ? patchedRequest.genres.slice(3)
       : summary.genreCounts.slice(3, 6).map((g) => g.genre);
 
   // Generate title and description
   const genreStr = primaryGenres.join(", ");
-  const moodStr = request.mood.join(", ");
-  const activityStr = request.activity.join(", ");
+  const moodStr = patchedRequest.mood.join(", ");
+  const activityStr = patchedRequest.activity.join(", ");
 
   const title = `${moodStr} ${genreStr} for ${activityStr}`.slice(0, 100);
-  const description = `A ${request.length.value} ${request.length.type === "minutes" ? "minute" : "track"} playlist featuring ${genreStr}${moodStr ? ` with a ${moodStr} mood` : ""}${activityStr ? `, perfect for ${activityStr}` : ""}.`;
+  const description = `A ${patchedRequest.length.value} ${patchedRequest.length.type === "minutes" ? "minute" : "track"} playlist featuring ${genreStr}${moodStr ? ` with a ${moodStr} mood` : ""}${activityStr ? `, perfect for ${activityStr}` : ""}.`;
 
   return {
     title,
     description,
     constraints: {
-      minTracks: request.length.type === "tracks" ? request.length.value : undefined,
-      maxTracks: request.length.type === "tracks" ? request.length.value : undefined,
+      minTracks: patchedRequest.length.type === "tracks" ? patchedRequest.length.value : undefined,
+      maxTracks: patchedRequest.length.type === "tracks" ? patchedRequest.length.value : undefined,
       minDuration:
-        request.length.type === "minutes"
-          ? request.length.value * 60
+        patchedRequest.length.type === "minutes"
+          ? patchedRequest.length.value * 60
           : undefined,
       maxDuration:
-        request.length.type === "minutes"
-          ? request.length.value * 60
+        patchedRequest.length.type === "minutes"
+          ? patchedRequest.length.value * 60
           : undefined,
-      requiredGenres: request.genres.length > 0 ? request.genres : undefined,
+      requiredGenres: patchedRequest.genres.length > 0 ? patchedRequest.genres : undefined,
     },
     scoringWeights: {
       genreMatch: 0.3,
@@ -486,14 +500,14 @@ export function fallbackStrategy(
     orderingPlan: {
       sections,
     },
-    vibeTags: [...request.mood, ...request.activity, ...primaryGenres].slice(
+    vibeTags: [...patchedRequest.mood, ...patchedRequest.activity, ...primaryGenres].slice(
       0,
       10
     ),
     tempoGuidance: {
       targetBucket: tempoTarget,
-      bpmRange: request.tempo.bpmRange,
-      allowVariation: request.surprise > 0.3,
+      bpmRange: patchedRequest.tempo?.bpmRange,
+      allowVariation: patchedRequest.surprise > 0.3,
     },
     genreMixGuidance: {
       primaryGenres,

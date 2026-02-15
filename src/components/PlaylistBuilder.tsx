@@ -859,6 +859,35 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
         />
       </div>
 
+      {/* Additional instructions - shown for both built-in and LLM agents */}
+      <div>
+        <label className="flex items-center gap-2 text-app-primary mb-3">
+          <span className="font-medium uppercase tracking-wider text-sm">
+            Additional instructions (optional)
+          </span>
+        </label>
+        <textarea
+          maxLength={500}
+          placeholder={
+            formData.agentType === "llm"
+              ? "e.g. favor 80s production, no ballads, more variety in the middle"
+              : "e.g. chill relaxing, more variety, no slow songs, yoga meditation"
+          }
+          value={formData.llmAdditionalInstructions ?? ""}
+          onChange={(e) =>
+            setFormData({
+              ...formData,
+              llmAdditionalInstructions: e.target.value || undefined,
+            })
+          }
+          className="w-full min-h-[72px] px-3 py-2 rounded-sm border border-app-border bg-app-bg text-app-primary placeholder:text-app-tertiary text-sm resize-y"
+          rows={3}
+        />
+        <p className="text-app-tertiary text-xs mt-1">
+          {(formData.llmAdditionalInstructions?.length ?? 0)}/500
+        </p>
+      </div>
+
       {/* Surprise - Shown after discovery in discovery mode */}
       {discoveryMode && (
         <div>

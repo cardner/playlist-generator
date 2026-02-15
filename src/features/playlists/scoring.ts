@@ -21,6 +21,7 @@ import {
   normalizeActivityCategory,
 } from "@/features/library/activity-mapping";
 import { inferActivityFromTrack } from "@/features/library/activity-inference";
+import { extractInstructionTokens } from "./instruction-parsing";
 
 /**
  * Calculate genre match score (hard/soft matching)
@@ -342,6 +343,57 @@ export function calculateActivityMatch(
         score: 0.2,
       },
     ],
+  };
+}
+
+/**
+ * Score how well track metadata matches keywords from additional instructions.
+ * Checks title, artist, album, genres, mood, activity, musicbrainzTags.
+ * Returns 0 when instructions are empty or no keywords match.
+ *
+ * @param track - Track to score
+ * @param instructions - User's additional instructions (llmAdditionalInstructions)
+ * @returns Score (0-1) and reasons
+ */
+export function calculateInstructionMatch(
+  track: TrackRecord,
+  instructions: string | undefined
+): { score: number; reasons: TrackReason[] } {
+  const keywords = extractInstructionTokens(instructions ?? "").filter((t) => t.length >= 3);
+  if (keywords.length === 0) return { score: 0, reasons: [] };
+
+  const searchableText = [
+    track.tags.title,
+    track.tags.artist,
+    track.tags.album,
+    ...(track.tags.genres || []),
+    ...(track.enhancedMetadata?.mood || []),
+    ...(track.enhancedMetadata?.activity || []),
+    ...(track.enhancedMetadata?.musicbrainzTags || []),
+    ...(track.enhancedMetadata?.genres || []),
+  ]
+    .filter(Boolean)
+    .map((s) => String(s).toLowerCase())
+    .join(" ");
+
+  let matches = 0;
+  for (const kw of keywords) {
+    if (searchableText.includes(kw)) matches++;
+  }
+  const score = matches / keywords.length;
+
+  return {
+    score,
+    reasons:
+      score > 0
+        ? [
+            {
+              type: "constraint" as const,
+              explanation: `Matches instruction keywords (${matches}/${keywords.length})`,
+              score,
+            },
+          ]
+        : [],
   };
 }
 
