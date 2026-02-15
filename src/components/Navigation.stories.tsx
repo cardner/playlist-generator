@@ -1,4 +1,4 @@
-import { Meta, StoryObj } from "@storybook/react";
+import { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { Navigation } from "./Navigation";
 
 const meta: Meta<typeof Navigation> = {

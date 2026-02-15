@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Meta, StoryObj } from "@storybook/react";
+import { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { SavePlaylistDialog } from "./SavePlaylistDialog";
 
 const meta: Meta<typeof SavePlaylistDialog> = {

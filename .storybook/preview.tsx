@@ -1,4 +1,4 @@
-import { Preview } from "@storybook/react";
+import type { Preview } from "@storybook/nextjs-vite";
 import { useEffect } from "react";
 import "../src/app/globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";

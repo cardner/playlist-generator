@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Meta, StoryObj } from "@storybook/react";
+import { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { EmojiPicker } from "./EmojiPicker";
 
 const meta: Meta<typeof EmojiPicker> = {

@@ -1,4 +1,4 @@
-import { Meta, StoryObj } from "@storybook/react";
+import { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { ChipInput } from "./ChipInput";
 
 const meta: Meta<typeof ChipInput> = {

@@ -1,5 +1,5 @@
 import type { TrackReason } from "@/features/playlists";
-import { Meta, StoryObj } from "@storybook/react";
+import { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { TrackReasonChips } from "./TrackReasonChips";
 
 const sampleReasons: TrackReason[] = [
