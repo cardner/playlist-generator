@@ -42,6 +42,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.8.0] - 2026-02-15
+
+### Added
+
+- add suggested genres while generating playlists
+- add better file name outputs for playlists
+
+### Fixed
+
+- add missing screenshot test
+
+### Other Changes
+
+- Merge pull request #53 from cardner/file-name-fix
+
 ## [1.7.1] - 2026-02-12
 
 ### Fixed
