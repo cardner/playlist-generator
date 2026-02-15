@@ -2,6 +2,7 @@ import { describe, it, expect } from "@jest/globals";
 import {
   getActivityCategories,
   mapActivityTagsToCategories,
+  mapMusicBrainzTagsToActivity,
   normalizeActivityCategory,
 } from "@/features/library/activity-mapping";
 
@@ -74,6 +75,25 @@ describe("activity-mapping", () => {
 
     it("returns null for unknown activities", () => {
       expect(normalizeActivityCategory("unknownxyz")).toBeNull();
+    });
+  });
+
+  describe("mapMusicBrainzTagsToActivity", () => {
+    it("returns empty array for empty tags", () => {
+      expect(mapMusicBrainzTagsToActivity([])).toEqual([]);
+      expect(mapMusicBrainzTagsToActivity(undefined as unknown as string[])).toEqual([]);
+    });
+
+    it("maps MusicBrainz tags that overlap with activity keywords", () => {
+      expect(mapMusicBrainzTagsToActivity(["party", "club"])).toContain("Party");
+      expect(mapMusicBrainzTagsToActivity(["workout", "gym"])).toContain("Workout");
+      expect(mapMusicBrainzTagsToActivity(["chill", "relaxed"])).toContain("Relaxing");
+    });
+
+    it("returns canonical activity categories", () => {
+      const result = mapMusicBrainzTagsToActivity(["dance", "party"]);
+      expect(result.length).toBeGreaterThan(0);
+      expect(result.every((a) => a[0] === a[0].toUpperCase())).toBe(true);
     });
   });
 });

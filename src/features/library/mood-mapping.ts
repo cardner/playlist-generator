@@ -79,3 +79,16 @@ export function normalizeMoodCategory(value: string): string | null {
   return match || null;
 }
 
+/**
+ * Maps MusicBrainz tags to canonical mood categories.
+ * MusicBrainz tags (e.g. "classic rock", "sad", "anthemic") often overlap with
+ * mood keywords; this runs them through the same synonym mapping.
+ *
+ * @param tags - Raw tags from track.enhancedMetadata.musicbrainzTags
+ * @returns Canonical mood categories
+ */
+export function mapMusicBrainzTagsToMood(tags: string[]): string[] {
+  if (!tags || tags.length === 0) return [];
+  return mapMoodTagsToCategories(tags);
+}
+

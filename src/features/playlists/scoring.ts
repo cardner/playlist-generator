@@ -14,7 +14,14 @@ import type { PlaylistStrategy } from "./strategy";
 import type { MatchingIndex } from "@/features/library/summarization";
 import { normalizeGenre } from "@/features/library/genre-normalization";
 import type { TrackReason } from "./matching-engine";
-import { mapMoodTagsToCategories, normalizeMoodCategory } from "@/features/library/mood-mapping";
+import {
+  mapMoodTagsToCategories,
+  mapMusicBrainzTagsToMood,
+  normalizeMoodCategory,
+} from "@/features/library/mood-mapping";
+import { inferMoodFromGenres } from "@/features/library/mood-inference-from-metadata";
+import type { DecadeKey } from "@/lib/year-mapping";
+import { getDecadeFromYear, inferMoodFromYear } from "@/lib/year-mapping";
 import { TEMPO_BUCKET_MOODS } from "@/lib/tempo-mapping";
 import {
   mapActivityTagsToCategories,
@@ -240,6 +247,17 @@ export function calculateMoodMatch(
       mapped = mapMoodTagsToCategories(TEMPO_BUCKET_MOODS[tempoBucket] || []);
     }
   }
+  if (mapped.length === 0) {
+    mapped = inferMoodFromGenres(track.tags.genres);
+  }
+  if (mapped.length === 0) {
+    mapped = mapMusicBrainzTagsToMood(track.enhancedMetadata?.musicbrainzTags || []);
+  }
+  if (mapped.length === 0) {
+    mapped = inferMoodFromYear(
+      track.tags.year ?? track.enhancedMetadata?.musicbrainzReleaseYear
+    );
+  }
 
   if (mapped.length === 0) {
     return {
@@ -344,6 +362,103 @@ export function calculateActivityMatch(
       },
     ],
   };
+}
+
+/** Compatible mood-activity pairs: both requested and track match well together */
+const MOOD_ACTIVITY_COMPATIBLE: Array<{ moods: string[]; activities: string[] }> = [
+  { moods: ["Energetic", "Exciting", "Intense", "Aggressive", "Euphoric"], activities: ["Workout", "Running", "Party", "Dance", "Cycling"] },
+  { moods: ["Calm", "Relaxed", "Peaceful", "Mellow", "Dreamy"], activities: ["Relaxing", "Meditation", "Reading", "Sleep", "Yoga"] },
+  { moods: ["Upbeat", "Happy", "Uplifting"], activities: ["Cleaning", "Cooking", "Socializing", "Party"] },
+  { moods: ["Reflective", "Melancholic", "Nostalgic"], activities: ["Reading", "Creative"] },
+];
+
+/** Incompatible mood-activity pairs: track mood clashes with requested activity */
+const MOOD_ACTIVITY_INCOMPATIBLE: Array<{ moods: string[]; activities: string[] }> = [
+  { moods: ["Calm", "Relaxed", "Peaceful", "Mellow", "Dreamy"], activities: ["Workout", "Running", "Party"] },
+  { moods: ["Energetic", "Exciting", "Intense", "Aggressive"], activities: ["Sleep", "Meditation", "Reading"] },
+];
+
+/**
+ * Mood–activity consistency score (0.9–1.1).
+ * When both mood and activity are requested, applies small bonus for compatible
+ * track mood+activity pairs and penalty for incompatible pairs.
+ */
+export function calculateMoodActivityConsistency(
+  track: TrackRecord,
+  request: PlaylistRequest,
+  matchingIndex: MatchingIndex
+): { score: number; reasons: TrackReason[] } {
+  const reasons: TrackReason[] = [];
+  if (!request.mood?.length || !request.activity?.length) {
+    return { score: 1.0, reasons };
+  }
+
+  // Get track mood categories (same fallback chain as calculateMoodMatch)
+  let trackMoodCategories = mapMoodTagsToCategories(track.enhancedMetadata?.mood || []);
+  if (trackMoodCategories.length === 0) {
+    const tempoBucket = matchingIndex.trackMetadata.get(track.trackFileId)?.tempoBucket;
+    if (tempoBucket && tempoBucket !== "unknown") {
+      trackMoodCategories = mapMoodTagsToCategories(TEMPO_BUCKET_MOODS[tempoBucket] || []);
+    }
+  }
+  if (trackMoodCategories.length === 0) {
+    trackMoodCategories = inferMoodFromGenres(track.tags.genres);
+  }
+  if (trackMoodCategories.length === 0) {
+    trackMoodCategories = mapMusicBrainzTagsToMood(track.enhancedMetadata?.musicbrainzTags || []);
+  }
+  if (trackMoodCategories.length === 0) {
+    trackMoodCategories = inferMoodFromYear(
+      track.tags.year ?? track.enhancedMetadata?.musicbrainzReleaseYear
+    );
+  }
+
+  let trackActivityCategories = mapActivityTagsToCategories(track.enhancedMetadata?.activity || []);
+  if (trackActivityCategories.length === 0) {
+    trackActivityCategories = inferActivityFromTrack(track);
+  }
+
+  if (trackMoodCategories.length === 0 || trackActivityCategories.length === 0) {
+    return { score: 1.0, reasons };
+  }
+
+  const requestMoodSet = new Set(
+    request.mood.map((m) => normalizeMoodCategory(m)).filter((m): m is string => !!m)
+  );
+  const requestActivitySet = new Set(
+    request.activity.map((a) => normalizeActivityCategory(a)).filter((a): a is string => !!a)
+  );
+
+  const trackMoodSet = new Set(trackMoodCategories);
+  const trackActivitySet = new Set(trackActivityCategories);
+
+  for (const { moods, activities } of MOOD_ACTIVITY_COMPATIBLE) {
+    const moodMatch = moods.some((m) => trackMoodSet.has(m) && requestMoodSet.has(m));
+    const activityMatch = activities.some((a) => trackActivitySet.has(a) && requestActivitySet.has(a));
+    if (moodMatch && activityMatch) {
+      reasons.push({
+        type: "mood_match",
+        explanation: "Mood and activity compatible",
+        score: 1.05,
+      });
+      return { score: 1.05, reasons };
+    }
+  }
+
+  for (const { moods, activities } of MOOD_ACTIVITY_INCOMPATIBLE) {
+    const trackHasMood = moods.some((m) => trackMoodSet.has(m));
+    const requestWantsActivity = activities.some((a) => requestActivitySet.has(a));
+    if (trackHasMood && requestWantsActivity) {
+      reasons.push({
+        type: "mood_match",
+        explanation: "Mood and activity inconsistent",
+        score: 0.9,
+      });
+      return { score: 0.9, reasons };
+    }
+  }
+
+  return { score: 1.0, reasons };
 }
 
 /**
@@ -451,6 +566,111 @@ export function calculateDurationFit(
 }
 
 /**
+ * Calculate genre mix fit score.
+ * When genreMixGuidance.mixRatio exists, boosts tracks that help balance
+ * primary vs secondary genre ratio (e.g. if primary over target, boost secondary-genre tracks).
+ *
+ * @param track - Track to score
+ * @param strategy - Playlist strategy (genreMixGuidance)
+ * @param previousTracks - Previously selected tracks
+ * @param matchingIndex - Matching index with normalized genre metadata
+ * @returns Score (0.5–1.0) and reasons
+ */
+export function calculateGenreMixFit(
+  track: TrackRecord,
+  strategy: PlaylistStrategy,
+  previousTracks: TrackRecord[],
+  matchingIndex: MatchingIndex
+): { score: number; reasons: TrackReason[] } {
+  const reasons: TrackReason[] = [];
+  const guidance = strategy.genreMixGuidance;
+  const mixRatio = guidance?.mixRatio;
+  const secondaryGenres = guidance?.secondaryGenres;
+
+  if (
+    !guidance ||
+    !mixRatio ||
+    !secondaryGenres ||
+    secondaryGenres.length === 0 ||
+    previousTracks.length === 0
+  ) {
+    return { score: 1.0, reasons };
+  }
+
+  const primaryLower = new Set(
+    (guidance.primaryGenres || []).map((g) => normalizeGenre(g).toLowerCase())
+  );
+  const secondaryLower = new Set(
+    secondaryGenres.map((g) => normalizeGenre(g).toLowerCase())
+  );
+
+  let primaryCount = 0;
+  let secondaryCount = 0;
+  for (const t of previousTracks) {
+    const meta = matchingIndex.trackMetadata.get(t.trackFileId);
+    const genres = (meta?.normalizedGenres || t.tags.genres).map((g) =>
+      normalizeGenre(g).toLowerCase()
+    );
+    const hasPrimary = genres.some((g) => primaryLower.has(g));
+    const hasSecondary = genres.some((g) => secondaryLower.has(g));
+    if (hasPrimary) primaryCount++;
+    if (hasSecondary) secondaryCount++;
+  }
+
+  const total = previousTracks.length;
+  const primaryRatio = total > 0 ? primaryCount / total : 0;
+  const secondaryRatio = total > 0 ? secondaryCount / total : 0;
+  const targetPrimary = mixRatio.primary ?? 0.7;
+  const targetSecondary = mixRatio.secondary ?? 0.3;
+
+  const meta = matchingIndex.trackMetadata.get(track.trackFileId);
+  const trackGenres = (meta?.normalizedGenres || track.tags.genres).map((g) =>
+    normalizeGenre(g).toLowerCase()
+  );
+  const trackHasPrimary = trackGenres.some((g) => primaryLower.has(g));
+  const trackHasSecondary = trackGenres.some((g) => secondaryLower.has(g));
+
+  if (!trackHasPrimary && !trackHasSecondary) {
+    return { score: 1.0, reasons };
+  }
+
+  if (primaryRatio > targetPrimary && trackHasSecondary) {
+    reasons.push({
+      type: "genre_match",
+      explanation: "Helps genre mix (secondary genre needed)",
+      score: 1.0,
+    });
+    return { score: 1.0, reasons };
+  }
+  if (primaryRatio < targetPrimary && trackHasPrimary) {
+    reasons.push({
+      type: "genre_match",
+      explanation: "Helps genre mix (primary genre needed)",
+      score: 1.0,
+    });
+    return { score: 1.0, reasons };
+  }
+  if (primaryRatio > targetPrimary && trackHasPrimary && !trackHasSecondary) {
+    reasons.push({
+      type: "diversity",
+      explanation: "Primary genre over target ratio",
+      score: 0.7,
+    });
+    return { score: 0.7, reasons };
+  }
+  if (secondaryRatio > targetSecondary && trackHasSecondary && !trackHasPrimary) {
+    reasons.push({
+      type: "diversity",
+      explanation: "Secondary genre over target ratio",
+      score: 0.7,
+    });
+    return { score: 0.7, reasons };
+  }
+
+  return { score: 1.0, reasons };
+}
+
+/**
  * Calculate diversity score with penalties
  * 
  * Scores tracks based on artist, genre, and album diversity. Applies
@@ -516,6 +736,50 @@ export function calculateDiversity(
 
   if (hasRecentGenre) {
     score *= 0.7; // Light penalty for recent genre
+  }
+
+  // Year/era diversity: penalize tracks from decades that appear frequently in recent tracks
+  const trackDecade = getDecadeFromYear(
+    track.tags.year ?? track.enhancedMetadata?.musicbrainzReleaseYear
+  );
+  if (trackDecade) {
+    const recentDecades = recentTracks
+      .map((t) =>
+        getDecadeFromYear(
+          t.tags.year ?? t.enhancedMetadata?.musicbrainzReleaseYear
+        )
+      )
+      .filter((d): d is DecadeKey => !!d);
+    const sameDecadeCount = recentDecades.filter((d) => d === trackDecade).length;
+    if (sameDecadeCount >= 3) {
+      score *= 0.6; // Penalty when 3+ recent tracks from same decade
+      reasons.push({
+        type: "diversity",
+        explanation: `Same decade (${trackDecade}) appeared frequently`,
+        score: 0.6,
+      });
+    } else if (sameDecadeCount >= 2) {
+      score *= 0.85; // Light penalty for 2 same-decade tracks
+    }
+  }
+
+  // Album diversity: penalize when same album has too many tracks
+  const maxTracksPerAlbum = diversityRules.maxTracksPerAlbum ?? 2;
+  const album = track.tags.album?.trim();
+  if (album) {
+    const albumCount = previousTracks.filter(
+      (t) => t.tags.album?.trim() === album
+    ).length;
+    if (albumCount >= maxTracksPerAlbum) {
+      score *= 0.2; // Heavy penalty for exceeding album limit
+      reasons.push({
+        type: "diversity",
+        explanation: `Too many tracks from album "${album}" (${albumCount})`,
+        score: 0.2,
+      });
+    } else if (albumCount >= maxTracksPerAlbum - 1) {
+      score *= 0.6; // Penalty when at limit
+    }
   }
 
   // Mood diversity (light penalty for repeats)

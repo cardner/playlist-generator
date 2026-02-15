@@ -15,7 +15,13 @@ import type { TrackRecord } from "@/db/schema";
 import type { LLMProvider } from "@/types/playlist";
 import { logger } from "@/lib/logger";
 import { TEMPO_BUCKET_ACTIVITIES, TEMPO_BUCKET_RANGES } from "@/lib/tempo-mapping";
-import { getActivityCategories, mapActivityTagsToCategories, normalizeActivityCategory } from "./activity-mapping";
+import {
+  getActivityCategories,
+  mapActivityTagsToCategories,
+  mapMusicBrainzTagsToActivity,
+  normalizeActivityCategory,
+} from "./activity-mapping";
+import { inferActivityFromYear } from "@/lib/year-mapping";
 
 /**
  * Result of LLM-based activity inference.
@@ -82,6 +88,26 @@ function inferActivityTagsFromGenres(genres: string[]): string[] {
 }
 
 /**
+ * Infers activity categories from track duration.
+ * Short tracks (60–180s) suit workout/running/party; long tracks (300s+) suit relaxing/meditation/reading.
+ *
+ * @param durationSeconds - Track duration in seconds
+ * @returns Canonical activity categories (may be empty)
+ */
+export function inferActivityFromDuration(durationSeconds?: number): string[] {
+  if (typeof durationSeconds !== "number" || Number.isNaN(durationSeconds) || durationSeconds <= 0) {
+    return [];
+  }
+  const tags: string[] = [];
+  if (durationSeconds >= 60 && durationSeconds <= 180) {
+    tags.push("workout", "running", "party");
+  } else if (durationSeconds >= 300) {
+    tags.push("relaxing", "meditation", "reading");
+  }
+  return mapActivityTagsToCategories(tags);
+}
+
+/**
  * Infers activity categories for a track using BPM and genres (no LLM).
  * Used when a track has no explicit activity tags. Returns canonical categories
  * from activity-mapping (e.g. "Workout", "Study", "Relaxing").
@@ -98,7 +124,24 @@ export function inferActivityFromTrack(track: TrackRecord): string[] {
 
   inferred.push(...inferActivityTagsFromGenres(track.tags.genres));
 
-  return mapActivityTagsToCategories(inferred);
+  let mapped = mapActivityTagsToCategories(inferred);
+
+  if (mapped.length === 0) {
+    const fromDuration = inferActivityFromDuration(track.tech?.durationSeconds);
+    if (fromDuration.length > 0) return fromDuration;
+
+    const fromMusicBrainz = mapMusicBrainzTagsToActivity(
+      track.enhancedMetadata?.musicbrainzTags || []
+    );
+    if (fromMusicBrainz.length > 0) return fromMusicBrainz;
+
+    const fromYear = inferActivityFromYear(
+      track.tags.year ?? track.enhancedMetadata?.musicbrainzReleaseYear
+    );
+    if (fromYear.length > 0) return fromYear;
+  }
+
+  return mapped;
 }
 
 async function callLLMForActivity(
