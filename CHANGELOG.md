@@ -43,6 +43,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.9.0] - 2026-02-15
+
+### Added
+
+- add prompt queues for built-in agents
+- add additional prompt for llm generation
+
+### Other Changes
+
+- Merge pull request #54 from cardner/llm-prompt
+
 ## [1.8.0] - 2026-02-15
 
 ### Added
