@@ -45,6 +45,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.10.1] - 2026-02-15
+
+### Fixed
+
+- add in proper styling for screenshots
+- improve spacing in help panel and make banners dismissable
+
+### Other Changes
+
+- Merge pull request #56 from cardner/resume-scan-dismiss
+
 ## [1.10.0] - 2026-02-15
 
 ### Added
