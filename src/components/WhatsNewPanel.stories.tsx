@@ -31,6 +31,7 @@ const SAMPLE_CHANGELOG = `
 
 const meta: Meta<typeof WhatsNewPanel> = {
   component: WhatsNewPanel,
+  tags: ["no-screenshot"],
   parameters: {
     layout: "fullscreen",
   },

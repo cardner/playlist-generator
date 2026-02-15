@@ -105,7 +105,7 @@ jest.mock("@/components/LibraryBrowserTrackRow", () => ({
   }: {
     track: TrackRecord;
   }) => (
-    <tr data-testid="track-row">
+    <tr data-testid="track-row" data-artist={track.tags.artist}>
       <td>{track.tags.title}</td>
     </tr>
   ),
@@ -235,5 +235,124 @@ describe("LibraryBrowser", () => {
 
     expect(screen.queryByRole("button", { name: /prev/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /next/i })).not.toBeInTheDocument();
+  });
+
+  describe("genre and artist filters (additive OR logic)", () => {
+    it("narrows to matching artist when single artist filter applied", async () => {
+      const base1 = createTrack(1);
+      const base2 = createTrack(2);
+      const base3 = createTrack(3);
+      const filterTracks = [
+        { ...base1, tags: { ...base1.tags, artist: "Wilco" } },
+        { ...base2, tags: { ...base2.tags, artist: "Bob Dylan" } },
+        { ...base3, tags: { ...base3.tags, artist: "Jets to Brazil" } },
+      ];
+      const { getTracks } = jest.requireMock("@/db/storage");
+      getTracks.mockResolvedValue(filterTracks);
+
+      render(
+        <LibraryBrowser
+          filters={[{ type: "artist", value: "Wilco" }]}
+          onFiltersChange={jest.fn()}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText("Track 1")).toBeInTheDocument();
+      });
+
+      const rows = screen.getAllByTestId("track-row");
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toHaveAttribute("data-artist", "Wilco");
+    });
+
+    it("adds results from second artist when multiple artist filters (OR)", async () => {
+      const base1 = createTrack(1);
+      const base2 = createTrack(2);
+      const base3 = createTrack(3);
+      const filterTracks = [
+        { ...base1, tags: { ...base1.tags, artist: "Wilco" } },
+        { ...base2, tags: { ...base2.tags, artist: "Bob Dylan" } },
+        { ...base3, tags: { ...base3.tags, artist: "Jets to Brazil" } },
+      ];
+      const { getTracks } = jest.requireMock("@/db/storage");
+      getTracks.mockResolvedValue(filterTracks);
+
+      render(
+        <LibraryBrowser
+          filters={[
+            { type: "artist", value: "Wilco" },
+            { type: "artist", value: "Bob Dylan" },
+          ]}
+          onFiltersChange={jest.fn()}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText("Track 1")).toBeInTheDocument();
+        expect(screen.getByText("Track 2")).toBeInTheDocument();
+      });
+
+      const rows = screen.getAllByTestId("track-row");
+      expect(rows).toHaveLength(2);
+      const artists = rows.map((r) => r.getAttribute("data-artist"));
+      expect(artists).toContain("Wilco");
+      expect(artists).toContain("Bob Dylan");
+    });
+
+    it("narrows to matching genre when single genre filter applied", async () => {
+      render(
+        <LibraryBrowser
+          filters={[{ type: "genre", value: "Rock" }]}
+          onFiltersChange={jest.fn()}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText("Track 1")).toBeInTheDocument();
+      });
+
+      const rows = screen.getAllByTestId("track-row");
+      expect(rows).toHaveLength(100);
+    });
+
+    it("shows no tracks when artist filter matches nothing", async () => {
+      render(
+        <LibraryBrowser
+          filters={[{ type: "artist", value: "Nonexistent Artist" }]}
+          onFiltersChange={jest.fn()}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText("No tracks match your filters.")).toBeInTheDocument();
+      });
+
+      expect(screen.queryAllByTestId("track-row")).toHaveLength(0);
+    });
+
+    it("uses controlled filters when filters and onFiltersChange provided", async () => {
+      const onFiltersChange = jest.fn();
+
+      render(
+        <LibraryBrowser
+          filters={[{ type: "artist", value: "Artist 1" }]}
+          onFiltersChange={onFiltersChange}
+        />
+      );
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /remove artist filter artist 1/i })
+        ).toBeInTheDocument();
+      });
+
+      const removeButton = screen.getByRole("button", {
+        name: /remove artist filter artist 1/i,
+      });
+      fireEvent.click(removeButton);
+
+      expect(onFiltersChange).toHaveBeenCalledWith([]);
+    });
   });
 });

@@ -198,7 +198,8 @@ export async function summarizeLibrary(
   let durationTotal = 0;
   let durationCount = 0;
 
-  // Recently added counts (based on updatedAt timestamps)
+  // Recently added counts: use first-added time (addedAt) for consistency with playlist "recent" source.
+  // Falls back to updatedAt when addedAt is missing (legacy tracks).
   const now = Date.now();
   const last24Hours = now - 24 * 60 * 60 * 1000;
   const last7Days = now - 7 * 24 * 60 * 60 * 1000;
@@ -210,10 +211,10 @@ export async function summarizeLibrary(
 
   await collection.each((track) => {
     totalTracks++;
-    const updatedAt = track.updatedAt;
-    if (updatedAt >= last24Hours) last24HoursCount++;
-    if (updatedAt >= last7Days) last7DaysCount++;
-    if (updatedAt >= last30Days) last30DaysCount++;
+    const addedAt = track.addedAt ?? track.updatedAt;
+    if (addedAt >= last24Hours) last24HoursCount++;
+    if (addedAt >= last7Days) last7DaysCount++;
+    if (addedAt >= last30Days) last30DaysCount++;
 
     for (const genre of track.tags.genres) {
       genreMap.set(genre, (genreMap.get(genre) || 0) + 1);

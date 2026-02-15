@@ -5,6 +5,7 @@ import { LibrarySelector } from "@/components/LibrarySelector";
 import { LibraryScanner } from "@/components/LibraryScanner";
 import { LibraryBrowser } from "@/components/LibraryBrowser";
 import { LibrarySummary } from "@/components/LibrarySummary";
+import type { FilterTag } from "@/components/LibrarySearchCombo";
 import { StorageWarning } from "@/components/StorageWarning";
 import { useBackgroundLibraryTasks } from "@/components/BackgroundLibraryTasksProvider";
 import { getCurrentLibraryRoot, getCurrentCollectionId } from "@/db/storage";
@@ -24,6 +25,7 @@ export default function LibraryPage() {
   const [hasExistingScans, setHasExistingScans] = useState<boolean | null>(null); // null = checking
   const [collectionRefresh, setCollectionRefresh] = useState(0);
   const [triggerScan, setTriggerScan] = useState(false);
+  const [libraryFilters, setLibraryFilters] = useState<FilterTag[]>([]);
 
   useEffect(() => {
     backgroundTasks.setLibraryRootId(currentLibraryRootId);
@@ -279,11 +281,29 @@ export default function LibraryPage() {
         <LibrarySummary 
           libraryRootId={currentLibraryRootId || undefined}
           refreshTrigger={browserRefresh}
+          onGenreClick={(genre) => {
+            setLibraryFilters((prev) =>
+              prev.some((f) => f.type === "genre" && f.value === genre)
+                ? prev
+                : [...prev, { type: "genre", value: genre }]
+            );
+          }}
+          onArtistClick={(artist) => {
+            setLibraryFilters((prev) =>
+              prev.some((f) => f.type === "artist" && f.value === artist)
+                ? prev
+                : [...prev, { type: "artist", value: artist }]
+            );
+          }}
         />
       </div>
 
       <div className="mb-4">
-        <LibraryBrowser key={browserRefresh} />
+        <LibraryBrowser
+          key={browserRefresh}
+          filters={libraryFilters}
+          onFiltersChange={setLibraryFilters}
+        />
       </div>
     </>
   );

@@ -70,11 +70,18 @@ type SortDirection = "asc" | "desc";
 
 interface LibraryBrowserProps {
   refreshTrigger?: number;
+  /** When provided with onFiltersChange, filters are controlled by parent (e.g. library page) */
+  filters?: FilterTag[];
+  onFiltersChange?: (filters: FilterTag[]) => void;
 }
 
-export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
+export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onFiltersChange }: LibraryBrowserProps) {
   const [tracks, setTracks] = useState<TrackRecord[]>([]);
-  const [filters, setFilters] = useState<FilterTag[]>([]);
+  const [internalFilters, setInternalFilters] = useState<FilterTag[]>([]);
+
+  // Use controlled filters when both props provided; otherwise use internal state
+  const filters = controlledFilters != null && onFiltersChange ? controlledFilters : internalFilters;
+  const setFilters = controlledFilters != null && onFiltersChange ? onFiltersChange : setInternalFilters;
   const [sortField, setSortField] = useState<SortField>("title");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [genres, setGenres] = useState<string[]>([]);
@@ -249,7 +256,36 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
       return mapActivityTagsToCategories(tags);
     };
 
-    for (const f of filters) {
+    // Genre and artist filters use OR (additive) so clicking chips adds more results.
+    // Other filter types use AND as before.
+    const genreFilters = filters.filter((f) => f.type === "genre").map((f) => f.value.trim()).filter(Boolean);
+    const artistFilters = filters.filter((f) => f.type === "artist").map((f) => f.value.trim()).filter(Boolean);
+    const otherFilters = filters.filter((f) => f.type !== "genre" && f.type !== "artist");
+
+    const hasChipFilters = genreFilters.length > 0 || artistFilters.length > 0;
+    if (hasChipFilters) {
+      const normalizedGenres = genreFilters.map((v) => normalizeGenre(v).toLowerCase());
+      const artistVals = artistFilters.map((v) => v.toLowerCase());
+      const hasGenre = genreFilters.length > 0;
+      const hasArtist = artistFilters.length > 0;
+      filtered = filtered.filter((t) => {
+        const matchesGenre = hasGenre && normalizedGenres.some((ng) => {
+          const trackGenres = t.tags.genres.map((g) => {
+            const norm = genreMappings?.originalToNormalized?.get(g) ?? normalizeGenre(g);
+            return norm.toLowerCase();
+          });
+          return trackGenres.includes(ng);
+        });
+        const matchesArtist = hasArtist && artistVals.some((av) =>
+          (t.tags.artist ?? "").toLowerCase().includes(av)
+        );
+        if (hasGenre && hasArtist) return matchesGenre || matchesArtist;
+        if (hasGenre) return matchesGenre;
+        return matchesArtist;
+      });
+    }
+
+    for (const f of otherFilters) {
       const val = f.value.trim().toLowerCase();
       if (!val) continue;
 
@@ -259,27 +295,11 @@ export function LibraryBrowser({ refreshTrigger }: LibraryBrowserProps) {
             t.tags.title.toLowerCase().includes(val)
           );
           break;
-        case "artist":
-          filtered = filtered.filter((t) =>
-            t.tags.artist.toLowerCase().includes(val)
-          );
-          break;
         case "album":
           filtered = filtered.filter((t) =>
             (t.tags.album ?? "").toLowerCase().includes(val)
           );
           break;
-        case "genre": {
-          const normalizedVal = normalizeGenre(f.value).toLowerCase();
-          filtered = filtered.filter((t) => {
-            const trackGenres = t.tags.genres.map((g) => {
-              const norm = genreMappings?.originalToNormalized?.get(g) ?? normalizeGenre(g);
-              return norm.toLowerCase();
-            });
-            return trackGenres.includes(normalizedVal);
-          });
-          break;
-        }
         case "bpm": {
           const bpmPred = parseBpmFilter(f.value);
           if (bpmPred) {

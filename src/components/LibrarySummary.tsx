@@ -54,9 +54,13 @@ interface LibrarySummaryProps {
   className?: string;
   libraryRootId?: string; // Optional: specify library root to summarize
   refreshTrigger?: number; // Optional: increment to trigger refresh
+  /** When provided, genre chips become clickable and add a filter in the table below */
+  onGenreClick?: (genre: string) => void;
+  /** When provided, artist chips become clickable and add a filter in the table below */
+  onArtistClick?: (artist: string) => void;
 }
 
-export function LibrarySummary({ className, libraryRootId, refreshTrigger }: LibrarySummaryProps) {
+export function LibrarySummary({ className, libraryRootId, refreshTrigger, onGenreClick, onArtistClick }: LibrarySummaryProps) {
   const [summary, setSummary] = useState<LibrarySummary | null>(null);
   const [isLoading, setIsLoading] = useState(false); // Start as false - only load when we have a root
   const [error, setError] = useState<string | null>(null);
@@ -197,7 +201,7 @@ export function LibrarySummary({ className, libraryRootId, refreshTrigger }: Lib
           <div className="flex items-center gap-3 mb-2">
             <TrendingUp className="size-5 text-accent-primary" />
             <span className="text-app-secondary text-sm uppercase tracking-wider">
-              Last 7 Days
+              Added in Last 7 Days
             </span>
           </div>
           <p className="text-app-primary text-2xl font-semibold">
@@ -213,15 +217,32 @@ export function LibrarySummary({ className, libraryRootId, refreshTrigger }: Lib
             Top Genres
           </h3>
           <div className="flex flex-wrap gap-2">
-            {summary.genreCounts.slice(0, 10).map(({ genre, count }) => (
-              <span
-                key={genre}
-                className="inline-flex items-center gap-2 px-3 py-1 bg-app-hover text-app-primary rounded-sm border border-app-border text-sm"
-              >
-                <span>{genre}</span>
-                <span className="text-app-tertiary">({count})</span>
-              </span>
-            ))}
+            {summary.genreCounts.slice(0, 10).map(({ genre, count }) => {
+              const chipContent = (
+                <>
+                  <span>{genre}</span>
+                  <span className="text-app-tertiary">({count})</span>
+                </>
+              );
+              const chipClassName = "inline-flex items-center gap-2 px-3 py-1 bg-app-hover text-app-primary rounded-sm border border-app-border text-sm";
+              if (onGenreClick) {
+                return (
+                  <button
+                    key={genre}
+                    type="button"
+                    onClick={() => onGenreClick(genre)}
+                    className={cn(chipClassName, "cursor-pointer hover:bg-app-border/50 transition-colors")}
+                  >
+                    {chipContent}
+                  </button>
+                );
+              }
+              return (
+                <span key={genre} className={chipClassName}>
+                  {chipContent}
+                </span>
+              );
+            })}
           </div>
         </div>
       )}
@@ -233,15 +254,32 @@ export function LibrarySummary({ className, libraryRootId, refreshTrigger }: Lib
             Top Artists
           </h3>
           <div className="flex flex-wrap gap-2">
-            {summary.artistCounts.slice(0, 10).map(({ artist, count }) => (
-              <span
-                key={artist}
-                className="inline-flex items-center gap-2 px-3 py-1 bg-app-hover text-app-primary rounded-sm border border-app-border text-sm"
-              >
-                <span>{artist}</span>
-                <span className="text-app-tertiary">({count})</span>
-              </span>
-            ))}
+            {summary.artistCounts.slice(0, 10).map(({ artist, count }) => {
+              const chipContent = (
+                <>
+                  <span>{artist}</span>
+                  <span className="text-app-tertiary">({count})</span>
+                </>
+              );
+              const chipClassName = "inline-flex items-center gap-2 px-3 py-1 bg-app-hover text-app-primary rounded-sm border border-app-border text-sm";
+              if (onArtistClick) {
+                return (
+                  <button
+                    key={artist}
+                    type="button"
+                    onClick={() => onArtistClick(artist)}
+                    className={cn(chipClassName, "cursor-pointer hover:bg-app-border/50 transition-colors")}
+                  >
+                    {chipContent}
+                  </button>
+                );
+              }
+              return (
+                <span key={artist} className={chipClassName}>
+                  {chipContent}
+                </span>
+              );
+            })}
           </div>
         </div>
       )}
