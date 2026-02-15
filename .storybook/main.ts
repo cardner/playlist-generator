@@ -1,41 +1,15 @@
-import type { StorybookConfig } from "@storybook/react-webpack5";
+import type { StorybookConfig } from "@storybook/nextjs-vite";
 import path from "path";
 
 const config: StorybookConfig = {
   stories: ["../src/**/*.stories.@(js|jsx|mjs|ts|tsx)"],
-  addons: [
-    "@storybook/addon-links",
-    "@storybook/addon-essentials",
-    "@storybook/addon-interactions",
-    {
-      name: "@storybook/addon-styling-webpack",
-      options: {
-        rules: [
-          {
-            test: /\.css$/,
-            use: [
-              "style-loader",
-              { loader: "css-loader", options: { importLoaders: 1 } },
-              {
-                loader: "postcss-loader",
-                options: {
-                  postcssOptions: {
-                    config: path.resolve(process.cwd(), "postcss.config.js"),
-                  },
-                },
-              },
-            ],
-          },
-        ],
-      },
-    },
-  ],
+  addons: ["@storybook/addon-docs"],
   framework: {
-    name: "@storybook/react-webpack5",
+    name: "@storybook/nextjs-vite",
     options: {},
   },
   staticDirs: ["../public"],
-  webpackFinal: async (config) => {
+  async viteFinal(config) {
     config.resolve = config.resolve ?? {};
     config.resolve.alias = {
       ...config.resolve.alias,
@@ -49,26 +23,6 @@ const config: StorybookConfig = {
         "src/__mocks__/next-navigation.ts"
       ),
     };
-    // Prepend babel-loader for .ts/.tsx so TypeScript is transpiled before other loaders
-    config.module = config.module ?? {};
-    config.module.rules = config.module.rules ?? [];
-    const babelRule = {
-      test: /\.(tsx?|jsx?)$/,
-      exclude: /node_modules/,
-      use: [
-        {
-          loader: "babel-loader",
-          options: {
-            presets: [
-              "@babel/preset-env",
-              ["@babel/preset-react", { runtime: "automatic" }],
-              "@babel/preset-typescript",
-            ],
-          },
-        },
-      ],
-    };
-    config.module.rules.unshift(babelRule);
     return config;
   },
 };

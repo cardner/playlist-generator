@@ -1,4 +1,4 @@
-import { Meta, StoryObj } from "@storybook/react";
+import { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { useState } from "react";
 import { Tabs } from "./Tabs";
 import { Music, Sparkles } from "lucide-react";
