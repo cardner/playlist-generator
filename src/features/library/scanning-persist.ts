@@ -48,13 +48,15 @@ export async function scanLibraryWithPersistence(
   options?: {
     signal?: AbortSignal;
     onScanRunCreated?: (scanRunId: string) => void;
+    existingLibraryRootId?: string;
   }
 ): Promise<{ result: ScanResult; libraryRoot: LibraryRootRecord; scanRunId: string }> {
   const startTime = Date.now();
 
-  // Save or get library root
+  // Save or get library root (use existingLibraryRootId when rescanning to update that collection)
   const libraryRoot = await saveLibraryRoot(root, root.handleId, {
     setAsCurrent: false,
+    existingCollectionId: options?.existingLibraryRootId,
   });
 
   // Load previous index and migrate track IDs if needed

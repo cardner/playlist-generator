@@ -13,9 +13,11 @@ interface BackgroundLibraryTasksContextValue {
   libraryRoot: LibraryRoot | null;
   permissionStatus: PermissionStatus | null;
   libraryRootId: string | null;
+  existingCollectionId: string | null;
   setLibraryRoot: (root: LibraryRoot | null) => void;
   setPermissionStatus: (status: PermissionStatus | null) => void;
   setLibraryRootId: (id: string | null) => void;
+  setExistingCollectionId: (id: string | null) => void;
   setOnScanComplete: (callback?: VoidCallback) => void;
   setOnProcessingProgress: (callback?: VoidCallback) => void;
   scanning: ReturnType<typeof useLibraryScanning>;
@@ -35,6 +37,7 @@ export function BackgroundLibraryTasksProvider({
   const [libraryRoot, setLibraryRoot] = useState<LibraryRoot | null>(null);
   const [permissionStatus, setPermissionStatus] = useState<PermissionStatus | null>(null);
   const [libraryRootId, setLibraryRootId] = useState<string | null>(null);
+  const [existingCollectionId, setExistingCollectionId] = useState<string | null>(null);
   const onScanCompleteRef = useRef<VoidCallback | undefined>(undefined);
   const onProcessingProgressRef = useRef<VoidCallback | undefined>(undefined);
   const lastBackfillRootRef = useRef<string | null>(null);
@@ -50,6 +53,7 @@ export function BackgroundLibraryTasksProvider({
   const scanning = useLibraryScanning({
     libraryRoot,
     permissionStatus,
+    existingCollectionId,
   });
 
   const metadataParsing = useMetadataParsing({
@@ -78,9 +82,11 @@ export function BackgroundLibraryTasksProvider({
       libraryRoot,
       permissionStatus,
       libraryRootId,
+      existingCollectionId,
       setLibraryRoot,
       setPermissionStatus,
       setLibraryRootId,
+      setExistingCollectionId,
       setOnScanComplete,
       setOnProcessingProgress,
       scanning,
@@ -92,9 +98,11 @@ export function BackgroundLibraryTasksProvider({
       libraryRoot,
       permissionStatus,
       libraryRootId,
+      existingCollectionId,
       setLibraryRoot,
       setPermissionStatus,
       setLibraryRootId,
+      setExistingCollectionId,
       setOnScanComplete,
       setOnProcessingProgress,
       scanning,

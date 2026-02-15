@@ -267,6 +267,7 @@ export default function LibraryPage() {
           onScanComplete={handleScanComplete}
           onProcessingProgress={handleProcessingProgress}
           triggerScan={triggerScan}
+          existingCollectionId={currentLibraryRootId ?? undefined}
         />
       </div>
 
