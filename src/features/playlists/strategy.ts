@@ -77,9 +77,9 @@ export const PlaylistStrategySchema = z.object({
 export type PlaylistStrategy = z.infer<typeof PlaylistStrategySchema>;
 
 /**
- * Prompt template for LLM
+ * Prompt template for LLM (exported for tests).
  */
-function buildPrompt(
+export function buildPrompt(
   request: PlaylistRequest,
   summary: LibrarySummary,
   settings: AppSettings
@@ -96,6 +96,12 @@ IMPORTANT RULES:
 
 USER REQUEST:
 ${JSON.stringify(payload.request, null, 2)}
+${((): string => {
+  const extra = request.llmAdditionalInstructions?.trim();
+  return extra
+    ? `\nADDITIONAL USER INSTRUCTIONS (incorporate these into the strategy; still return only valid JSON):\n${extra}\n`
+    : "";
+})()}
 
 LIBRARY SUMMARY:
 - Total tracks: ${payload.librarySummary.totalTracks}
@@ -169,6 +175,7 @@ Generate a strategy that:
 3. Creates a good flow with warmup/peak/cooldown sections
 4. Ensures diversity (max ${payload.request.surprise < 0.5 ? "conservative" : payload.request.surprise < 0.8 ? "moderate" : "adventurous"} diversity based on surprise level ${payload.request.surprise})
 5. Uses appropriate tempo guidance based on the requested tempo (${JSON.stringify(payload.request.tempo)})
+${request.llmAdditionalInstructions?.trim() ? "6. Incorporates any ADDITIONAL USER INSTRUCTIONS above while still returning only valid JSON." : ""}
 
 Return ONLY the JSON object, no other text.`;
 }

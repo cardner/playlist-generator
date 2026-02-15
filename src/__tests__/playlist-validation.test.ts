@@ -54,6 +54,14 @@ describe("validatePlaylistRequest", () => {
     expect(errors.mood).toBeUndefined();
     expect(errors.activity).toBeUndefined();
   });
+
+  it("accepts llmAdditionalInstructions without validation errors", () => {
+    const errors = validatePlaylistRequest({
+      ...baseRequest,
+      llmAdditionalInstructions: "favor 80s production, no ballads",
+    });
+    expect(hasErrors(errors)).toBe(false);
+  });
 });
 
 describe("isValidPlaylistRequest", () => {

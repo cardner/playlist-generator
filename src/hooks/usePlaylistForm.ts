@@ -86,6 +86,7 @@ export function usePlaylistForm(
       discoveryFrequency: discoveryMode ? "every_other" : undefined,
       sourcePool: "all",
       recentWindow: "30d",
+      llmAdditionalInstructions: undefined,
     };
   });
 
