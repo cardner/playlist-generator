@@ -81,4 +81,38 @@ describe("normalizePlaylistRequest", () => {
       expect(result.activity).toContain("Cycling");
     });
   });
+
+  describe("mergeInstructions option", () => {
+    it("merges mood/activity from llmAdditionalInstructions when mergeInstructions true", () => {
+      const result = normalizePlaylistRequest(
+        {
+          ...baseRequest,
+          mood: ["energetic"],
+          activity: ["workout"],
+          llmAdditionalInstructions: "chill relaxing yoga",
+        },
+        { mergeInstructions: true }
+      );
+      expect(result.mood).toContain("Energetic");
+      expect(result.mood).toContain("Relaxed");
+      expect(result.mood).toContain("Calm");
+      expect(result.activity).toContain("Workout");
+      expect(result.activity).toContain("Yoga");
+      expect(result.activity).toContain("Relaxing");
+    });
+
+    it("does not merge when mergeInstructions false or omitted", () => {
+      const result = normalizePlaylistRequest({
+        ...baseRequest,
+        mood: ["energetic"],
+        activity: ["workout"],
+        llmAdditionalInstructions: "chill relaxing yoga",
+      });
+      expect(result.mood).toContain("Energetic");
+      expect(result.mood).not.toContain("Relaxed");
+      expect(result.mood).not.toContain("Calm");
+      expect(result.activity).not.toContain("Yoga");
+      expect(result.activity).not.toContain("Relaxing");
+    });
+  });
 });

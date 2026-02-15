@@ -13,6 +13,15 @@
 import type { PlaylistRequest } from "@/types/playlist";
 import { mapMoodTagsToCategories, normalizeMoodCategory } from "@/features/library/mood-mapping";
 import { mapActivityTagsToCategories, normalizeActivityCategory } from "@/features/library/activity-mapping";
+import { mergeInstructionsIntoRequest } from "./instruction-parsing";
+
+/** Options for normalizePlaylistRequest */
+export interface NormalizePlaylistRequestOptions {
+  /** When true (built-in agent), merge mood/activity/genres from llmAdditionalInstructions */
+  mergeInstructions?: boolean;
+  /** Known library genres for filtering instruction-derived genres (optional) */
+  knownGenres?: string[];
+}
 
 function normalizeTagList(values: string[]): string[] {
   return values
@@ -74,21 +83,28 @@ function normalizeActivityList(values: string[]): string[] {
  * request object; does not mutate the original.
  * Also applies defaults for sourcePool and recentWindow when sourcePool is "recent".
  *
+ * When options.mergeInstructions is true (for built-in agent), also merges
+ * mood/activity/genres parsed from llmAdditionalInstructions.
+ *
  * @param request - Raw playlist request from user input
+ * @param options - Optional: mergeInstructions, knownGenres
  * @returns New request with normalized mood and activity arrays
  */
-export function normalizePlaylistRequest(request: PlaylistRequest): PlaylistRequest {
+export function normalizePlaylistRequest(
+  request: PlaylistRequest,
+  options?: NormalizePlaylistRequestOptions
+): PlaylistRequest {
   const sourcePool = request.sourcePool ?? "all";
   const recentWindow =
     sourcePool === "recent" && !request.recentWindow && !request.recentTrackCount
       ? "30d"
       : request.recentWindow;
 
-  const genres = Array.isArray(request.genres) ? request.genres : [];
-  const mood = normalizeMoodList(request.mood || []);
-  const activity = normalizeActivityList(request.activity || []);
+  let genres = Array.isArray(request.genres) ? request.genres : [];
+  let mood = normalizeMoodList(request.mood || []);
+  let activity = normalizeActivityList(request.activity || []);
 
-  return {
+  let result: PlaylistRequest = {
     ...request,
     genres,
     mood,
@@ -96,4 +112,17 @@ export function normalizePlaylistRequest(request: PlaylistRequest): PlaylistRequ
     sourcePool,
     recentWindow,
   };
+
+  if (options?.mergeInstructions) {
+    result = mergeInstructionsIntoRequest(result, options.knownGenres);
+    mood = normalizeMoodList(result.mood || []);
+    activity = normalizeActivityList(result.activity || []);
+    result = {
+      ...result,
+      mood,
+      activity,
+    };
+  }
+
+  return result;
 }

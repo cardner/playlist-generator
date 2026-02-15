@@ -36,13 +36,19 @@ export async function generatePlaylistFromStrategy(
   seed?: string,
   excludeTrackIds?: string[]
 ): Promise<GeneratedPlaylist> {
+  const isBuiltInAgent =
+    request.agentType !== "llm" ||
+    !request.llmConfig?.apiKey ||
+    !request.llmConfig?.provider;
+
   const normalizedRequest = normalizePlaylistRequest(
     applyTempoMappingsToRequest({
-    ...request,
-    mood: [...request.mood],
-    activity: [...request.activity],
-    tempo: { ...request.tempo },
-  })
+      ...request,
+      mood: [...request.mood],
+      activity: [...request.activity],
+      tempo: { ...request.tempo },
+    }),
+    isBuiltInAgent ? { mergeInstructions: true } : undefined
   );
   // Get all tracks
   let allTracks: TrackRecord[];

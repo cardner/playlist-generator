@@ -21,6 +21,7 @@ import {
   calculateDurationFit,
   calculateDiversity,
   calculateSurprise,
+  calculateInstructionMatch,
 } from "./scoring";
 import { logger } from "@/lib/logger";
 
@@ -94,6 +95,10 @@ export function scoreTrack(
   );
   const moodMatch = calculateMoodMatch(track, request, matchingIndex);
   const activityMatch = calculateActivityMatch(track, request);
+  const instructionMatch = calculateInstructionMatch(
+    track,
+    request.llmAdditionalInstructions
+  );
   const durationFit = calculateDurationFit(
     track,
     targetDuration,
@@ -193,9 +198,12 @@ export function scoreTrack(
     ...durationFit.reasons,
     ...diversity.reasons,
     ...surprise.reasons,
+    ...instructionMatch.reasons,
     ...suggestionReasons,
     ...affinityReasons,
   ];
+
+  const instructionWeight = request.llmAdditionalInstructions?.trim() ? 0.1 : 0;
 
   // Calculate weighted score with suggestion bonus
   const score =
@@ -206,6 +214,7 @@ export function scoreTrack(
     durationFit.score * 0.15 + // Duration fit weight
     diversity.score * weights.diversity +
     surprise.score * (request.surprise * 0.1) + // Surprise weight scales with surprise level
+    instructionMatch.score * instructionWeight +
     suggestionBonus +
     affinityBonus; // Add bonuses (can push score above 1.0)
 
