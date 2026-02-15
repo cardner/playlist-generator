@@ -49,6 +49,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.12.0] - 2026-02-15
+
+### Added
+
+- **ipod**: match existing device tracks and add missing-tracks prompt
+
+### Other Changes
+
+- Merge pull request #60 from cardner/ipod-sync-id
+
 ## [1.11.2] - 2026-02-15
 
 ### Fixed
