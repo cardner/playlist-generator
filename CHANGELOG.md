@@ -44,6 +44,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.10.0] - 2026-02-15
+
+### Added
+
+- improve mapping of moods and activities to metadata
+
+### Other Changes
+
+- Merge pull request #55 from cardner/improve-playlist-mix
+
 ## [1.9.0] - 2026-02-15
 
 ### Added
