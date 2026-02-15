@@ -676,10 +676,13 @@ export async function syncPlaylistsToDevice(options: {
     libraryRootId?: string;
     mirrorMode?: boolean;
     mirrorDeleteFromDevice?: boolean;
+    onlyReferenceExistingTracks?: boolean;
   }>;
   devicePathMap?: DevicePathMap;
   deviceEntries?: DeviceScanEntry[];
   onlyIncludeMatchedPaths?: boolean;
+  /** When true, only add playlist entries for tracks already on device (iPod); skip copying missing */
+  onlyReferenceExistingTracks?: boolean;
 }): Promise<{ playlistPath?: string; configHash?: string }> {
   const {
     deviceProfile,
@@ -687,11 +690,16 @@ export async function syncPlaylistsToDevice(options: {
     devicePathMap,
     deviceEntries,
     onlyIncludeMatchedPaths,
+    onlyReferenceExistingTracks,
   } = options;
   if (deviceProfile.deviceType === "ipod") {
+    const ipodTargets = targets.map((t) => ({
+      ...t,
+      onlyReferenceExistingTracks: t.onlyReferenceExistingTracks ?? onlyReferenceExistingTracks,
+    }));
     await syncPlaylistsToIpod({
       deviceProfile,
-      targets,
+      targets: ipodTargets,
     });
     return {};
   }

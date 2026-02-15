@@ -10,6 +10,8 @@ import {
   normalizeGenres,
   normalizeYear,
   normalizeIsrc,
+  normalizeAcoustId,
+  extractAcoustId,
 } from "@/features/library/metadata";
 
 describe("normalizeTitle", () => {
@@ -157,6 +159,57 @@ describe("normalizeIsrc", () => {
     expect(normalizeIsrc("USRC17607839")).toBe("USRC17607839");
     expect(normalizeIsrc("GBAYE0601477")).toBe("GBAYE0601477");
     expect(normalizeIsrc("FRZ039800212")).toBe("FRZ039800212");
+  });
+});
+
+describe("normalizeAcoustId", () => {
+  it("returns trimmed string when provided", () => {
+    expect(normalizeAcoustId("  abc123def  ")).toBe("abc123def");
+  });
+
+  it("returns undefined for null or undefined", () => {
+    expect(normalizeAcoustId(undefined)).toBeUndefined();
+    expect(normalizeAcoustId(null)).toBeUndefined();
+  });
+
+  it("uses first element when array is provided", () => {
+    expect(normalizeAcoustId(["id1", "id2"])).toBe("id1");
+  });
+
+  it("returns undefined for empty string or empty array", () => {
+    expect(normalizeAcoustId("")).toBeUndefined();
+    expect(normalizeAcoustId("   ")).toBeUndefined();
+    expect(normalizeAcoustId([])).toBeUndefined();
+  });
+});
+
+describe("extractAcoustId", () => {
+  it("returns value from common.acoustidId", () => {
+    expect(
+      extractAcoustId({ common: { acoustidId: "abc123" } as Record<string, unknown> })
+    ).toBe("abc123");
+  });
+
+  it("returns value from common.acoustid_id", () => {
+    expect(
+      extractAcoustId({ common: { acoustid_id: "xyz789" } as Record<string, unknown> })
+    ).toBe("xyz789");
+  });
+
+  it("returns undefined when common has no acoustid", () => {
+    expect(extractAcoustId({ common: {} })).toBeUndefined();
+    expect(extractAcoustId({})).toBeUndefined();
+  });
+
+  it("scans native format tags for known AcoustID keys", () => {
+    const metadata = {
+      native: {
+        "ID3v2.4": {
+          "TXXX:Acoustid Id": ["native-id-123"],
+        },
+      } as Record<string, Record<string, unknown[]>>,
+    };
+    expect(extractAcoustId(metadata)).toBe("native-id-123");
   });
 });
 

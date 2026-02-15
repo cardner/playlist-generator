@@ -1,7 +1,9 @@
 import type { GeneratedPlaylist } from "@/features/playlists";
 import type { TrackLookup } from "@/features/playlists/export";
 import type { DeviceProfileRecord } from "@/db/schema";
+import { getCompositeId } from "@/db/schema";
 import { getLibraryRoot } from "@/db/storage";
+import { getDeviceTrackMappings, saveDeviceTrackMapping } from "@/features/devices/device-storage";
 import { getDirectoryHandle } from "@/lib/library-selection-fs-api";
 import { logger } from "@/lib/logger";
 import { hashDeviceFileContent } from "@/features/devices/device-scan";
@@ -27,6 +29,14 @@ import {
 } from "./fs-sync";
 import { createTranscodePool } from "./transcode";
 
+/**
+ * iPod playlist sync: matches playlist tracks to existing device tracks when possible to avoid
+ * duplicate files. Matching order: (1) persisted library→device mapping, (2) AcoustID from
+ * metadata, (3) content hash, (4) tag+size, (5) tag-only with duration tolerance, (6) size+hash.
+ * When no match is found, the track is copied and a mapping is saved for next sync.
+ * Per-playlist dedupe ensures the same device track is not added twice to a playlist.
+ */
+
 const DEFAULT_MOUNTPOINT = "/iPod";
 const transcodePool = createTranscodePool({ concurrency: 2 });
 const TRANSCODE_TIMEOUT_MS = 120000;
@@ -37,6 +47,8 @@ type IpodSyncTarget = {
   libraryRootId?: string;
   mirrorMode?: boolean;
   mirrorDeleteFromDevice?: boolean;
+  /** When true, only add playlist entries for tracks already on device; skip copying missing */
+  onlyReferenceExistingTracks?: boolean;
 };
 
 type IpodTrack = {
@@ -314,6 +326,18 @@ export async function syncPlaylistsToIpod(options: {
   }
   const ipodHashCache = new Map<number, string | null>();
 
+  const mappings = await getDeviceTrackMappings(deviceProfile.id);
+  const libraryToDevice = new Map<string, number>(
+    mappings.map((m) => [m.libraryTrackId, m.deviceTrackId])
+  );
+  const acoustidToDevice = new Map<string, number>();
+  for (const m of mappings) {
+    if (m.acoustidId) acoustidToDevice.set(m.acoustidId, m.deviceTrackId);
+  }
+
+  let ipodTrackByContentHash: Map<string, number> | null = null;
+  const DURATION_MATCH_TOLERANCE_MS = 2000;
+
   let totalTracks = 0;
   for (const target of targets) {
     totalTracks += target.playlist.trackFileIds.length;
@@ -323,6 +347,7 @@ export async function syncPlaylistsToIpod(options: {
 
   for (const target of targets) {
     const playlistIndex = await ensurePlaylistIndex(target.playlist.title, playlistIndexCache);
+    const playlistAddedTrackIds = new Set<number>();
     const desiredKeys = target.mirrorMode
       ? new Set(
           target.trackLookups.map((lookup) =>
@@ -373,6 +398,26 @@ export async function syncPlaylistsToIpod(options: {
         }
       }
 
+      const libraryKey = getCompositeId(
+        lookup.track.trackFileId,
+        lookup.track.libraryRootId ?? target.libraryRootId ?? ""
+      );
+      let matchedTrackId: number | undefined = libraryToDevice.get(libraryKey) ?? undefined;
+      if (!matchedTrackId && lookup.track.acoustidId) {
+        matchedTrackId = acoustidToDevice.get(lookup.track.acoustidId) ?? undefined;
+      }
+      if (!matchedTrackId && lookup.fileIndex?.contentHash) {
+        if (ipodTrackByContentHash === null) {
+          ipodTrackByContentHash = new Map();
+          for (const track of ipodTracks) {
+            if (typeof track.id !== "number" || !track.ipod_path) continue;
+            const hash = await hashIpodTrackFile(ipodHandle, track.ipod_path, paths);
+            if (hash) ipodTrackByContentHash.set(hash, track.id);
+          }
+        }
+        matchedTrackId = ipodTrackByContentHash.get(lookup.fileIndex.contentHash) ?? undefined;
+      }
+
       const lookupTagKey = buildTagKey({
         title: lookup.track.tags.title,
         artist: lookup.track.tags.artist,
@@ -386,13 +431,23 @@ export async function syncPlaylistsToIpod(options: {
         trackNo: lookup.track.tags.trackNo ?? 0,
         size: !isFlacFile(file.name) ? effectiveFile.size : undefined,
       });
-      let matchedTrackId: number | undefined =
-        ipodTrackByTagSize.get(lookupTagSizeKey) ?? undefined;
+      if (matchedTrackId === undefined) {
+        matchedTrackId = ipodTrackByTagSize.get(lookupTagSizeKey) ?? undefined;
+      }
       if (!matchedTrackId) {
         const candidates = ipodTrackByTag.get(lookupTagKey);
         if (candidates && candidates.length > 0) {
           if (candidates.length === 1) {
-            matchedTrackId = candidates[0];
+            const candidateId = candidates[0];
+            const durationMs = lookup.track.tech?.durationSeconds
+              ? Math.round(lookup.track.tech.durationSeconds * 1000)
+              : null;
+            const ipodTr = ipodTrackById.get(candidateId);
+            const durationOk =
+              durationMs == null ||
+              ipodTr?.tracklen == null ||
+              Math.abs((ipodTr.tracklen ?? 0) - durationMs) <= DURATION_MATCH_TOLERANCE_MS;
+            if (durationOk) matchedTrackId = candidateId;
           } else {
             let localHash: string | null = null;
             if (typeof effectiveFile.size === "number") {
@@ -462,6 +517,10 @@ export async function syncPlaylistsToIpod(options: {
         }
       }
 
+      if (target.onlyReferenceExistingTracks && matchedTrackId === undefined) {
+        continue;
+      }
+
       if (typeof matchedTrackId === "number") {
         const ipodTrack = ipodTrackById.get(matchedTrackId);
         if (ipodTrack && metadataNeedsUpdate(lookup, ipodTrack)) {
@@ -486,7 +545,10 @@ export async function syncPlaylistsToIpod(options: {
             year: tags.year ?? 0,
           });
         }
-        wasmCall("ipod_playlist_add_track", playlistIndex, matchedTrackId);
+        if (!playlistAddedTrackIds.has(matchedTrackId)) {
+          wasmCall("ipod_playlist_add_track", playlistIndex, matchedTrackId);
+          playlistAddedTrackIds.add(matchedTrackId);
+        }
         continue;
       }
 
@@ -540,7 +602,16 @@ export async function syncPlaylistsToIpod(options: {
         wasmCallWithStrings("ipod_track_set_path", [ipodPath], [trackIndex]);
       }
 
-      wasmCall("ipod_playlist_add_track", playlistIndex, trackIndex);
+      if (!playlistAddedTrackIds.has(trackIndex)) {
+        wasmCall("ipod_playlist_add_track", playlistIndex, trackIndex);
+        playlistAddedTrackIds.add(trackIndex);
+      }
+      await saveDeviceTrackMapping(
+        deviceProfile.id,
+        libraryKey,
+        trackIndex,
+        lookup.track.acoustidId
+      );
       const newTrack: IpodTrack = {
         id: trackIndex,
         title: tags.title,

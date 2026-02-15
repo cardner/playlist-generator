@@ -62,6 +62,7 @@ export async function saveTrackMetadata(
       tags: result.tags!,
       tech: result.tech,
       isrc: result.isrc,
+      acoustidId: result.acoustidId,
       metadataFingerprint: fingerprints[index],
       updatedAt: now,
       addedAt,

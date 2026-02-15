@@ -2,13 +2,18 @@
  * Tests for device sync path logic.
  */
 
-import { describe, it, expect } from "@jest/globals";
+import { describe, it, expect, jest, beforeEach } from "@jest/globals";
 import { getTrackPath, type TrackLookup } from "@/features/playlists/export";
 import {
   buildDeviceMatchKey,
   buildDeviceMatchCandidates,
   hashDeviceFileContent,
 } from "@/features/devices/device-scan";
+
+const mockSyncPlaylistsToIpod = jest.fn().mockResolvedValue(undefined);
+jest.mock("@/features/devices/ipod", () => ({
+  syncPlaylistsToIpod: (...args: unknown[]) => mockSyncPlaylistsToIpod(...args),
+}));
 
 describe("getTrackPath with playlist subfolder", () => {
   it("adds correct depth for nested playlist folder", () => {
@@ -194,5 +199,50 @@ describe("hashDeviceFileContent", () => {
     const first = await hashDeviceFileContent(file, 1024);
     const second = await hashDeviceFileContent(file, 1024);
     expect(first).toBe(second);
+  });
+});
+
+describe("syncPlaylistsToDevice iPod onlyReferenceExistingTracks", () => {
+  beforeEach(() => {
+    mockSyncPlaylistsToIpod.mockClear();
+  });
+
+  it("passes onlyReferenceExistingTracks to iPod targets when provided", async () => {
+    const { syncPlaylistsToDevice } = await import("@/features/devices/device-sync");
+    const profile = {
+      id: "ipod-1",
+      deviceType: "ipod",
+      handleRef: "handle-1",
+      label: "iPod",
+      playlistFormat: "m3u" as const,
+      playlistFolder: "",
+      pathStrategy: "relative-to-playlist" as const,
+      lastSyncAt: 0,
+    } as import("@/db/schema").DeviceProfileRecord;
+    const targets = [
+      {
+        playlist: {
+          id: "pl-1",
+          title: "Playlist",
+          trackFileIds: [],
+          trackSelections: new Map(),
+          strategy: {},
+          summary: {} as never,
+        },
+        trackLookups: [],
+        libraryRootId: "root-1",
+      },
+    ];
+    await syncPlaylistsToDevice({
+      deviceProfile: profile,
+      targets,
+      onlyReferenceExistingTracks: true,
+    });
+    expect(mockSyncPlaylistsToIpod).toHaveBeenCalledTimes(1);
+    const [call] = mockSyncPlaylistsToIpod.mock.calls;
+    const options = call[0];
+    const passedTargets = options?.targets ?? [];
+    expect(passedTargets.length).toBeGreaterThan(0);
+    expect(passedTargets[0].onlyReferenceExistingTracks).toBe(true);
   });
 });

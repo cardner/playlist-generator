@@ -12769,6 +12769,42 @@
     if (!/^[A-Z0-9]{12}$/.test(normalized)) return void 0;
     return normalized;
   }
+  var ACOUSTID_TAG_KEYS = [
+    "acoustid id",
+    "acoustid_id",
+    "acoustid fingerprint",
+    "acoustid_fingerprint"
+  ];
+  function extractAcoustId(metadata) {
+    if (!metadata || typeof metadata !== "object") return void 0;
+    const m = metadata;
+    const common = m.common;
+    if (common && typeof common === "object") {
+      const fromCommon = common.acoustidId ?? common.acoustid_id;
+      if (fromCommon) return fromCommon;
+    }
+    const native = m.native;
+    if (!native || typeof native !== "object") return void 0;
+    for (const formatTags of Object.values(native)) {
+      if (!formatTags || typeof formatTags !== "object") continue;
+      for (const [key, value] of Object.entries(formatTags)) {
+        const keyLower = String(key).toLowerCase();
+        if (ACOUSTID_TAG_KEYS.some((k) => keyLower.includes(k)) && Array.isArray(value) && value.length > 0) {
+          const first = value[0];
+          if (typeof first === "string" && first.trim()) return first;
+          if (first != null) return String(first).trim() || void 0;
+        }
+      }
+    }
+    return void 0;
+  }
+  function normalizeAcoustId(value) {
+    if (!value) return void 0;
+    const single = Array.isArray(value) ? value[0] : value;
+    if (single == null) return void 0;
+    const trimmed = String(single).trim();
+    return trimmed.length > 0 ? trimmed : void 0;
+  }
   function normalizeGenres(genres) {
     if (!genres) {
       return [];
@@ -12889,6 +12925,7 @@
         tags,
         tech,
         isrc: normalizeIsrc(metadata.common.isrc),
+        acoustidId: normalizeAcoustId(extractAcoustId(metadata)),
         warnings: warnings.length > 0 ? warnings : void 0
       };
       self.postMessage(response);
