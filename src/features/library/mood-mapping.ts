@@ -9,6 +9,14 @@ const MOOD_CATEGORIES = [
   "Peaceful",
   "Exciting",
   "Mellow",
+  "Romantic",
+  "Dark",
+  "Nostalgic",
+  "Dreamy",
+  "Aggressive",
+  "Uplifting",
+  "Reflective",
+  "Euphoric",
 ];
 
 const MOOD_SYNONYMS: Array<{ category: string; keywords: string[] }> = [
@@ -18,10 +26,18 @@ const MOOD_SYNONYMS: Array<{ category: string; keywords: string[] }> = [
   { category: "Melancholic", keywords: ["melancholic", "sad", "somber", "blue", "moody", "wistful"] },
   { category: "Upbeat", keywords: ["upbeat", "bouncy", "feel-good", "positive"] },
   { category: "Calm", keywords: ["calm", "chill", "ambient", "soft", "gentle"] },
-  { category: "Intense", keywords: ["intense", "aggressive", "heavy", "hard", "fierce"] },
+  { category: "Intense", keywords: ["intense", "heavy", "hard", "fierce", "powerful"] },
   { category: "Peaceful", keywords: ["peaceful", "tranquil", "serene", "soothing"] },
-  { category: "Exciting", keywords: ["exciting", "thrilling", "euphoric", "anthemic"] },
-  { category: "Mellow", keywords: ["mellow", "warm", "cozy", "dreamy", "nostalgic"] },
+  { category: "Exciting", keywords: ["exciting", "thrilling", "anthemic"] },
+  { category: "Mellow", keywords: ["mellow", "warm", "cozy"] },
+  { category: "Romantic", keywords: ["romantic", "love", "loving", "tender", "intimate"] },
+  { category: "Dark", keywords: ["dark", "brooding", "ominous", "noir", "gothic"] },
+  { category: "Nostalgic", keywords: ["nostalgic", "retro", "throwback", "memories", "yearning"] },
+  { category: "Dreamy", keywords: ["dreamy", "ethereal", "floating", "atmospheric", "hypnotic"] },
+  { category: "Aggressive", keywords: ["aggressive", "angry", "hostile", "harsh", "intense"] },
+  { category: "Uplifting", keywords: ["uplifting", "inspiring", "hopeful", "euphoric", "triumphant"] },
+  { category: "Reflective", keywords: ["reflective", "thoughtful", "contemplative", "introspective"] },
+  { category: "Euphoric", keywords: ["euphoric", "ecstatic", "blissful", "transcendent"] },
 ];
 
 function normalizeTag(tag: string): string {

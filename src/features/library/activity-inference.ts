@@ -44,8 +44,14 @@ function inferActivityTagsFromGenres(genres: string[]): string[] {
   if (lower.some((g) => g.includes("ambient") || g.includes("chill") || g.includes("downtempo"))) {
     tags.push("relaxing", "meditation");
   }
+  if (lower.some((g) => g.includes("ambient") || g.includes("world") || g.includes("new age"))) {
+    tags.push("yoga");
+  }
   if (lower.some((g) => g.includes("lofi") || g.includes("classical") || g.includes("piano") || g.includes("acoustic"))) {
     tags.push("study", "reading");
+  }
+  if (lower.some((g) => g.includes("lofi") || g.includes("chiptune") || g.includes("electronic") || g.includes("synth"))) {
+    tags.push("gaming");
   }
   if (lower.some((g) => g.includes("edm") || g.includes("dance") || g.includes("house") || g.includes("techno") || g.includes("electro"))) {
     tags.push("party", "dance", "workout");
@@ -58,6 +64,18 @@ function inferActivityTagsFromGenres(genres: string[]): string[] {
   }
   if (lower.some((g) => g.includes("jazz") || g.includes("folk"))) {
     tags.push("relaxing", "reading");
+  }
+  if (lower.some((g) => g.includes("indie") || g.includes("acoustic") || g.includes("singer-songwriter"))) {
+    tags.push("creative", "reading");
+  }
+  if (lower.some((g) => g.includes("pop") || g.includes("disco") || g.includes("funk"))) {
+    tags.push("cleaning", "dance");
+  }
+  if (lower.some((g) => g.includes("folk") || g.includes("americana") || g.includes("country"))) {
+    tags.push("walking", "gardening");
+  }
+  if (lower.some((g) => g.includes("reggae") || g.includes("reggaeton") || g.includes("latin"))) {
+    tags.push("socializing", "party");
   }
 
   return tags;

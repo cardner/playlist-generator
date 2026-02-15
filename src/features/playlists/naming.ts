@@ -46,6 +46,12 @@ const MOOD_EMOJIS: Record<string, string> = {
   nostalgic: "📸",
   romantic: "💕",
   dreamy: "✨",
+  dark: "🌑",
+  aggressive: "😤",
+  uplifting: "🌅",
+  reflective: "🔮",
+  euphoric: "🌈",
+  melancholic: "💙",
 };
 
 const ACTIVITY_EMOJIS: Record<string, string> = {
@@ -59,6 +65,18 @@ const ACTIVITY_EMOJIS: Record<string, string> = {
   relaxing: "🛋️",
   sleep: "😴",
   focus: "🎯",
+  yoga: "🧘",
+  gaming: "🎮",
+  creative: "🎨",
+  cleaning: "🧹",
+  walking: "🚶",
+  cycling: "🚴",
+  socializing: "👋",
+  gardening: "🌱",
+  meditation: "🧘",
+  reading: "📖",
+  dance: "💃",
+  commute: "🚗",
 };
 
 const GENRE_EMOJIS: Record<string, string> = {

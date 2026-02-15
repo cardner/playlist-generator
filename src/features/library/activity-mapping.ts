@@ -24,6 +24,14 @@ const ACTIVITY_CATEGORIES = [
   "Meditation",
   "Reading",
   "Sleep",
+  "Yoga",
+  "Gaming",
+  "Creative",
+  "Cleaning",
+  "Walking",
+  "Cycling",
+  "Socializing",
+  "Gardening",
 ];
 
 const ACTIVITY_SYNONYMS: Array<{ category: string; keywords: string[] }> = [
@@ -39,6 +47,14 @@ const ACTIVITY_SYNONYMS: Array<{ category: string; keywords: string[] }> = [
   { category: "Meditation", keywords: ["meditation", "mindful", "ambient", "zen", "breathing"] },
   { category: "Reading", keywords: ["reading", "book", "novel"] },
   { category: "Sleep", keywords: ["sleep", "sleeping", "bedtime", "nap", "dream", "sleepy"] },
+  { category: "Yoga", keywords: ["yoga", "stretching", "pilates", "flexibility"] },
+  { category: "Gaming", keywords: ["gaming", "video games", "gamer", "esports"] },
+  { category: "Creative", keywords: ["creative", "writing", "painting", "drawing", "art", "crafting"] },
+  { category: "Cleaning", keywords: ["cleaning", "chores", "tidying", "organizing"] },
+  { category: "Walking", keywords: ["walking", "hiking", "stroll", "nature walk"] },
+  { category: "Cycling", keywords: ["cycling", "biking", "bike", "spin"] },
+  { category: "Socializing", keywords: ["socializing", "social", "hanging out", "get-together", "brunch"] },
+  { category: "Gardening", keywords: ["gardening", "garden", "yard work", "outdoors"] },
 ];
 
 function normalizeTag(tag: string): string {

@@ -45,12 +45,13 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { PlaylistRequest, PlaylistRequestErrors } from "@/types/playlist";
-import { getAllGenres, getAllGenresWithStats, getCurrentLibraryRoot, getAllCollections, getCurrentCollectionId, searchArtists, searchAlbums, searchTrackTitles, getTopArtists, getTopAlbums, getTopTrackTitles } from "@/db/storage";
+import { getAllGenres, getAllGenresWithStats, getGenreCoOccurrence, getCurrentLibraryRoot, getAllCollections, getCurrentCollectionId, searchArtists, searchAlbums, searchTrackTitles, getTopArtists, getTopAlbums, getTopTrackTitles } from "@/db/storage";
 import type { LibraryRootRecord } from "@/db/schema";
 import type { GenreWithStats } from "@/features/library/genre-normalization";
+import type { GenreCoOccurrenceMap } from "@/features/library/genre-similarity";
 // Form state and validation are now handled by usePlaylistForm hook
 import {
   Music,
@@ -75,37 +76,17 @@ import { LibrarySearchCombo } from "./LibrarySearchCombo";
 import type { AgentType, LLMConfig } from "@/types/playlist";
 import { logger } from "@/lib/logger";
 import { usePlaylistForm } from "@/hooks/usePlaylistForm";
+import { getMoodCategories } from "@/features/library/mood-mapping";
+import { getActivityCategories } from "@/features/library/activity-mapping";
+import { getSimilarGenres } from "@/features/library/genre-similarity";
 
 interface PlaylistBuilderProps {
   onGenerate?: (request: PlaylistRequest) => void;
   discoveryMode?: boolean;
 }
 
-const MOOD_SUGGESTIONS = [
-  "Happy",
-  "Energetic",
-  "Relaxed",
-  "Melancholic",
-  "Upbeat",
-  "Calm",
-  "Intense",
-  "Peaceful",
-  "Exciting",
-  "Mellow",
-];
-
-const ACTIVITY_SUGGESTIONS = [
-  "Working Out",
-  "Running",
-  "Studying",
-  "Driving",
-  "Cooking",
-  "Relaxing",
-  "Partying",
-  "Sleeping",
-  "Meditating",
-  "Cleaning",
-];
+const MOOD_SUGGESTIONS = getMoodCategories();
+const ACTIVITY_SUGGESTIONS = getActivityCategories();
 
 export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistBuilderProps) {
   const router = useRouter();
@@ -113,6 +94,7 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [genres, setGenres] = useState<string[]>([]);
   const [genresWithStats, setGenresWithStats] = useState<GenreWithStats[]>([]);
+  const [genreCoOccurrence, setGenreCoOccurrence] = useState<GenreCoOccurrenceMap | null>(null);
   const [isLoadingGenres, setIsLoadingGenres] = useState(true);
   
   // Cache for search results (key: query string, value: results array)
@@ -155,24 +137,42 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
 
   // Form state and validation are now handled by usePlaylistForm hook
 
-  // Load genres from library
+  // Load genres and co-occurrence from library
   useEffect(() => {
-    async function loadGenres() {
+    async function loadGenresAndCoOccurrence() {
       try {
         setIsLoadingGenres(true);
-        const genresStats = await getAllGenresWithStats(selectedCollectionId || undefined);
+        const [genresStats, coOccurrence] = await Promise.all([
+          getAllGenresWithStats(selectedCollectionId || undefined),
+          getGenreCoOccurrence(selectedCollectionId || undefined),
+        ]);
         setGenresWithStats(genresStats);
         setGenres(genresStats.map((g) => g.normalized));
+        setGenreCoOccurrence(coOccurrence);
       } catch (error) {
         logger.error("Failed to load genres:", error);
+        setGenreCoOccurrence(null);
       } finally {
         setIsLoadingGenres(false);
       }
     }
     if (selectedCollectionId !== null) {
-      loadGenres();
+      loadGenresAndCoOccurrence();
+    } else {
+      setGenreCoOccurrence(null);
     }
   }, [selectedCollectionId]);
+
+  const similarGenres = useMemo(
+    () =>
+      getSimilarGenres(
+        formData.genres || [],
+        genres,
+        genreCoOccurrence ?? new Map(),
+        6
+      ),
+    [formData.genres, genres, genreCoOccurrence]
+  );
 
   // Clear caches when collection changes
   useEffect(() => {
@@ -512,11 +512,12 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
           values={formData.genres || []}
           onChange={(genres) => setFormData({ ...formData, genres })}
           placeholder={discoveryMode ? "Select genres from your collection..." : "Select or add genres..."}
-          suggestions={genres}
+          suggestions={[...new Set([...genres, ...(formData.genres || [])])]}
           error={errors.genres}
           icon={<Music className="size-4" />}
           showCounts={true}
           genreStats={genresWithStats}
+          relatedSuggestions={similarGenres}
         />
         {isLoadingGenres && (
           <p className="text-app-tertiary text-sm mt-2">Loading genres...</p>

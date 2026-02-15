@@ -79,6 +79,7 @@ export {
   getAllTrackTitles,
   getAllGenres,
   getAllGenresWithStats,
+  getGenreCoOccurrence,
   searchArtists,
   searchAlbums,
   searchTrackTitles,
