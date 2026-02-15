@@ -10,6 +10,8 @@
 
 "use client";
 
+import { X } from "lucide-react";
+
 export interface InterruptedScanBannerProps {
   /** Whether reconnection monitoring is currently active */
   isMonitoringReconnection: boolean;
@@ -21,6 +23,8 @@ export interface InterruptedScanBannerProps {
   onCancelAutoResume: () => void;
   /** Callback to manually resume the scan */
   onManualResume: (scanRunId: string) => void;
+  /** Optional callback to dismiss the banner */
+  onDismiss?: () => void;
 }
 
 /**
@@ -45,6 +49,7 @@ export function InterruptedScanBanner({
   lastScannedPath,
   onCancelAutoResume,
   onManualResume,
+  onDismiss,
 }: InterruptedScanBannerProps) {
   if (!interruptedScanRunId) {
     return null;
@@ -66,10 +71,22 @@ export function InterruptedScanBanner({
             />
           </svg>
         </div>
-        <div className="ml-3 flex-1">
-          <h3 className="text-sm font-medium text-yellow-800">
-            Scan Interrupted
-          </h3>
+        <div className="ml-3 flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="text-sm font-medium text-yellow-800">
+              Scan Interrupted
+            </h3>
+            {onDismiss && (
+              <button
+                type="button"
+                onClick={onDismiss}
+                className="p-1 rounded text-yellow-600 hover:bg-yellow-100 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-1"
+                aria-label="Dismiss"
+              >
+                <X className="size-4" />
+              </button>
+            )}
+          </div>
           <div className="mt-2 text-sm text-yellow-700">
             {isMonitoringReconnection ? (
               <>

@@ -6,9 +6,7 @@ if (typeof globalThis.TextEncoder === 'undefined') {
   const util = require('util');
   globalThis.TextEncoder = util.TextEncoder;
   globalThis.TextDecoder = util.TextDecoder;
-}
-
-// Polyfill Web Crypto API for tests
+}// Polyfill Web Crypto API for tests
 if (!globalThis.crypto?.subtle) {
   const crypto = require('crypto');
   if (!globalThis.crypto) {
