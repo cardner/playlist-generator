@@ -3797,6 +3797,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@storybook/addon-styling-webpack@npm:^3.0.0":
+  version: 3.0.0
+  resolution: "@storybook/addon-styling-webpack@npm:3.0.0"
+  peerDependencies:
+    storybook: ^10.0.0 || ^10.0.0-0 || ^10.1.0-0 || ^10.2.0-0 || ^10.3.0-0
+    webpack: ^5.0.0
+  checksum: 84b81008851f90463c111a88d7b7a3d479b9b858eb002437b62e23859da61e7580b47ce8e4bfccc4f70f8892b9a5dc98e8bf858fc2eaa3415a8468e8cfc404c0
+  languageName: node
+  linkType: hard
+
 "@storybook/addon-toolbars@npm:8.6.14":
   version: 8.6.14
   resolution: "@storybook/addon-toolbars@npm:8.6.14"
@@ -5661,6 +5671,7 @@ __metadata:
     "@storybook/addon-essentials": ^8.4.7
     "@storybook/addon-interactions": ^8.4.7
     "@storybook/addon-links": ^8.4.7
+    "@storybook/addon-styling-webpack": ^3.0.0
     "@storybook/react": ^8.4.7
     "@storybook/react-webpack5": ^8.4.7
     "@storybook/test": ^8.4.7
@@ -5699,6 +5710,7 @@ __metadata:
     next: ^15.0.0
     playwright: ^1.49.0
     postcss: ^8.4.39
+    postcss-loader: ^8.2.0
     react: ^19.0.0
     react-dom: ^19.0.0
     react-markdown: ^10.1.0
@@ -6999,6 +7011,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+"cosmiconfig@npm:^9.0.0":
+  version: 9.0.0
+  resolution: "cosmiconfig@npm:9.0.0"
+  dependencies:
+    env-paths: ^2.2.1
+    import-fresh: ^3.3.0
+    js-yaml: ^4.1.0
+    parse-json: ^5.2.0
+  peerDependencies:
+    typescript: ">=4.9.5"
+  peerDependenciesMeta:
+    typescript:
+      optional: true
+  checksum: a30c424b53d442ea0bdd24cb1b3d0d8687c8dda4a17ab6afcdc439f8964438801619cdb66e8e79f63b9caa3e6586b60d8bab9ce203e72df6c5e80179b971fe8f
+  languageName: node
+  linkType: hard
+
 "create-jest@npm:^29.7.0":
   version: 29.7.0
   resolution: "create-jest@npm:29.7.0"
@@ -7750,7 +7779,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"env-paths@npm:^2.2.0":
+"env-paths@npm:^2.2.0, env-paths@npm:^2.2.1":
   version: 2.2.1
   resolution: "env-paths@npm:2.2.1"
   checksum: 65b5df55a8bab92229ab2b40dad3b387fad24613263d103a97f91c9fe43ceb21965cd3392b1ccb5d77088021e525c4e0481adb309625d0cb94ade1d1fb8dc17e
@@ -9636,7 +9665,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"import-fresh@npm:^3.2.1":
+"import-fresh@npm:^3.2.1, import-fresh@npm:^3.3.0":
   version: 3.3.1
   resolution: "import-fresh@npm:3.3.1"
   dependencies:
@@ -11249,6 +11278,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"jiti@npm:^2.5.1":
+  version: 2.6.1
+  resolution: "jiti@npm:2.6.1"
+  bin:
+    jiti: lib/jiti-cli.mjs
+  checksum: 9394e29c5e40d1ca8267923160d8d86706173c9ff30c901097883434b0c4866de2c060427b6a9a5843bb3e42fa3a3c8b5b2228531d3dd4f4f10c5c6af355bb86
+  languageName: node
+  linkType: hard
+
 "joi@npm:^17.11.0":
   version: 17.13.3
   resolution: "joi@npm:17.13.3"
@@ -11296,7 +11334,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"js-yaml@npm:^4.1.1":
+"js-yaml@npm:^4.1.0, js-yaml@npm:^4.1.1":
   version: 4.1.1
   resolution: "js-yaml@npm:4.1.1"
   dependencies:
@@ -13389,6 +13427,26 @@ __metadata:
     yaml:
       optional: true
   checksum: 701061264cce7646e53e4cecd14aa95432a9bd508f30520a31dfa4c86fe9252d5d8d0204fdbfbddc1559c9b8791556e9c4b92c56070f5fca0a6c60e5ee9ad0fd
+  languageName: node
+  linkType: hard
+
+"postcss-loader@npm:^8.2.0":
+  version: 8.2.0
+  resolution: "postcss-loader@npm:8.2.0"
+  dependencies:
+    cosmiconfig: ^9.0.0
+    jiti: ^2.5.1
+    semver: ^7.6.2
+  peerDependencies:
+    "@rspack/core": 0.x || 1.x
+    postcss: ^7.0.0 || ^8.0.1
+    webpack: ^5.0.0
+  peerDependenciesMeta:
+    "@rspack/core":
+      optional: true
+    webpack:
+      optional: true
+  checksum: eda16e48f8dbb9c56f07b53f1cac5c993ce7b316e66d4efbb110ab92d855cd904d269022c7f33782eb94dbd0c8a9f2bb43cfaac358fe3e2a84930815ea0b92a1
   languageName: node
   linkType: hard
 
