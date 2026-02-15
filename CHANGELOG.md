@@ -48,6 +48,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.11.2] - 2026-02-15
+
+### Fixed
+
+- make library stats more accurate
+
+### Other Changes
+
+- Merge pull request #59 from cardner/library-view-stats
+- Skip visual snapshot tests for WhatsNewPanel stories
+
 ## [1.11.1] - 2026-02-15
 
 ### Fixed
