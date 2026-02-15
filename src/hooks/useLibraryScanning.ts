@@ -39,6 +39,8 @@ export interface UseLibraryScanningOptions {
   permissionStatus: "granted" | "denied" | "prompt" | null;
   /** Callback when scan completes */
   onScanComplete?: () => void;
+  /** When rescanning, the existing collection id to update (avoids creating a duplicate) */
+  existingCollectionId?: string | null;
 }
 
 export interface ScanProgress {
@@ -88,7 +90,7 @@ export interface UseLibraryScanningReturn {
 export function useLibraryScanning(
   options: UseLibraryScanningOptions
 ): UseLibraryScanningReturn {
-  const { libraryRoot, permissionStatus, onScanComplete } = options;
+  const { libraryRoot, permissionStatus, onScanComplete, existingCollectionId } = options;
 
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
@@ -170,6 +172,9 @@ export function useLibraryScanning(
           {
             signal: abortController.signal,
             onScanRunCreated: (id) => setScanRunId(id),
+            ...(existingCollectionId != null && existingCollectionId !== ""
+              ? { existingLibraryRootId: existingCollectionId }
+              : {}),
           }
         );
         result = scanResult.result;
@@ -277,7 +282,7 @@ export function useLibraryScanning(
       setScanProgress(null);
       scanAbortControllerRef.current = null;
     }
-  }, [libraryRoot, permissionStatus, scanRunId]); // Removed onScanComplete dependency - using ref instead
+  }, [libraryRoot, permissionStatus, scanRunId, existingCollectionId]); // Removed onScanComplete dependency - using ref instead
 
   /**
    * Resume an interrupted scan from a checkpoint
@@ -349,6 +354,9 @@ export function useLibraryScanning(
         {
           signal: abortController.signal,
           onScanRunCreated: (id) => setScanRunId(id),
+          ...(existingCollectionId != null && existingCollectionId !== ""
+            ? { existingLibraryRootId: existingCollectionId }
+            : {}),
         }
       );
       const result = scanResult.result;
@@ -407,7 +415,7 @@ export function useLibraryScanning(
       setScanProgress(null);
       scanAbortControllerRef.current = null;
     }
-  }, [libraryRoot, permissionStatus]);
+  }, [libraryRoot, permissionStatus, existingCollectionId]);
 
   /**
    * Rescan the library (clears previous result first)

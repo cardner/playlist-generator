@@ -19,6 +19,7 @@ import {
 import {
   getAllCollections,
   getAllTracks,
+  getCurrentCollectionId,
   getFileIndexEntries,
   getFileIndexEntry,
   getLibraryRoot,
@@ -2016,8 +2017,12 @@ export function DeviceSyncPanel({
         throw new Error("Library permission not granted.");
       }
       setRescanStatus("scanning");
+      const existingLibraryRootId =
+        targetRootId ?? (await getCurrentCollectionId()) ?? undefined;
       await scanLibraryWithPersistence(root, (progress) => {
         setRescanProgress({ found: progress.found, scanned: progress.scanned });
+      }, undefined, {
+        existingLibraryRootId,
       });
       const updatedTargetsWithLookups = await Promise.all(
         targets.map(async (target) => ({

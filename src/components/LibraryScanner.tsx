@@ -78,6 +78,8 @@ interface LibraryScannerProps {
   hasExistingScans?: boolean | null; // Whether there are existing scans (null = checking)
   triggerScan?: boolean; // When true, trigger scan immediately
   onProcessingProgress?: () => void; // Callback when processing checkpoints update
+  /** When rescanning, the existing collection id to update (avoids creating a duplicate) */
+  existingCollectionId?: string | null;
 }
 
 export function LibraryScanner({
@@ -88,6 +90,7 @@ export function LibraryScanner({
   hasExistingScans,
   triggerScan,
   onProcessingProgress,
+  existingCollectionId,
 }: LibraryScannerProps) {
   const [currentRootId, setCurrentRootId] = useState<string | null>(null);
   const [isInitialMount, setIsInitialMount] = useState(true);
@@ -120,6 +123,11 @@ export function LibraryScanner({
   useEffect(() => {
     backgroundTasks.setPermissionStatus(permissionStatus);
   }, [backgroundTasks, permissionStatus]);
+
+  // Sync existing collection id so rescan updates the correct collection (no duplicate).
+  useEffect(() => {
+    backgroundTasks.setExistingCollectionId(existingCollectionId ?? null);
+  }, [backgroundTasks, existingCollectionId]);
 
   useEffect(() => {
     backgroundTasks.setOnScanComplete(onScanComplete);

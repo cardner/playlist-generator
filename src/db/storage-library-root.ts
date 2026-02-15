@@ -20,6 +20,7 @@ import type { LibraryRoot } from "@/lib/library-selection";
  * 
  * @param root - Library root to save
  * @param handleRef - Optional handle reference for File System Access API
+ * @param options - Optional settings; use existingCollectionId when rescanning to update that record
  * @returns The saved library root record
  * 
  * @example
@@ -30,10 +31,10 @@ import type { LibraryRoot } from "@/lib/library-selection";
 export async function saveLibraryRoot(
   root: LibraryRoot,
   handleRef?: string,
-  options?: { setAsCurrent?: boolean }
+  options?: { setAsCurrent?: boolean; existingCollectionId?: string }
 ): Promise<LibraryRootRecord> {
   const now = Date.now();
-  const id = root.handleId || `root-${now}`;
+  const id = options?.existingCollectionId ?? root.handleId ?? `root-${now}`;
 
   // Try to get existing record to preserve createdAt
   const existing = await db.libraryRoots.get(id);
@@ -43,7 +44,7 @@ export async function saveLibraryRoot(
     id,
     mode: root.mode,
     name: root.name,
-    handleRef: handleRef || existing?.handleRef,
+    handleRef: handleRef ?? root.handleId ?? existing?.handleRef,
     createdAt,
     updatedAt: now,
   };
