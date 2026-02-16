@@ -80,4 +80,58 @@ describe("SavePlaylistDialog", () => {
       expect.objectContaining({ title: "New Title" })
     );
   });
+
+  it("renders Save Changes title and button when titleText and confirmLabel provided", () => {
+    render(
+      <SavePlaylistDialog
+        isOpen={true}
+        defaultTitle="My Playlist"
+        onClose={() => {}}
+        onConfirm={() => {}}
+        titleText="Save Changes"
+        confirmLabel="Save Changes"
+      />
+    );
+    const saveButton = screen.getByRole("button", { name: /save changes/i });
+    expect(saveButton).toBeInTheDocument();
+    expect(screen.getAllByText("Save Changes").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("calls onConfirm with mode override when Save as override selected", () => {
+    const onConfirm = jest.fn();
+    render(
+      <SavePlaylistDialog
+        isOpen={true}
+        defaultTitle="Playlist"
+        onClose={() => {}}
+        onConfirm={onConfirm}
+        modeOptions={["override", "remix"]}
+      />
+    );
+    const overrideRadio = screen.getByLabelText(/save as override/i);
+    fireEvent.click(overrideRadio);
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    expect(onConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "override" })
+    );
+  });
+
+  it("calls onConfirm with mode remix when Save as remixed copy selected", () => {
+    const onConfirm = jest.fn();
+    render(
+      <SavePlaylistDialog
+        isOpen={true}
+        defaultTitle="Playlist"
+        onClose={() => {}}
+        onConfirm={onConfirm}
+        modeOptions={["override", "remix"]}
+      />
+    );
+    const remixRadio = screen.getByLabelText(/save as remixed copy/i);
+    fireEvent.click(remixRadio);
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    expect(onConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "remix" })
+    );
+  });
 });

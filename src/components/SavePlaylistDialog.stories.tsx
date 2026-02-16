@@ -46,3 +46,25 @@ function SavePlaylistDialogOpen() {
 export const Open: Story = {
   render: () => <SavePlaylistDialogOpen />,
 };
+
+export const SaveChangesMode: Story = {
+  render: () => (
+    <SavePlaylistDialog
+      isOpen={true}
+      defaultTitle="Morning Vibes"
+      defaultDescription="Upbeat playlist for the morning"
+      onClose={() => {}}
+      onConfirm={() => {}}
+      titleText="Save Changes"
+      confirmLabel="Save Changes"
+    />
+  ),
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Used when saving edits to an existing saved playlist (in or out of edit mode).",
+      },
+    },
+  },
+};

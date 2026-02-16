@@ -168,6 +168,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   const [pendingTracks, setPendingTracks] = useState<string[]>([]);
   const [showFlowArcEditor, setShowFlowArcEditor] = useState(false);
   const [pendingFlowArcStrategy, setPendingFlowArcStrategy] = useState<typeof playlist.strategy | null>(null);
+  const [hasUnsavedChangesOutsideEditMode, setHasUnsavedChangesOutsideEditMode] = useState(false);
   const [playingSample, setPlayingSample] = useState<{
     trackFileId: string;
     sampleResult: SampleResult;
@@ -346,6 +347,10 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     // Clear playing sample when playlist changes to prevent blob URL errors
     setPlayingSample(null);
   }, [playlist, checkIfSaved, loadTracks, loadLibraryRoot]);
+
+  useEffect(() => {
+    setHasUnsavedChangesOutsideEditMode(false);
+  }, [playlist.id]);
 
   useEffect(() => {
     const stored = sessionStorage.getItem("playlist-request");
@@ -685,6 +690,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                         trackFileIds: updatedTrackFileIds,
                         discoveryTracks: updatedDiscoveryTracks,
                       });
+                      setHasUnsavedChangesOutsideEditMode(true);
                     }}
                     disabled={isRegenerating}
                     className="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:bg-red-500/10 rounded-sm transition-all disabled:opacity-50"
@@ -958,29 +964,33 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
         getRequestFromSessionStorage() ??
         (isSaved ? await getSavedPlaylistRequest(playlist.id) : undefined);
 
+      const sourcePlaylist = isEditMode ? editedPlaylist : playlist;
+
       if (options.mode === "override") {
         const updated: GeneratedPlaylist = {
-          ...editedPlaylist,
+          ...sourcePlaylist,
           title: options.title,
-          description: options.description ?? editedPlaylist.description,
+          description: options.description ?? sourcePlaylist.description,
         };
         await updateSavedPlaylist(updated, targetLibraryRootId, storedRequest);
         setPlaylist(updated);
         markClean(updated);
+        setHasUnsavedChangesOutsideEditMode(false);
         setIsSaved(true);
         storePlaylistInSessionStorage(updated);
       } else {
         const remixId = `playlist-remix-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const remixed: GeneratedPlaylist = {
-          ...editedPlaylist,
+          ...sourcePlaylist,
           id: remixId,
-          title: options.title || `${editedPlaylist.title} (Remix)`,
-          description: options.description ?? editedPlaylist.description,
+          title: options.title || `${sourcePlaylist.title} (Remix)`,
+          description: options.description ?? sourcePlaylist.description,
           createdAt: Date.now(),
         };
         await savePlaylist(remixed, targetLibraryRootId, storedRequest);
         setPlaylist(remixed);
         markClean(remixed);
+        setHasUnsavedChangesOutsideEditMode(false);
         setIsSaved(true);
         storePlaylistInSessionStorage(remixed);
       }
@@ -1118,6 +1128,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
         updatePlaylist(() => updatedPlaylist);
       } else {
         setPlaylist(updatedPlaylist);
+        setHasUnsavedChangesOutsideEditMode(true);
       }
 
       // Update sessionStorage
@@ -1503,6 +1514,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
             return next;
           });
           setPlaylist(updatedPlaylist);
+          setHasUnsavedChangesOutsideEditMode(true);
           sessionStorage.setItem(
             "generated-playlist",
             JSON.stringify({
@@ -1573,6 +1585,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
             totalDuration: summaryNoCandidates.totalDuration,
           };
           setPlaylist(updatedPlaylistNoCandidates);
+          setHasUnsavedChangesOutsideEditMode(true);
           sessionStorage.setItem(
             "generated-playlist",
             JSON.stringify({
@@ -1650,6 +1663,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
           totalDuration: summaryRemove.totalDuration,
         };
         setPlaylist(updatedPlaylist);
+        setHasUnsavedChangesOutsideEditMode(true);
         sessionStorage.setItem(
           "generated-playlist",
           JSON.stringify({
@@ -1670,29 +1684,34 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     }
   }, [isEditMode, playlist, stableMode, tracks, updatePlaylist]);
 
-  useEffect(() => {
-    if (!isEditMode) return;
+  const hasUnsavedChanges =
+    (isEditMode && isDirty) || hasUnsavedChangesOutsideEditMode;
 
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
         return;
       }
 
-      if (event.key === "Escape") {
+      if (isEditMode && event.key === "Escape") {
         handleToggleEditMode(false);
         return;
       }
 
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
-        if (isDirty) {
+        if (hasUnsavedChanges) {
           setShowSaveDialog(true);
         }
         return;
       }
 
-      if ((event.key === "Delete" || event.key === "Backspace") && expandedTrackId) {
+      if (
+        isEditMode &&
+        (event.key === "Delete" || event.key === "Backspace") &&
+        expandedTrackId
+      ) {
         event.preventDefault();
         handleRemoveTrack(expandedTrackId);
       }
@@ -1700,7 +1719,13 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [expandedTrackId, handleToggleEditMode, handleRemoveTrack, isDirty, isEditMode]);
+  }, [
+    expandedTrackId,
+    handleToggleEditMode,
+    handleRemoveTrack,
+    hasUnsavedChanges,
+    isEditMode,
+  ]);
 
   const [storedRequest, setStoredRequest] = useState<PlaylistRequest | null>(null);
 
@@ -1898,10 +1923,11 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                 Exit Edit
               </button>
             )}
-            {isEditMode && (
+            {hasUnsavedChanges && (
               <button
+                data-testid="save-changes-button"
                 onClick={() => setShowSaveDialog(true)}
-                disabled={!isDirty || isSavingChanges}
+                disabled={isSavingChanges}
                 className="flex items-center gap-2 px-4 py-2 bg-accent-primary hover:bg-accent-hover text-white rounded-sm transition-colors disabled:opacity-50 text-sm"
               >
                 {isSavingChanges ? (
@@ -1917,12 +1943,12 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                 )}
               </button>
             )}
-            {isEditMode && isDirty && (
+            {hasUnsavedChanges && (
               <span className="text-xs text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 px-2 py-1 rounded-sm">
                 Unsaved changes
               </span>
             )}
-            {!isSaved && (
+            {!isSaved && !hasUnsavedChanges && (
               <button
                 onClick={handleSavePlaylist}
                 disabled={isSaving}
