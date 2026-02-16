@@ -52,6 +52,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.13.0] - 2026-02-16
+
+### Added
+
+- **playlist**: support saving changes in and out of edit mode
+
+### Fixed
+
+- **device-sync**: skip iPod setup on auto-select and fix PlaylistDisplay story types
+
+### Other Changes
+
+- Merge pull request #64 from cardner/playlist-error-fix
+- Merge pull request #63 from cardner/playlist-save
+
 ## [1.12.2] - 2026-02-16
 
 ### Fixed
