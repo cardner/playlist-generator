@@ -51,6 +51,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.12.2] - 2026-02-16
+
+### Fixed
+
+- **playlist**: ensure save changes works for edited saved playlists
+
+### Other Changes
+
+- Merge pull request #62 from cardner/playlist-save
+
 ## [1.12.1] - 2026-02-16
 
 ### Fixed
