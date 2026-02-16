@@ -12,6 +12,7 @@ const customJestConfig = {
   testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    '^music-metadata$': '<rootDir>/__mocks__/music-metadata.js',
   },
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',

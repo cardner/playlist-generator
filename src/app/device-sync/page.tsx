@@ -329,182 +329,184 @@ export default function DeviceSyncPage() {
         </div>
       )}
 
-      {/* Two-column top: Quick Add Device | Detected Device */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left: Quick Add Device */}
-        <Card padding="md" className="space-y-3">
-          <h2 className="text-app-primary font-medium uppercase tracking-wider text-sm">
-            Quick Add Device
-          </h2>
-          {isLoadingDevices ? (
-            <div className="text-center py-6">
-              <Loader2 className="size-6 text-accent-primary animate-spin mx-auto mb-2" />
-              <p className="text-app-secondary text-sm">Loading devices...</p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              <button
-                type="button"
-                onClick={handleDetectDevice}
-                className="text-left rounded-sm border border-app-border bg-app-surface p-3 transition-colors flex items-center gap-3 hover:border-accent-primary/50"
-              >
-                <div className="size-10 rounded-sm bg-accent-primary/20 flex items-center justify-center shrink-0">
-                  <HardDrive className="size-5 text-accent-primary" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-app-primary font-semibold text-sm">
-                    Detect Device
-                  </div>
-                  <div className="text-app-tertiary text-xs">
-                    Pick a folder and auto-detect Walkman, iPod, or generic USB device.
-                  </div>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleAddDevice("walkman")}
-                className={`text-left rounded-sm border p-3 transition-colors flex items-center gap-3 ${
-                  selectedDeviceProfile?.deviceType === "walkman"
-                    ? "border-accent-primary bg-accent-primary/10"
-                    : "border-app-border bg-app-surface hover:border-accent-primary/50"
-                }`}
-              >
-                <div className="size-10 rounded-sm bg-accent-primary/20 flex items-center justify-center shrink-0 text-accent-primary">
-                  <WalkmanIcon className="size-6" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-app-primary font-semibold text-sm">
-                    Add Walkman Preset
-                  </div>
-                  <div className="text-app-tertiary text-xs">
-                    Sets playlists to <span className="font-mono">MUSIC</span> and relative paths.
-                  </div>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleAddDevice("ipod")}
-                className={`text-left rounded-sm border p-3 transition-colors flex items-center gap-3 ${
-                  selectedDeviceProfile?.deviceType === "ipod"
-                    ? "border-accent-primary bg-accent-primary/10"
-                    : "border-app-border bg-app-surface hover:border-accent-primary/50"
-                }`}
-              >
-                <div className="size-10 rounded-sm bg-accent-primary/20 flex items-center justify-center shrink-0">
-                  <Smartphone className="size-5 text-accent-primary" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-app-primary font-semibold text-sm">Add iPod Preset</div>
-                  <div className="text-app-tertiary text-xs">
-                    Uses iTunesDB sync with in-browser setup.
-                  </div>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={handleAddJellyfinProfile}
-                className={`text-left rounded-sm border p-3 transition-colors flex items-center gap-3 ${
-                  selectedDeviceProfile?.deviceType === "jellyfin"
-                    ? "border-accent-primary bg-accent-primary/10"
-                    : "border-app-border bg-app-surface hover:border-accent-primary/50"
-                }`}
-              >
-                <div className="size-10 rounded-sm bg-accent-primary/20 flex items-center justify-center shrink-0">
-                  <JellyfinIcon className="size-5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-app-primary font-semibold text-sm">
-                    Add Jellyfin Export
-                  </div>
-                  <div className="text-app-tertiary text-xs">
-                    Export M3U playlists with container paths for Jellyfin.
-                  </div>
-                </div>
-              </button>
-            </div>
-          )}
-        </Card>
-
-        {/* Right: Detected Device */}
-        <Card padding="md" className="space-y-3">
-          <h2 className="text-app-primary font-medium uppercase tracking-wider text-sm">
-            Detected Device
-          </h2>
-          {isLoadingDevices ? (
-            <div className="text-center py-6">
-              <Loader2 className="size-6 text-accent-primary animate-spin mx-auto mb-2" />
-              <p className="text-app-secondary text-sm">Loading...</p>
-            </div>
-          ) : deviceProfiles.length === 0 ? (
-            <div className="text-app-secondary text-sm py-4">
-              No devices saved yet. Use Quick Add Device to add one.
-            </div>
-          ) : selectedDeviceProfile ? (
-            <div className="space-y-4">
-              {deviceProfiles.length > 1 && (
-                <label className="block text-app-tertiary text-xs">
-                  Device
-                  <select
-                    value={selectedDeviceId ?? ""}
-                    onChange={(e) => {
-                      setSelectedDeviceId(e.target.value);
-                      setSelectionIsUserInitiated(true);
-                    }}
-                    className="mt-1.5 block w-full px-3 py-2 bg-app-surface text-app-primary border border-app-border rounded-sm text-sm focus:outline-none focus:ring-2 focus:ring-accent-primary"
-                  >
-                    {deviceProfiles.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              <div className="rounded-sm border border-accent-primary bg-app-surface p-3.5">
-                <div className="flex items-start gap-3">
-                  <div className="size-10 rounded-sm bg-accent-primary/20 flex items-center justify-center shrink-0">
-                    {(() => {
-                      const Icon = getDeviceIcon(selectedDeviceProfile);
-                      return <Icon className="size-5 text-accent-primary" />;
-                    })()}
-                  </div>
-                  <div id="device-sync-title-slot" className="min-w-0 flex-1" />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    leftIcon={<Trash2 className="size-4" />}
-                    onClick={() => handleDeleteDevice(selectedDeviceProfile)}
-                    className="shrink-0 text-app-tertiary hover:text-red-500"
-                    aria-label="Remove device"
-                  />
-                </div>
-                {(deviceStatuses[selectedDeviceProfile.id] === "needs_access" ||
-                  deviceStatuses[selectedDeviceProfile.id] === "missing") && (
-                  <div className="mt-3 pt-3 border-t border-app-border">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleReconnectDevice(selectedDeviceProfile)}
-                    >
-                      Reconnect
-                    </Button>
-                  </div>
-                )}
-                {selectedDeviceProfile.lastSyncAt && (
-                  <div className="text-app-tertiary text-xs mt-2 pt-2 border-t border-app-border">
-                    Last sync: {new Date(selectedDeviceProfile.lastSyncAt).toLocaleString()}
-                  </div>
-                )}
-                <div id="device-sync-details-slot" className="space-y-4 mt-3 pt-3 border-t border-app-border" />
+      {/* Single full-width container: Quick Add Device | Detected Device */}
+      <Card padding="md">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left: Quick Add Device */}
+          <div className="space-y-3">
+            <h2 className="text-app-primary font-medium uppercase tracking-wider text-sm">
+              Quick Add Device
+            </h2>
+            {isLoadingDevices ? (
+              <div className="text-center py-6">
+                <Loader2 className="size-6 text-accent-primary animate-spin mx-auto mb-2" />
+                <p className="text-app-secondary text-sm">Loading devices...</p>
               </div>
-            </div>
-          ) : (
-            <div className="text-app-secondary text-sm py-4">
-              Select a device above to view details.
-            </div>
-          )}
-        </Card>
-      </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={handleDetectDevice}
+                  className="text-left rounded-sm border border-app-border bg-app-surface p-3 transition-colors flex items-center gap-3 hover:border-accent-primary/50"
+                >
+                  <div className="size-10 rounded-sm bg-accent-primary/20 flex items-center justify-center shrink-0">
+                    <HardDrive className="size-5 text-accent-primary" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-app-primary font-semibold text-sm">
+                      Detect Device
+                    </div>
+                    <div className="text-app-tertiary text-xs">
+                      Pick a folder and auto-detect Walkman, iPod, or generic USB device.
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAddDevice("walkman")}
+                  className={`text-left rounded-sm border p-3 transition-colors flex items-center gap-3 ${
+                    selectedDeviceProfile?.deviceType === "walkman"
+                      ? "border-accent-primary bg-accent-primary/10"
+                      : "border-app-border bg-app-surface hover:border-accent-primary/50"
+                  }`}
+                >
+                  <div className="size-10 rounded-sm bg-accent-primary/20 flex items-center justify-center shrink-0 text-accent-primary">
+                    <WalkmanIcon className="size-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-app-primary font-semibold text-sm">
+                      Add Walkman Preset
+                    </div>
+                    <div className="text-app-tertiary text-xs">
+                      Sets playlists to <span className="font-mono">MUSIC</span> and relative paths.
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAddDevice("ipod")}
+                  className={`text-left rounded-sm border p-3 transition-colors flex items-center gap-3 ${
+                    selectedDeviceProfile?.deviceType === "ipod"
+                      ? "border-accent-primary bg-accent-primary/10"
+                      : "border-app-border bg-app-surface hover:border-accent-primary/50"
+                  }`}
+                >
+                  <div className="size-10 rounded-sm bg-accent-primary/20 flex items-center justify-center shrink-0">
+                    <Smartphone className="size-5 text-accent-primary" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-app-primary font-semibold text-sm">Add iPod Preset</div>
+                    <div className="text-app-tertiary text-xs">
+                      Uses iTunesDB sync with in-browser setup.
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddJellyfinProfile}
+                  className={`text-left rounded-sm border p-3 transition-colors flex items-center gap-3 ${
+                    selectedDeviceProfile?.deviceType === "jellyfin"
+                      ? "border-accent-primary bg-accent-primary/10"
+                      : "border-app-border bg-app-surface hover:border-accent-primary/50"
+                  }`}
+                >
+                  <div className="size-10 rounded-sm bg-accent-primary/20 flex items-center justify-center shrink-0">
+                    <JellyfinIcon className="size-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-app-primary font-semibold text-sm">
+                      Add Jellyfin Export
+                    </div>
+                    <div className="text-app-tertiary text-xs">
+                      Export M3U playlists with container paths for Jellyfin.
+                    </div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Right: Detected Device */}
+          <div className="space-y-3">
+            <h2 className="text-app-primary font-medium uppercase tracking-wider text-sm">
+              Detected Device
+            </h2>
+            {isLoadingDevices ? (
+              <div className="text-center py-6">
+                <Loader2 className="size-6 text-accent-primary animate-spin mx-auto mb-2" />
+                <p className="text-app-secondary text-sm">Loading...</p>
+              </div>
+            ) : deviceProfiles.length === 0 ? (
+              <div className="text-app-secondary text-sm py-4">
+                No devices saved yet. Use Quick Add Device to add one.
+              </div>
+            ) : selectedDeviceProfile ? (
+              <div className="space-y-4">
+                {deviceProfiles.length > 1 && (
+                  <label className="block text-app-tertiary text-xs">
+                    Device
+                    <select
+                      value={selectedDeviceId ?? ""}
+                      onChange={(e) => {
+                        setSelectedDeviceId(e.target.value);
+                        setSelectionIsUserInitiated(true);
+                      }}
+                      className="mt-1.5 block w-full px-3 py-2 bg-app-surface text-app-primary border border-app-border rounded-sm text-sm focus:outline-none focus:ring-2 focus:ring-accent-primary"
+                    >
+                      {deviceProfiles.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <div className="rounded-sm border border-accent-primary bg-app-surface p-3.5">
+                  <div className="flex items-start gap-3">
+                    <div className="size-10 rounded-sm bg-accent-primary/20 flex items-center justify-center shrink-0">
+                      {(() => {
+                        const Icon = getDeviceIcon(selectedDeviceProfile);
+                        return <Icon className="size-5 text-accent-primary" />;
+                      })()}
+                    </div>
+                    <div id="device-sync-title-slot" className="min-w-0 flex-1" />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      leftIcon={<Trash2 className="size-4" />}
+                      onClick={() => handleDeleteDevice(selectedDeviceProfile)}
+                      className="shrink-0 text-app-tertiary hover:text-red-500"
+                      aria-label="Remove device"
+                    />
+                  </div>
+                  {(deviceStatuses[selectedDeviceProfile.id] === "needs_access" ||
+                    deviceStatuses[selectedDeviceProfile.id] === "missing") && (
+                    <div className="mt-3 pt-3 border-t border-app-border">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleReconnectDevice(selectedDeviceProfile)}
+                      >
+                        Reconnect
+                      </Button>
+                    </div>
+                  )}
+                  {selectedDeviceProfile.lastSyncAt && (
+                    <div className="text-app-tertiary text-xs mt-2 pt-2 border-t border-app-border">
+                      Last sync: {new Date(selectedDeviceProfile.lastSyncAt).toLocaleString()}
+                    </div>
+                  )}
+                  <div id="device-sync-details-slot" className="space-y-4 mt-3 pt-3 border-t border-app-border" />
+                </div>
+              </div>
+            ) : (
+              <div className="text-app-secondary text-sm py-4">
+                Select a device above to view details.
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
 
       <p className="text-app-tertiary text-xs">
         Browsers require a click to grant folder access. Detect device will prompt for permission.

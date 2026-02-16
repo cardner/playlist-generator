@@ -69,6 +69,7 @@ export async function setupWasmFilesystem(
     `${mountpoint}/iPod_Control/iTunes`,
     `${mountpoint}/iPod_Control/Device`,
     `${mountpoint}/iPod_Control/Music`,
+    `${mountpoint}/iPod_Control/Artwork`,
   ];
   dirs.forEach((dir) => {
     try {
@@ -112,6 +113,24 @@ export async function syncIpodToVirtualFS(
     await copyDeviceFile(deviceDir, "SysInfoExtended", mountpoint);
   } catch (error) {
     logger.warn("Failed to read device info files", error);
+  }
+
+  // Copy ArtworkDB and ITHMB files so WASM can parse existing artwork and we don't clobber it on re-sync
+  try {
+    const artworkDir = await iPodControl.getDirectoryHandle("Artwork", { create: false });
+    const artMount = `${mountpoint}/iPod_Control/Artwork`;
+    for await (const [name] of artworkDir.entries()) {
+      try {
+        const handle = await artworkDir.getFileHandle(name, { create: false });
+        const file = await handle.getFile();
+        const data = new Uint8Array(await file.arrayBuffer());
+        FS.writeFile(`${artMount}/${name}`, data);
+      } catch (err) {
+        logger.warn("Failed to copy Artwork file", { name, err });
+      }
+    }
+  } catch (error) {
+    // Artwork folder may not exist on a fresh iPod
   }
 }
 
@@ -275,6 +294,29 @@ export async function syncDbToIpod(
     completed += 1;
     const percent = Math.round((completed / tasks.length) * 100);
     options?.onProgress?.({ percent, detail: task.fileName });
+  }
+
+  // Sync ArtworkDB and ITHMB from virtual FS to device (written by libgpod when wasmSetTrackArtwork + ipod_write_db used)
+  const artMount = `${mountpoint}/iPod_Control/Artwork`;
+  try {
+    FS.stat(artMount);
+    const names = FS.readdir(artMount) as string[];
+    const artworkDir = await iPodControl.getDirectoryHandle("Artwork", { create: true });
+    for (const name of names) {
+      if (name === "." || name === "..") continue;
+      try {
+        const data = FS.readFile(`${artMount}/${name}`) as Uint8Array;
+        const fileHandle = await artworkDir.getFileHandle(name, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(data as BufferSource);
+        await writable.close();
+        syncedCount += 1;
+      } catch (err) {
+        logger.warn("Failed to sync Artwork file to device", { name, err });
+      }
+    }
+  } catch {
+    // Artwork dir may be missing if no artwork API or no thumbnails set; optional
   }
 
   return { ok: errorCount === 0, errorCount, syncedCount };

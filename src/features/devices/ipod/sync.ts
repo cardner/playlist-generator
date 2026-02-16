@@ -16,8 +16,11 @@ import {
   wasmCallWithStrings,
   wasmGetJson,
   wasmGetString,
+  wasmSetTrackArtwork,
   wasmUpdateTrack,
 } from "./wasm";
+import { extractArtworkFromFile } from "./artwork-extract";
+import { resizeToIpodThumbnail } from "./artwork-resize";
 import { createIpodPaths } from "./paths";
 import {
   reserveVirtualPath,
@@ -665,6 +668,24 @@ export async function syncPlaylistsToIpod(options: {
         const sizeList = ipodTrackBySize.get(newTrack.size) ?? [];
         sizeList.push(trackIndex);
         ipodTrackBySize.set(newTrack.size, sizeList);
+      }
+
+      // Artwork: extract from original file (before transcode), resize to iPod thumbnail, set on track
+      try {
+        const picture = await extractArtworkFromFile(file);
+        if (picture) {
+          const jpegBytes = await resizeToIpodThumbnail(picture);
+          if (jpegBytes && jpegBytes.length > 0) {
+            const artResult = wasmSetTrackArtwork(trackIndex, jpegBytes);
+            if (artResult !== 0) {
+              logger.debug("Track artwork not set (WASM artwork API may be unavailable)", {
+                trackIndex,
+              });
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn("Failed to extract or set track artwork", { trackFileId: lookup.track.trackFileId, err });
       }
     }
 

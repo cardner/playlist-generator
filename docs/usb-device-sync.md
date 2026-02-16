@@ -62,6 +62,8 @@ older iPods that appear as regular drives.
 
 **Missing-tracks prompt:** If some playlist tracks are not on the device, a dialog appears before sync: you can **Sync missing** (copy them), **Playlist only** (update the playlist to reference only tracks already on the device), or **Cancel**.
 
+**Album art:** When syncing new tracks to an iPod, the app can sync album artwork via ArtworkDB/ITHMB if your library files have embedded cover art (e.g. ID3 or MP4 tags). Artwork is extracted from the source file, resized to an iPod-compatible thumbnail (e.g. 300–600px JPEG), and written to the device’s `iPod_Control/Artwork` folder. This requires the iPod WASM build to expose the artwork API (see `docs/ipod-wasm-artwork.md`). Known limits: some classic iPods (e.g. 5th gen with 32 MB RAM) may not display art when the library exceeds roughly 20k tracks; use compatible resolutions (e.g. 300×300–600×600 JPEG) for best results.
+
 ## Notes
 
 - For iPod sync, the app writes audio files directly to `/iPod_Control/Music/F##`.
