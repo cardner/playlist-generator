@@ -53,6 +53,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.14.0] - 2026-02-16
+
+### Added
+
+- **ipod**: add overwrite same-name playlist option with UI checkbox
+
+### Other Changes
+
+- Merge pull request #65 from cardner/ipod-playlist-overwrite
+
 ## [1.13.0] - 2026-02-16
 
 ### Added
