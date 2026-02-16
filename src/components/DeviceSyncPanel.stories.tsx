@@ -83,7 +83,7 @@ export const iPodPresetAlbumsTab: Story = {
     docs: {
       description: {
         story:
-          "iPod preset with Albums tab selected. Demonstrates the collection tabs (Tracks, Albums, Artists) and album grid view.",
+          "iPod preset with Albums tab selected. Demonstrates the collection tabs (Tracks, Albums, Artists) and album grid view. Album cards show cover art from the artwork cache when available (from library scan); otherwise a music-note placeholder.",
       },
     },
   },
@@ -93,5 +93,27 @@ export const iPodPresetAlbumsTab: Story = {
     const albumsTab = await canvas.findByRole("tab", { name: /albums/i });
     await userEvent.click(albumsTab);
     await expect(albumsTab).toHaveAttribute("data-state", "active");
+  },
+};
+
+export const iPodPresetArtistsTab: Story = {
+  args: {
+    deviceProfileOverride: ipodProfile,
+    showDeviceSelector: false,
+  },
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "iPod preset with Artists tab selected. Artist cards show representative artwork from the cache when available; otherwise the first letter of the artist name.",
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText("iPod Collection Sync");
+    const artistsTab = await canvas.findByRole("tab", { name: /artists/i });
+    await userEvent.click(artistsTab);
+    await expect(artistsTab).toHaveAttribute("data-state", "active");
   },
 };

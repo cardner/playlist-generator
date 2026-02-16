@@ -301,6 +301,8 @@ export function DeviceSyncPanel({
   const [collectionContentTab, setCollectionContentTab] = useState<
     "tracks" | "albums" | "artists"
   >("tracks");
+  const [artworkUrlMap, setArtworkUrlMap] = useState<Map<string, string>>(new Map());
+  const artworkUrlMapRef = useRef<Map<string, string>>(new Map());
   const [ipodTrackIndexStatus, setIpodTrackIndexStatus] = useState<
     "idle" | "loading" | "ready" | "error"
   >("idle");
@@ -781,6 +783,86 @@ export function DeviceSyncPanel({
       cancelled = true;
     };
   }, [devicePreset, selectedCollectionId]);
+
+  useEffect(() => {
+    if (
+      collectionTracksStatus !== "ready" ||
+      collectionTracks.length === 0 ||
+      !selectedCollectionId
+    ) {
+      setArtworkUrlMap(new Map());
+      return;
+    }
+    const search = collectionTrackSearch.trim().toLowerCase();
+    const filtered = search
+      ? collectionTracks.filter((track) => {
+          const haystack = `${track.title} ${track.artist ?? ""} ${track.album ?? ""}`.toLowerCase();
+          return haystack.includes(search);
+        })
+      : collectionTracks;
+    const grouped: Record<string, Record<string, typeof filtered>> = {};
+    for (const track of filtered) {
+      const artist = track.artist || "Unknown Artist";
+      const album = track.album || "Unknown Album";
+      if (!grouped[artist]) grouped[artist] = {};
+      if (!grouped[artist][album]) grouped[artist][album] = [];
+      grouped[artist][album].push(track);
+    }
+    const representativeIds = new Set<string>();
+    for (const artist of Object.keys(grouped)) {
+      const albums = grouped[artist];
+      const firstAlbumKey = Object.keys(albums)[0];
+      if (firstAlbumKey && albums[firstAlbumKey].length > 0) {
+        representativeIds.add(
+          getCompositeId(albums[firstAlbumKey][0].trackFileId, selectedCollectionId)
+        );
+      }
+      for (const album of Object.keys(albums)) {
+        const tracks = albums[album];
+        if (tracks.length > 0) {
+          representativeIds.add(
+            getCompositeId(tracks[0].trackFileId, selectedCollectionId)
+          );
+        }
+      }
+    }
+    const ids = Array.from(representativeIds);
+    if (ids.length === 0) {
+      setArtworkUrlMap(new Map());
+      return;
+    }
+    let cancelled = false;
+    const urlMapForCleanup = new Map<string, string>();
+    artworkUrlMapRef.current = urlMapForCleanup;
+    db.artworkCache
+      .bulkGet(ids)
+      .then((records) => {
+        if (cancelled) return;
+        urlMapForCleanup.forEach((url) => URL.revokeObjectURL(url));
+        urlMapForCleanup.clear();
+        records.forEach((record, i) => {
+          if (record?.thumbnail && ids[i]) {
+            const url = URL.createObjectURL(record.thumbnail);
+            urlMapForCleanup.set(ids[i], url);
+          }
+        });
+        setArtworkUrlMap(new Map(urlMapForCleanup));
+      })
+      .catch((err) => {
+        if (!cancelled) logger.warn("Failed to load artwork cache", err);
+      });
+    return () => {
+      cancelled = true;
+      urlMapForCleanup.forEach((url) => URL.revokeObjectURL(url));
+      urlMapForCleanup.clear();
+      setArtworkUrlMap(new Map());
+    };
+  }, [
+    collectionTracksStatus,
+    collectionTracks,
+    selectedCollectionId,
+    collectionTrackSearch,
+  ]);
 
   async function buildTrackLookups(
     targetPlaylist: GeneratedPlaylist,
@@ -3455,9 +3537,25 @@ export function DeviceSyncPanel({
                               : ""
                           }`}
                         >
-                          <div className="aspect-square bg-app-hover flex items-center justify-center relative">
-                            <Music className="size-12 text-app-tertiary" />
-                            <label className="absolute top-2 right-2">
+                          <div className="aspect-square bg-app-hover flex items-center justify-center relative overflow-hidden">
+                            {trackIds[0] &&
+                            artworkUrlMap.get(
+                              getCompositeId(trackIds[0], selectedCollectionId)
+                            ) ? (
+                              // eslint-disable-next-line @next/next/no-img-element -- blob URL from IndexedDB artwork cache
+                              <img
+                                src={
+                                  artworkUrlMap.get(
+                                    getCompositeId(trackIds[0], selectedCollectionId)
+                                  )!
+                                }
+                                alt=""
+                                className="absolute inset-0 w-full h-full object-cover"
+                              />
+                            ) : (
+                              <Music className="size-12 text-app-tertiary" />
+                            )}
+                            <label className="absolute top-2 right-2 z-10">
                               <input
                                 type="checkbox"
                                 checked={allSelected}
@@ -3504,11 +3602,32 @@ export function DeviceSyncPanel({
                             allSelected ? "border-accent-primary ring-1 ring-accent-primary" : ""
                           }`}
                         >
-                          <div className="aspect-square bg-app-hover flex items-center justify-center relative rounded-t-sm">
-                            <div className="size-16 rounded-full bg-app-surface flex items-center justify-center text-app-primary font-semibold text-lg">
-                              {artist.charAt(0).toUpperCase()}
-                            </div>
-                            <label className="absolute top-2 right-2">
+                          <div className="aspect-square bg-app-hover flex items-center justify-center relative rounded-t-sm overflow-hidden">
+                            {(() => {
+                              const firstAlbumKey = Object.keys(albums)[0];
+                              const firstTrack =
+                                firstAlbumKey && albums[firstAlbumKey]?.length > 0
+                                  ? albums[firstAlbumKey][0].trackFileId
+                                  : null;
+                              const artistArtworkUrl =
+                                firstTrack &&
+                                artworkUrlMap.get(
+                                  getCompositeId(firstTrack, selectedCollectionId)
+                                );
+                              return artistArtworkUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element -- blob URL from IndexedDB artwork cache
+                                <img
+                                  src={artistArtworkUrl}
+                                  alt=""
+                                  className="absolute inset-0 w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="size-16 rounded-full bg-app-surface flex items-center justify-center text-app-primary font-semibold text-lg">
+                                  {artist.charAt(0).toUpperCase()}
+                                </div>
+                              );
+                            })()}
+                            <label className="absolute top-2 right-2 z-10">
                               <input
                                 type="checkbox"
                                 checked={allSelected}

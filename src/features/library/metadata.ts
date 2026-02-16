@@ -109,6 +109,8 @@ export interface MetadataResult {
   isrc?: string;
   /** AcoustID from file tags when present (for iPod/device matching across transcodes) */
   acoustidId?: string;
+  /** Embedded cover art (transferable from worker); used for artwork cache and UI */
+  picture?: { format: string; data: ArrayBuffer };
   warnings?: string[];
   error?: string;
 }
@@ -127,6 +129,8 @@ export interface MetadataWorkerResponse {
   tech?: TechInfo;
   isrc?: string;
   acoustidId?: string;
+  /** Embedded cover art (transferable); used for artwork cache and UI */
+  picture?: { format: string; data: ArrayBuffer };
   warnings?: string[];
   error?: string;
 }

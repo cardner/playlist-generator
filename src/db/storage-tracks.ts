@@ -99,6 +99,7 @@ export async function removeTrackMetadata(
 ): Promise<void> {
   const compositeIds = trackFileIds.map(id => getCompositeId(id, libraryRootId));
   await db.tracks.bulkDelete(compositeIds);
+  await db.artworkCache.bulkDelete(compositeIds);
 }
 
 /**

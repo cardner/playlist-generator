@@ -29,6 +29,7 @@ import { getLibraryFilesForEntries } from "@/features/library/metadata-integrati
 import { saveTrackMetadata, updateScanRun, removeTrackMetadata } from "@/db/storage";
 import { detectTempoForLibrary } from "@/features/library/metadata-enhancement";
 import { isQuotaExceededError, getStorageQuotaInfo } from "@/db/storage-errors";
+import { saveArtworkCacheFromResults } from "@/features/library/artwork-cache";
 import {
   applySidecarEnhancements,
   applySidecarToResults,
@@ -398,6 +399,9 @@ export function useMetadataParsing(
           errorCount = results.filter((r) => r.error).length;
 
           setMetadataResults(results);
+
+          // Persist artwork cache (thumbnails for UI and iPod sync)
+          await saveArtworkCacheFromResults(results, libraryRootId);
 
           // Persist metadata results (with progress tracking for large libraries)
           try {

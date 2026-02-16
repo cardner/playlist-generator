@@ -249,6 +249,27 @@ export interface TrackRecord {
 }
 
 /**
+ * Artwork cache record stored in database
+ *
+ * Stores a resized thumbnail (JPEG blob) keyed by track composite id so album/artist
+ * cover art can be shown in the UI and reused for iPod sync without re-extracting.
+ *
+ * @example
+ * ```typescript
+ * const record: ArtworkCacheRecord = {
+ *   id: getCompositeId(trackFileId, libraryRootId),
+ *   thumbnail: jpegBlob,
+ * };
+ * ```
+ */
+export interface ArtworkCacheRecord {
+  /** Composite primary key: `${trackFileId}-${libraryRootId}` (same as TrackRecord.id) */
+  id: string;
+  /** Resized JPEG thumbnail (e.g. 400px max from resizeToIpodThumbnail) */
+  thumbnail: Blob;
+}
+
+/**
  * Generate a composite ID from trackFileId and libraryRootId
  * 
  * This function creates the composite primary key used by FileIndexRecord
@@ -805,6 +826,8 @@ export class AppDatabase extends Dexie {
   deviceFileIndex!: Table<DeviceFileIndexRecord, string>;
   /** Device track mappings (library -> iPod track for sync dedupe) */
   deviceTrackMappings!: Table<DeviceTrackMappingRecord, string>;
+  /** Artwork cache (track thumbnail blobs for UI and iPod sync) */
+  artworkCache!: Table<ArtworkCacheRecord, string>;
   /** Scan checkpoints table (for resuming interrupted scans) */
   scanCheckpoints!: Table<ScanCheckpointRecord, string>;
   /** Processing checkpoints table (for resuming metadata parsing) */
@@ -1147,6 +1170,26 @@ export class AppDatabase extends Dexie {
       deviceSyncManifests: "id, deviceId, playlistId, lastSyncedAt",
       deviceFileIndex: "id, deviceId, matchKey, contentHash, fullContentHash, updatedAt",
       deviceTrackMappings: "id, deviceId, libraryTrackId",
+    });
+
+    // Version 16: Artwork cache for album/artist thumbnails (UI and iPod sync)
+    this.version(16).stores({
+      libraryRoots: "id, createdAt",
+      fileIndex: "id, trackFileId, libraryRootId, name, extension, fullContentHash, contentHash, updatedAt",
+      tracks: "id, trackFileId, libraryRootId, globalTrackId, isrc, updatedAt, addedAt",
+      scanRuns: "id, libraryRootId, startedAt",
+      settings: "key",
+      directoryHandles: "id",
+      savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
+      scanCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+      processingCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+      trackWritebacks: "id, libraryRootId, pending, updatedAt",
+      writebackCheckpoints: "id, writebackRunId, libraryRootId, checkpointAt",
+      deviceProfiles: "id, createdAt, updatedAt",
+      deviceSyncManifests: "id, deviceId, playlistId, lastSyncedAt",
+      deviceFileIndex: "id, deviceId, matchKey, contentHash, fullContentHash, updatedAt",
+      deviceTrackMappings: "id, deviceId, libraryTrackId",
+      artworkCache: "id",
     });
   }
 }

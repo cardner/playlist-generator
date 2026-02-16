@@ -1,7 +1,7 @@
 import type { GeneratedPlaylist } from "@/features/playlists";
 import type { TrackLookup } from "@/features/playlists/export";
 import type { DeviceProfileRecord } from "@/db/schema";
-import { getCompositeId } from "@/db/schema";
+import { db, getCompositeId } from "@/db/schema";
 import { getLibraryRoot } from "@/db/storage";
 import { getDeviceTrackMappings, saveDeviceTrackMapping } from "@/features/devices/device-storage";
 import { getDirectoryHandle } from "@/lib/library-selection-fs-api";
@@ -670,18 +670,33 @@ export async function syncPlaylistsToIpod(options: {
         ipodTrackBySize.set(newTrack.size, sizeList);
       }
 
-      // Artwork: extract from original file (before transcode), resize to iPod thumbnail, set on track
+      // Artwork: prefer cache (from scan), else extract from file, resize to iPod thumbnail, set on track
       try {
-        const picture = await extractArtworkFromFile(file);
-        if (picture) {
-          const jpegBytes = await resizeToIpodThumbnail(picture);
-          if (jpegBytes && jpegBytes.length > 0) {
-            const artResult = wasmSetTrackArtwork(trackIndex, jpegBytes);
-            if (artResult !== 0) {
-              logger.debug("Track artwork not set (WASM artwork API may be unavailable)", {
-                trackIndex,
-              });
-            }
+        const libraryRootId = target.libraryRootId;
+        const compositeId =
+          libraryRootId != null
+            ? getCompositeId(lookup.track.trackFileId, libraryRootId)
+            : null;
+        let jpegBytes: Uint8Array | null = null;
+        if (compositeId) {
+          const cached = await db.artworkCache.get(compositeId);
+          if (cached?.thumbnail) {
+            const buf = await cached.thumbnail.arrayBuffer();
+            jpegBytes = new Uint8Array(buf);
+          }
+        }
+        if (!jpegBytes?.length) {
+          const picture = await extractArtworkFromFile(file);
+          if (picture) {
+            jpegBytes = await resizeToIpodThumbnail(picture);
+          }
+        }
+        if (jpegBytes && jpegBytes.length > 0) {
+          const artResult = wasmSetTrackArtwork(trackIndex, jpegBytes);
+          if (artResult !== 0) {
+            logger.debug("Track artwork not set (WASM artwork API may be unavailable)", {
+              trackIndex,
+            });
           }
         }
       } catch (err) {
