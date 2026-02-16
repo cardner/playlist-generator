@@ -54,6 +54,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.14.1] - 2026-02-16
+
+### Fixed
+
+- **device-sync**: add iPod storage capacity and used/free display
+
+### Other Changes
+
+- Merge pull request #66 from cardner/ipod-storage-detect
+
 ## [1.14.0] - 2026-02-16
 
 ### Added
