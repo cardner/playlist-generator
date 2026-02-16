@@ -87,6 +87,8 @@ interface DeviceSyncPanelProps {
   libraryRootId?: string;
   playlists?: PlaylistItem[];
   deviceProfileOverride?: DeviceProfileRecord | null;
+  /** When false, skip iPod setup/parse (avoids WASM noise on auto-select). Default true. */
+  selectionIsFromUserAction?: boolean;
   onDeviceProfileUpdated?: (profile: DeviceProfileRecord) => void;
   showDeviceSelector?: boolean;
 }
@@ -96,6 +98,7 @@ export function DeviceSyncPanel({
   libraryRootId,
   playlists,
   deviceProfileOverride,
+  selectionIsFromUserAction = true,
   onDeviceProfileUpdated,
   showDeviceSelector = true,
 }: DeviceSyncPanelProps) {
@@ -537,8 +540,9 @@ export function DeviceSyncPanel({
   useEffect(() => {
     if (!deviceHandleRef) return;
     if (devicePreset !== "ipod") return;
+    if (selectionIsFromUserAction === false) return;
     checkIpodSetup(deviceHandleRef);
-  }, [deviceHandleRef, devicePreset]);
+  }, [deviceHandleRef, devicePreset, selectionIsFromUserAction]);
 
   useEffect(() => {
     if (!isIpodPreset || !deviceHandleRef) {
@@ -547,6 +551,7 @@ export function DeviceSyncPanel({
       setIpodTrackIndex({ tagSize: new Set(), tagOnly: new Set() });
       return;
     }
+    if (selectionIsFromUserAction === false) return;
     const handleRef = deviceHandleRef;
     let cancelled = false;
     async function loadTracks() {
@@ -591,7 +596,7 @@ export function DeviceSyncPanel({
     return () => {
       cancelled = true;
     };
-  }, [isIpodPreset, deviceHandleRef, buildTagKey, buildTagSizeKey]);
+  }, [isIpodPreset, deviceHandleRef, selectionIsFromUserAction, buildTagKey, buildTagSizeKey]);
 
   useEffect(() => {
     if (devicePreset !== "jellyfin") return;
