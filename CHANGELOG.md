@@ -50,6 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.12.1] - 2026-02-16
+
+### Fixed
+
+- **playlist**: replace single track on delete instead of full regeneration
+
+### Other Changes
+
+- Merge pull request #61 from cardner/playlist-edit
+
 ## [1.12.0] - 2026-02-15
 
 ### Added
