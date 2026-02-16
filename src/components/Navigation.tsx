@@ -35,17 +35,17 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Home, Library, Smartphone, ListMusic } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import { Logo } from "./Logo";
 import { InstallPromptButton } from "./InstallPromptButton";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Home" },
-  { href: "/library", label: "Library" },
-  { href: "/device-sync", label: "Device Sync" },
-  { href: "/playlists/new", label: "New Playlist" },
-  { href: "/playlists/saved", label: "Saved Playlists" },
+  { href: "/", label: "Home", Icon: Home },
+  { href: "/library", label: "Library", Icon: Library },
+  { href: "/device-sync", label: "Device Sync", Icon: Smartphone },
+  { href: "/playlists/new", label: "New Playlist", Icon: ListMusic },
+  { href: "/playlists/saved", label: "Saved Playlists", Icon: ListMusic },
 ];
 
 /**
@@ -102,9 +102,10 @@ export function Navigation() {
     <nav className="border-b border-app-border bg-app-surface">
       <div className="container mx-auto px-4 max-w-6xl">
         <div className="flex items-center justify-between h-16">
-          {/* Logo - upper left */}
-          <Link href="/" className="flex items-center">
+          {/* Logo and app name - upper left */}
+          <Link href="/" className="flex items-center gap-2">
             <Logo width={32} height={32} className="w-8 h-8" />
+            <span className="text-app-primary font-medium text-lg hidden sm:inline">Mixtape Generator</span>
           </Link>
           
           {/* Desktop Navigation - centered, hidden on mobile */}
@@ -112,16 +113,18 @@ export function Navigation() {
             {isHydrated &&
               navItems.map((item) => {
               const isActive = pathname === item.href;
+              const Icon = item.Icon;
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`px-3 py-2 rounded-sm text-sm font-medium transition-colors uppercase tracking-wider ${
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                     isActive
                       ? "bg-app-hover text-app-primary"
                       : "text-app-secondary hover:bg-app-hover hover:text-app-primary"
                   }`}
                 >
+                  <Icon className="size-4 shrink-0" aria-hidden />
                   {item.label}
                 </Link>
                 );
@@ -161,7 +164,10 @@ export function Navigation() {
           <div className="relative bg-app-surface h-full w-full flex flex-col">
             {/* Header with close button */}
             <div className="flex items-center justify-between p-4 border-b border-app-border">
-              <Logo width={32} height={32} className="w-8 h-8" />
+              <div className="flex items-center gap-2">
+                <Logo width={32} height={32} className="w-8 h-8" />
+                <span className="text-app-primary font-medium text-lg">Mixtape Generator</span>
+              </div>
               <button
                 onClick={closeMobileMenu}
                 className="p-2 text-app-primary hover:bg-app-hover rounded-sm transition-colors"
@@ -177,17 +183,19 @@ export function Navigation() {
                 {isHydrated &&
                   navItems.map((item) => {
                   const isActive = pathname === item.href;
+                  const Icon = item.Icon;
                   return (
                     <Link
                       key={item.href}
                       href={item.href}
                       onClick={closeMobileMenu}
-                      className={`px-6 py-4 rounded-sm text-lg font-medium transition-colors uppercase tracking-wider ${
+                      className={`flex items-center gap-3 px-6 py-4 rounded-lg text-lg font-medium transition-colors ${
                         isActive
                           ? "bg-app-hover text-app-primary"
                           : "text-app-secondary hover:bg-app-hover hover:text-app-primary"
                       }`}
                     >
+                      <Icon className="size-5 shrink-0" aria-hidden />
                       {item.label}
                     </Link>
                   );

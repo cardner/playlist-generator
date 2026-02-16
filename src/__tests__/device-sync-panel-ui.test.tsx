@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { DeviceSyncPanel } from "@/components/DeviceSyncPanel";
 
 jest.mock("@/db/storage", () => ({
@@ -25,6 +25,7 @@ jest.mock("@/db/schema", () => ({
 jest.mock("@/features/devices/device-storage", () => ({
   getDeviceProfiles: jest.fn(async () => []),
   getDeviceFileIndexMap: jest.fn(async () => new Map()),
+  getDeviceTrackMappings: jest.fn(async () => []),
   saveDeviceFileIndexEntries: jest.fn(async () => null),
   saveDeviceProfile: jest.fn(async () => ({ id: "dev-1" })),
 }));
@@ -117,5 +118,80 @@ describe("DeviceSyncPanel iPod collection UI", () => {
     expect(
       screen.getByText("Also delete removed tracks from the iPod storage.")
     ).toBeInTheDocument();
+  });
+});
+
+const ipodProfileOverride = {
+  id: "dev-1",
+  label: "iPod Classic",
+  deviceType: "ipod" as const,
+  playlistFormat: "m3u" as const,
+  playlistFolder: "",
+  pathStrategy: "relative-to-library-root" as const,
+  handleRef: "handle-1",
+};
+
+describe("DeviceSyncPanel iPod overwrite playlist option", () => {
+  it("shows overwrite existing playlist checkbox when iPod preset", async () => {
+    render(
+      <DeviceSyncPanel
+        deviceProfileOverride={ipodProfileOverride}
+        showDeviceSelector={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("iPod Collection Sync")).toBeInTheDocument();
+    });
+
+    const checkbox = screen.getByRole("checkbox", {
+      name: /replace existing playlist on device if same name/i,
+    });
+    expect(checkbox).toBeInTheDocument();
+    expect(checkbox).not.toBeChecked();
+  });
+
+  it("overwrite checkbox is togglable", async () => {
+    render(
+      <DeviceSyncPanel
+        deviceProfileOverride={ipodProfileOverride}
+        showDeviceSelector={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("iPod Collection Sync")).toBeInTheDocument();
+    });
+
+    const checkbox = screen.getByRole("checkbox", {
+      name: /replace existing playlist on device if same name/i,
+    });
+    fireEvent.click(checkbox);
+    expect(checkbox).toBeChecked();
+    fireEvent.click(checkbox);
+    expect(checkbox).not.toBeChecked();
+  });
+
+  it("does not show overwrite checkbox when device is not iPod", async () => {
+    render(
+      <DeviceSyncPanel
+        deviceProfileOverride={{
+          ...ipodProfileOverride,
+          deviceType: "generic",
+          id: "dev-generic",
+        }}
+        showDeviceSelector={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText("iPod Collection Sync")).not.toBeInTheDocument();
+    });
+
+    expect(
+      screen.queryByRole("checkbox", {
+        name: /replace existing playlist on device if same name/i,
+      })
+    ).not.toBeInTheDocument();
   });
 });

@@ -238,6 +238,7 @@ export function DeviceSyncPanel({
     new Set()
   );
   const [mirrorDeleteFromDevice, setMirrorDeleteFromDevice] = useState(false);
+  const [overwriteExistingPlaylistOnIpod, setOverwriteExistingPlaylistOnIpod] = useState(false);
   const [collectionViewMode, setCollectionViewMode] = useState<"all" | "recent">("recent");
   const [selectedArtistFilter, setSelectedArtistFilter] = useState<string>("all");
   const [ipodTrackIndexStatus, setIpodTrackIndexStatus] = useState<
@@ -355,6 +356,7 @@ export function DeviceSyncPanel({
         deviceProfile: pending.profile,
         targets: pending.scanTargets,
         onlyReferenceExistingTracks: onlyRef,
+        overwriteExistingPlaylist: overwriteExistingPlaylistOnIpod,
       });
       await refreshDeviceProfiles();
       setSelectedDeviceId(pending.profile.id);
@@ -1537,6 +1539,7 @@ export function DeviceSyncPanel({
         await syncPlaylistsToDevice({
           deviceProfile: profile,
           targets: scanTargets,
+          overwriteExistingPlaylist: overwriteExistingPlaylistOnIpod,
         });
         syncedCount = scanTargets.length;
       } else {
@@ -3483,6 +3486,17 @@ export function DeviceSyncPanel({
               Low path match rate. Consider rescanning or adjusting scan roots.
             </span>
           )}
+        {isIpodPreset && (
+          <label className="flex items-start gap-2 text-app-primary text-xs mt-2">
+            <input
+              type="checkbox"
+              checked={overwriteExistingPlaylistOnIpod}
+              onChange={(e) => setOverwriteExistingPlaylistOnIpod(e.target.checked)}
+              className="rounded border-app-border mt-0.5"
+            />
+            <span>Replace existing playlist on device if same name.</span>
+          </label>
+        )}
         <div className="flex items-center gap-2">
           {isJellyfinPreset ? (
             <button
