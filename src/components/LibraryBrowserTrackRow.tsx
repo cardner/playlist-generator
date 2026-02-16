@@ -72,11 +72,11 @@ function LibraryBrowserTrackRowInner({
   return (
     <Fragment>
       <tr
-        className="border-b border-app-border hover:bg-app-hover transition-colors group"
+        className="group"
         onMouseEnter={() => onMouseEnter(track.trackFileId, trackInfo)}
         onMouseLeave={onMouseLeave}
       >
-        <td className="py-2 px-4">
+        <td>
           <button
             onClick={() => onPlayClick(track.trackFileId, trackInfo)}
             disabled={searchingTrackId === track.trackFileId}
@@ -93,14 +93,14 @@ function LibraryBrowserTrackRowInner({
             )}
           </button>
         </td>
-        <td className="py-2 px-4 text-app-primary">{track.tags.title}</td>
-        <td className="py-2 px-4 text-app-primary">{track.tags.artist}</td>
-        <td className="py-2 px-4 text-app-secondary">{track.tags.album}</td>
-        <td className="py-2 px-4 text-app-secondary">{displayGenres}</td>
-        <td className="py-2 px-4 text-app-secondary tabular-nums">
+        <td className="cell-primary">{track.tags.title}</td>
+        <td className="cell-primary">{track.tags.artist}</td>
+        <td className="cell-secondary">{track.tags.album}</td>
+        <td className="cell-secondary">{displayGenres}</td>
+        <td className="cell-tertiary tabular-nums">
           {formatDuration(track.tech?.durationSeconds)}
         </td>
-        <td className="py-2 px-4 text-app-secondary">
+        <td className="cell-tertiary">
           {track.tech?.bpm ? (
             <div className="flex items-center gap-2">
               <span className="tabular-nums">{track.tech.bpm}</span>
@@ -128,7 +128,7 @@ function LibraryBrowserTrackRowInner({
             "—"
           )}
         </td>
-        <td className="py-2 px-4">
+        <td>
           <div className="flex items-center gap-2">
             {writebackState === "pending" && (
               <span title="Metadata sync pending">

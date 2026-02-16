@@ -8,7 +8,8 @@
 
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from "react";
+import { createPortal } from "react-dom";
 import type { GeneratedPlaylist } from "@/features/playlists";
 import {
   downloadFile,
@@ -72,7 +73,31 @@ import type { LibraryRoot } from "@/lib/library-selection";
 import { logger } from "@/lib/logger";
 import { formatPlaylistFilenameStem } from "@/lib/playlist-filename";
 import { Modal } from "@/components/Modal";
-import { Usb, HardDrive, Loader2, Save, Bug, ChevronDown, ChevronUp } from "lucide-react";
+import { InlineAudioPlayer, type InlineAudioPlayerRef } from "@/components/InlineAudioPlayer";
+import { JellyfinIcon, WalkmanIcon } from "@/components/DevicePresetIcons";
+import { useAudioPreviewState } from "@/hooks/useAudioPreviewState";
+import { searchTrackSample } from "@/features/audio-preview/platform-searcher";
+import { MAX_PLAY_ATTEMPTS } from "@/lib/audio-playback-config";
+import { Button, Card, Input, Tabs } from "@/design-system/components";
+import {
+  Usb,
+  HardDrive,
+  Loader2,
+  Save,
+  Bug,
+  ChevronDown,
+  ChevronUp,
+  Music,
+  Play,
+  Pause,
+  Check,
+  Circle,
+  User,
+  ListMusic,
+  Smartphone,
+  X,
+  Edit,
+} from "lucide-react";
 import { scanLibraryWithPersistence } from "@/features/library/scanning-persist";
 import { findFileIndexByGlobalTrackId } from "@/features/library/track-identity";
 
@@ -81,6 +106,21 @@ interface PlaylistItem {
   libraryRootId?: string;
   collectionName?: string;
 }
+
+type CollectionTrackWithStatus = {
+  trackFileId: string;
+  title: string;
+  artist?: string;
+  album?: string;
+  addedAt?: number;
+  fileName?: string;
+  fileSize?: number;
+  trackNo?: number;
+  genre?: string;
+  durationSeconds?: number;
+  bpm?: number;
+  onDevice?: boolean | null;
+};
 
 interface DeviceSyncPanelProps {
   playlist?: GeneratedPlaylist;
@@ -91,6 +131,12 @@ interface DeviceSyncPanelProps {
   selectionIsFromUserAction?: boolean;
   onDeviceProfileUpdated?: (profile: DeviceProfileRecord) => void;
   showDeviceSelector?: boolean;
+  /** When set, portal the Device Name edit and iPod Detection & Setup UI into this DOM element id (e.g. for the device-sync page Detected Device column). */
+  deviceDetailsSlotId?: string;
+  /** When set with deviceDetailsSlotId, portal the device title (editable name + status) into this DOM element id so it appears in the card header. */
+  deviceTitleSlotId?: string;
+  /** Status of the selected device for the title slot (e.g. "available", "missing"). Pass from page when using deviceTitleSlotId. */
+  deviceStatus?: string;
 }
 
 export function DeviceSyncPanel({
@@ -101,10 +147,15 @@ export function DeviceSyncPanel({
   selectionIsFromUserAction = true,
   onDeviceProfileUpdated,
   showDeviceSelector = true,
+  deviceDetailsSlotId,
+  deviceTitleSlotId,
+  deviceStatus,
 }: DeviceSyncPanelProps) {
   const [deviceProfiles, setDeviceProfiles] = useState<DeviceProfileRecord[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("new");
   const [deviceLabel, setDeviceLabel] = useState<string>("");
+  const [isEditingDeviceName, setIsEditingDeviceName] = useState(false);
+  const [editingDeviceName, setEditingDeviceName] = useState<string>("");
   const [deviceHandleRef, setDeviceHandleRef] = useState<string | null>(null);
   const [devicePlaylistFolder, setDevicePlaylistFolder] = useState<string>("PLAYLISTS");
   const [devicePlaylistFormat, setDevicePlaylistFormat] = useState<DevicePlaylistFormat>("m3u");
@@ -228,6 +279,9 @@ export function DeviceSyncPanel({
       fileName?: string;
       fileSize?: number;
       trackNo?: number;
+      genre?: string;
+      durationSeconds?: number;
+      bpm?: number;
     }>
   >([]);
   const [collectionTracksStatus, setCollectionTracksStatus] = useState<
@@ -238,10 +292,15 @@ export function DeviceSyncPanel({
   const [selectedCollectionTrackIds, setSelectedCollectionTrackIds] = useState<Set<string>>(
     new Set()
   );
+  const [collectionTracksCurrentPage, setCollectionTracksCurrentPage] = useState(1);
+  const [collectionTracksPageSize, setCollectionTracksPageSize] = useState(50);
+  const collectionTableHeaderCheckboxRef = useRef<HTMLInputElement>(null);
+  const collectionTrackAudioRefs = useRef<Map<string, InlineAudioPlayerRef>>(new Map());
   const [mirrorDeleteFromDevice, setMirrorDeleteFromDevice] = useState(false);
   const [overwriteExistingPlaylistOnIpod, setOverwriteExistingPlaylistOnIpod] = useState(false);
-  const [collectionViewMode, setCollectionViewMode] = useState<"all" | "recent">("recent");
-  const [selectedArtistFilter, setSelectedArtistFilter] = useState<string>("all");
+  const [collectionContentTab, setCollectionContentTab] = useState<
+    "tracks" | "albums" | "artists"
+  >("tracks");
   const [ipodTrackIndexStatus, setIpodTrackIndexStatus] = useState<
     "idle" | "loading" | "ready" | "error"
   >("idle");
@@ -262,11 +321,22 @@ export function DeviceSyncPanel({
     }>;
   } | null>(null);
 
+  const collectionTrackAudioState = useAudioPreviewState();
+  const {
+    playingTrackId: collectionPlayingTrackId,
+    searchingTrackId: collectionSearchingTrackId,
+    hasSampleResult: collectionHasSampleResult,
+    getSampleResult: collectionGetSampleResult,
+    setSampleResult: collectionSetSampleResult,
+    setPlayingTrack: collectionSetPlayingTrack,
+    clearPlayingTrack: collectionClearPlayingTrack,
+    setSearchingTrack: collectionSetSearchingTrack,
+    setError: collectionSetTrackError,
+  } = collectionTrackAudioState;
+
   const isIpodPreset = devicePreset === "ipod";
   const isJellyfinPreset = devicePreset === "jellyfin";
   const isWalkmanPreset = devicePreset === "walkman";
-  const artistScrollRefs = useRef<Record<string, HTMLDivElement | null>>({});
-
   const normalizeTag = useCallback((value?: string | null) => {
     return String(value ?? "").trim().toLowerCase();
   }, []);
@@ -679,6 +749,7 @@ export function DeviceSyncPanel({
           tracks.map((track) => {
             const fileIndex = fileIndexMap.get(track.trackFileId);
             const fallbackTitle = fileIndex?.name || track.trackFileId;
+            const genres = track.tags?.genres;
             return {
               trackFileId: track.trackFileId,
               title: track.tags?.title || fallbackTitle,
@@ -688,6 +759,9 @@ export function DeviceSyncPanel({
               addedAt: fileIndex?.updatedAt ?? track.updatedAt,
               fileName: fileIndex?.name,
               fileSize: fileIndex?.size,
+              genre: Array.isArray(genres) && genres.length > 0 ? genres.join(", ") : undefined,
+              durationSeconds: track.tech?.durationSeconds,
+              bpm: track.tech?.bpm,
             };
           })
         );
@@ -1050,18 +1124,28 @@ export function DeviceSyncPanel({
         return haystack.includes(collectionSearch);
       })
     : collectionTracksWithStatus;
-  const recentMissingTracks = filteredCollectionTracks
-    .filter((track) => track.onDevice === false)
-    .sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0));
-  const activeTracks =
-    collectionViewMode === "recent" ? recentMissingTracks : filteredCollectionTracks;
-  const artistFilteredTracks =
-    selectedArtistFilter === "all"
-      ? activeTracks
-      : activeTracks.filter((track) =>
-          normalizeTag(track.artist) === normalizeTag(selectedArtistFilter)
-        );
-  const visibleCollectionTracks = artistFilteredTracks.slice(0, 1000);
+  const visibleCollectionTracks = filteredCollectionTracks;
+
+  const totalCollectionPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredCollectionTracks.length / collectionTracksPageSize)),
+    [filteredCollectionTracks.length, collectionTracksPageSize]
+  );
+  const paginatedCollectionTracks = useMemo(
+    () =>
+      filteredCollectionTracks.slice(
+        (collectionTracksCurrentPage - 1) * collectionTracksPageSize,
+        collectionTracksCurrentPage * collectionTracksPageSize
+      ),
+    [
+      filteredCollectionTracks,
+      collectionTracksCurrentPage,
+      collectionTracksPageSize,
+    ]
+  );
+
+  useEffect(() => {
+    setCollectionTracksCurrentPage(1);
+  }, [filteredCollectionTracks.length]);
 
   const groupedTracks = visibleCollectionTracks.reduce(
     (acc, track) => {
@@ -1088,27 +1172,147 @@ export function DeviceSyncPanel({
   const artistNames = Object.keys(groupedTracks).sort((a, b) =>
     a.localeCompare(b)
   );
+  const albumCount = Object.keys(groupedTracks).reduce(
+    (sum, artist) => sum + Object.keys(groupedTracks[artist]).length,
+    0
+  );
+  const albumList = Object.keys(groupedTracks).flatMap((artist) =>
+    Object.keys(groupedTracks[artist]).map((album) => {
+      const tracks = groupedTracks[artist][album];
+      return {
+        artist,
+        album,
+        trackIds: tracks.map((t) => t.trackFileId),
+        trackCount: tracks.length,
+      };
+    })
+  );
+  const selectedTracksCount = selectedCollectionTrackIds.size;
+  const selectedAlbumsCount = albumList.filter((a) =>
+    a.trackIds.some((id) => selectedCollectionTrackIds.has(id))
+  ).length;
+  const selectedArtistsCount = artistNames.filter((artist) => {
+    const ids = Object.values(groupedTracks[artist])
+      .flat()
+      .map((t) => t.trackFileId);
+    return ids.some((id) => selectedCollectionTrackIds.has(id));
+  }).length;
+  const selectedPlaylistsCount =
+    playlists && playlists.length > 0 ? selectedPlaylistIds.length : 0;
+  const totalTracksCount = (() => {
+    const targets = getSyncTargets();
+    const fromPlaylists = targets.flatMap((t) => t.playlist.trackFileIds);
+    return new Set([...fromPlaylists, ...selectedCollectionTrackIds]).size;
+  })();
 
-  function formatAddedAt(value?: number) {
-    if (!value) return "";
-    return new Date(value).toLocaleDateString();
-  }
+  const allVisibleCollectionSelected =
+    paginatedCollectionTracks.length > 0 &&
+    paginatedCollectionTracks.every((t: CollectionTrackWithStatus) =>
+      selectedCollectionTrackIds.has(t.trackFileId)
+    );
+  const someVisibleCollectionSelected = paginatedCollectionTracks.some(
+    (t: CollectionTrackWithStatus) => selectedCollectionTrackIds.has(t.trackFileId)
+  );
 
-  function addSelection(ids: string[]) {
-    setSelectedCollectionTrackIds((prev) => {
-      const next = new Set(prev);
-      ids.forEach((id) => next.add(id));
-      return next;
-    });
-  }
+  useEffect(() => {
+    const el = collectionTableHeaderCheckboxRef.current;
+    if (el) el.indeterminate = someVisibleCollectionSelected && !allVisibleCollectionSelected;
+  }, [someVisibleCollectionSelected, allVisibleCollectionSelected]);
 
-  function removeSelection(ids: string[]) {
-    setSelectedCollectionTrackIds((prev) => {
-      const next = new Set(prev);
-      ids.forEach((id) => next.delete(id));
-      return next;
-    });
-  }
+  const handleCollectionTrackPlayClick = useCallback(
+    async (
+      trackFileId: string,
+      trackInfo: { title: string; artist?: string; album?: string }
+    ) => {
+      if (collectionPlayingTrackId === trackFileId) {
+        const audioControls = collectionTrackAudioRefs.current.get(trackFileId);
+        if (audioControls) audioControls.pause();
+        collectionClearPlayingTrack();
+        return;
+      }
+      if (collectionPlayingTrackId) {
+        const prev = collectionTrackAudioRefs.current.get(collectionPlayingTrackId);
+        if (prev) prev.stop();
+        collectionClearPlayingTrack();
+      }
+      const info = {
+        title: trackInfo.title || "Unknown Title",
+        artist: trackInfo.artist ?? "Unknown Artist",
+        album: trackInfo.album,
+      };
+      const attemptPlay = async (attempts = 0) => {
+        if (attempts >= MAX_PLAY_ATTEMPTS) {
+          collectionSetSearchingTrack(null);
+          return;
+        }
+        const audioControls = collectionTrackAudioRefs.current.get(trackFileId);
+        if (audioControls) {
+          try {
+            await audioControls.play();
+            return;
+          } catch {
+            if (attempts < MAX_PLAY_ATTEMPTS - 1) {
+              setTimeout(() => attemptPlay(attempts + 1), 100);
+            } else {
+              collectionSetSearchingTrack(null);
+            }
+          }
+        } else if (attempts < MAX_PLAY_ATTEMPTS - 1) {
+          setTimeout(() => attemptPlay(attempts + 1), 100);
+        } else {
+          collectionSetSearchingTrack(null);
+        }
+      };
+
+      if (collectionHasSampleResult(trackFileId)) {
+        collectionSetSearchingTrack(trackFileId);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            attemptPlay();
+          });
+        });
+        return;
+      }
+      collectionSetSearchingTrack(trackFileId);
+      try {
+        const sampleResult = await searchTrackSample(info, {
+          trackFileId,
+          libraryRootId: selectedCollectionId,
+        });
+        if (sampleResult) {
+          collectionSetSampleResult(trackFileId, sampleResult);
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              attemptPlay();
+            });
+          });
+        } else {
+          collectionSetSearchingTrack(null);
+        }
+      } catch {
+        collectionSetSearchingTrack(null);
+      }
+    },
+    [
+      collectionPlayingTrackId,
+      collectionClearPlayingTrack,
+      collectionHasSampleResult,
+      collectionSetSearchingTrack,
+      collectionSetSampleResult,
+      selectedCollectionId,
+    ]
+  );
+
+  const registerCollectionTrackAudioRef = useCallback(
+    (trackFileId: string, ref: InlineAudioPlayerRef | null) => {
+      if (ref) {
+        collectionTrackAudioRefs.current.set(trackFileId, ref);
+      } else {
+        collectionTrackAudioRefs.current.delete(trackFileId);
+      }
+    },
+    []
+  );
 
   async function checkIpodSetup(handleRef?: string | null) {
     if (!handleRef) return;
@@ -2419,12 +2623,30 @@ export function DeviceSyncPanel({
     }
   }
 
-  async function handleSaveDeviceSettings() {
+  function handleStartEditDeviceName() {
+    setEditingDeviceName(deviceLabel);
+    setIsEditingDeviceName(true);
+  }
+
+  function handleCancelEditDeviceName() {
+    setIsEditingDeviceName(false);
+  }
+
+  async function handleSaveDeviceName() {
+    const label =
+      editingDeviceName.trim() || (isJellyfinPreset ? "Jellyfin" : "USB Device");
+    setDeviceLabel(label);
+    setIsEditingDeviceName(false);
+    await handleSaveDeviceSettings(label);
+  }
+
+  async function handleSaveDeviceSettings(overrideLabel?: string) {
     setIsSavingSettings(true);
     setSyncError(null);
     setSyncSuccess(null);
     try {
-      const label = deviceLabel.trim() || (isJellyfinPreset ? "Jellyfin" : "USB Device");
+      const label =
+        (overrideLabel ?? deviceLabel.trim()) || (isJellyfinPreset ? "Jellyfin" : "USB Device");
       const effectivePlaylistFolder = isWalkmanPreset ? "MUSIC" : devicePlaylistFolder.trim();
       const effectivePathStrategy = isWalkmanPreset
         ? "relative-to-playlist"
@@ -2479,8 +2701,328 @@ export function DeviceSyncPanel({
       ? null
       : deviceProfiles.find((profile) => profile.id === selectedDeviceId) || null);
 
+  const renderDeviceTitlePortal = () => {
+    if (
+      typeof document === "undefined" ||
+      !deviceTitleSlotId ||
+      !deviceProfileOverride
+    ) {
+      return null;
+    }
+    const slot = document.getElementById(deviceTitleSlotId);
+    if (!slot) return null;
+    const statusLabel =
+      deviceStatus === "available"
+        ? "Available"
+        : deviceStatus === "companion"
+          ? "Companion"
+          : deviceStatus === "export"
+            ? "Export"
+            : deviceStatus === "needs_access"
+              ? "Needs access"
+              : deviceStatus === "missing"
+                ? "Missing"
+                : "Checking";
+    return createPortal(
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 min-w-0 group">
+          {isEditingDeviceName ? (
+            <div className="flex-1 flex items-center gap-1.5 min-w-0">
+              <input
+                type="text"
+                value={editingDeviceName}
+                onChange={(e) => setEditingDeviceName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveDeviceName();
+                  else if (e.key === "Escape") handleCancelEditDeviceName();
+                }}
+                placeholder="My device"
+                className="flex-1 px-2 py-1 bg-app-surface text-app-primary rounded-sm border border-accent-primary focus:outline-none focus:ring-1 focus:ring-accent-primary text-sm font-semibold"
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={() => handleSaveDeviceName()}
+                disabled={isSavingSettings || isSyncing}
+                className="p-1 hover:bg-accent-primary/20 text-accent-primary rounded-sm transition-colors shrink-0 disabled:opacity-50"
+                aria-label="Save"
+              >
+                <Check className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelEditDeviceName}
+                className="p-1 hover:bg-app-surface-hover text-app-secondary rounded-sm transition-colors shrink-0"
+                aria-label="Cancel"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <span className="text-app-primary text-base font-semibold truncate">
+                {deviceLabel || "Device"}
+              </span>
+              <button
+                type="button"
+                onClick={handleStartEditDeviceName}
+                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-app-surface rounded-sm transition-all text-app-secondary hover:text-accent-primary shrink-0"
+                aria-label="Edit device name"
+                title="Edit device name"
+              >
+                <Edit className="size-3" />
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="text-app-tertiary text-xs mt-1 flex items-center gap-2 flex-wrap">
+          <span>{deviceProfileOverride?.playlistFolder || "Device root"}</span>
+          <span className="text-app-border">·</span>
+          {deviceStatus === "available" ? (
+            <>
+              <Check className="size-3.5 text-green-500 shrink-0" />
+              <span className="text-green-500">{statusLabel}</span>
+            </>
+          ) : (
+            <span>{statusLabel}</span>
+          )}
+        </div>
+      </div>,
+      slot
+    );
+  };
+
+  const renderDeviceDetailsPortal = () => {
+    if (
+      typeof document === "undefined" ||
+      !deviceDetailsSlotId ||
+      !deviceProfileOverride
+    ) {
+      return null;
+    }
+    const slot = document.getElementById(deviceDetailsSlotId);
+    if (!slot) return null;
+    return createPortal(
+      <div className="space-y-4">
+        {!deviceTitleSlotId && (
+          <div className="flex items-center gap-1.5 min-w-0 group">
+            {isEditingDeviceName ? (
+              <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                <input
+                  type="text"
+                  value={editingDeviceName}
+                  onChange={(e) => setEditingDeviceName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveDeviceName();
+                    else if (e.key === "Escape") handleCancelEditDeviceName();
+                  }}
+                  placeholder="My device"
+                  className="flex-1 px-2 py-1 bg-app-surface text-app-primary rounded-sm border border-accent-primary focus:outline-none focus:ring-1 focus:ring-accent-primary text-sm"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => handleSaveDeviceName()}
+                  disabled={isSavingSettings || isSyncing}
+                  className="p-1 hover:bg-accent-primary/20 text-accent-primary rounded-sm transition-colors shrink-0 disabled:opacity-50"
+                  aria-label="Save"
+                >
+                  <Check className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelEditDeviceName}
+                  className="p-1 hover:bg-app-surface-hover text-app-secondary rounded-sm transition-colors shrink-0"
+                  aria-label="Cancel"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                <span className="text-app-primary text-sm font-medium truncate">
+                  {deviceLabel || "Device"}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleStartEditDeviceName}
+                  className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-app-surface rounded-sm transition-all text-app-secondary hover:text-accent-primary shrink-0"
+                  aria-label="Edit device name"
+                  title="Edit device name"
+                >
+                  <Edit className="size-3" />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        {isIpodPreset && (
+          <div>
+            <label className="block text-app-primary text-xs font-medium mb-2 uppercase tracking-wider">
+              iPod Detection & Setup
+            </label>
+            {!supportsWebUSB() && (
+              <div className="text-xs text-yellow-500">
+                WebUSB is required for iPod setup. Use a Chromium browser.
+              </div>
+            )}
+            {supportsWebUSB() && (
+              <div className="text-xs text-app-tertiary">
+                Detect the iPod via WebUSB, then select its folder to sync.
+              </div>
+            )}
+            {ipodSetupMessage && (
+              <div className="text-xs text-app-tertiary mt-2">{ipodSetupMessage}</div>
+            )}
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={handleDetectIpodUsb}
+                disabled={!supportsWebUSB()}
+                className="inline-flex items-center px-2 py-1 rounded-sm border border-app-border text-[11px] text-app-primary bg-app-surface hover:bg-app-surface-hover disabled:opacity-50"
+              >
+                Detect iPod
+              </button>
+              <button
+                type="button"
+                onClick={handleSelectDeviceFolder}
+                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-sm border border-app-border text-[11px] text-app-primary bg-app-surface hover:bg-app-surface-hover"
+              >
+                <HardDrive className="size-3.5" />
+                {deviceHandleRef ? "Change iPod Folder" : "Select iPod Folder"}
+              </button>
+              <button
+                type="button"
+                onClick={handleRunIpodSetup}
+                disabled={
+                  !supportsWebUSB() || !deviceHandleRef || ipodSetupStatus === "checking"
+                }
+                className="inline-flex items-center px-2 py-1 rounded-sm border border-app-border text-[11px] text-app-primary bg-app-surface hover:bg-app-surface-hover disabled:opacity-50"
+              >
+                {ipodSetupStatus === "checking" ? "Setting up..." : "Run iPod Setup"}
+              </button>
+              {!supportsWebUSB() && ipodSetupStatus === "needs_setup" && (
+                <button
+                  type="button"
+                  onClick={handleSkipIpodSetup}
+                  className="inline-flex items-center px-2 py-1 rounded-sm border border-app-border text-[11px] text-app-primary bg-app-surface hover:bg-app-surface-hover"
+                >
+                  Skip Setup
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleCheckWriteAccess}
+                disabled={!deviceHandleRef || isCheckingWriteAccess || useCompanionApp}
+                className="inline-flex items-center px-2 py-1 rounded-sm border border-app-border text-[11px] text-app-primary bg-app-surface hover:bg-app-surface-hover disabled:opacity-50"
+              >
+                {isCheckingWriteAccess ? "Checking write access..." : "Check write access"}
+              </button>
+              {writeAccessStatus === "ok" && (
+                <Check className="size-4 text-green-500 shrink-0" aria-label="Writable" />
+              )}
+              {writeAccessStatus === "read-only" && (
+                <span className="text-[11px] text-yellow-500">Read-only</span>
+              )}
+              {writeAccessStatus === "error" && (
+                <X className="size-4 text-red-500 shrink-0" aria-label="Check failed" />
+              )}
+              {ipodSetupStatus === "ready" && (
+                <span className="text-[11px] text-green-500">Ready</span>
+              )}
+              {ipodSetupStatus === "needs_setup" && (
+                <span className="text-[11px] text-yellow-500">Setup required</span>
+              )}
+              {ipodSetupStatus === "error" && (
+                <span className="text-[11px] text-red-500">Setup failed</span>
+              )}
+            </div>
+            {(ipodUsbInfo || ipodKnownDevices.length > 0 || ipodDeviceInfo) && (
+              <div className="mt-3 text-xs text-app-tertiary space-y-1">
+                {ipodUsbInfo && (
+                  <div>
+                    Detected: {ipodUsbInfo.productName || "iPod"}{" "}
+                    {ipodUsbInfo.serialNumber ? `(${ipodUsbInfo.serialNumber})` : ""}
+                  </div>
+                )}
+                {ipodDeviceInfo && (
+                  <div>
+                    Device: {ipodDeviceInfo.model_name || "iPod"}{" "}
+                    {ipodDeviceInfo.generation_name
+                      ? `(${ipodDeviceInfo.generation_name})`
+                      : ""}
+                  </div>
+                )}
+                {(ipodDeviceInfo?.capacity_gb != null ||
+                  (ipodTrackIndexStatus === "ready" &&
+                    ipodTrackIndex.usedBytes != null)) && (
+                  <div>
+                    Storage:{" "}
+                    {ipodDeviceInfo?.capacity_gb != null && (
+                      <span>
+                        {ipodDeviceInfo.capacity_gb.toFixed(2)} GB capacity
+                      </span>
+                    )}
+                    {ipodDeviceInfo?.capacity_gb != null &&
+                      ipodTrackIndexStatus === "ready" &&
+                      ipodTrackIndex.usedBytes != null && (
+                        <span> · </span>
+                      )}
+                    {ipodTrackIndexStatus === "ready" &&
+                      ipodTrackIndex.usedBytes != null && (
+                        <span>
+                          {(ipodTrackIndex.usedBytes / 1e9).toFixed(2)} GB used (music)
+                        </span>
+                      )}
+                    {ipodDeviceInfo?.capacity_gb != null &&
+                      ipodTrackIndexStatus === "ready" &&
+                      ipodTrackIndex.usedBytes != null && (
+                        <>
+                          <span> · </span>
+                          <span>
+                            {(Math.max(
+                              0,
+                              ipodDeviceInfo.capacity_gb * 1e9 -
+                                (ipodTrackIndex.usedBytes ?? 0)
+                            ) / 1e9).toFixed(2)}{" "}
+                            GB free
+                          </span>
+                        </>
+                      )}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="mt-3 pt-3 border-t border-app-border flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-app-tertiary">
+              <span>
+                1. Detect iPod (WebUSB){" "}
+                {ipodUsbInfo ? <span className="text-green-500">✓</span> : null}
+              </span>
+              <span>
+                2. Select iPod folder{" "}
+                {deviceHandleRef ? <span className="text-green-500">✓</span> : null}
+              </span>
+              <span>
+                3. Run iPod setup{" "}
+                {ipodSetupStatus === "ready" ? (
+                  <span className="text-green-500">✓</span>
+                ) : null}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>,
+      slot
+    );
+  };
+
   return (
-    <div className="bg-app-hover rounded-sm border border-app-border p-4 space-y-4">
+    <>
+      {renderDeviceTitlePortal()}
+      {renderDeviceDetailsPortal()}
+      <div className="space-y-4">
+      <div className="flex flex-col lg:flex-row gap-6">
+        <div className="flex-1 min-w-0 space-y-4">
       {!supportsFileSystemAccess() &&
         !useCompanionApp &&
         !(isJellyfinPreset && jellyfinExportMode === "download") && (
@@ -2553,33 +3095,58 @@ export function DeviceSyncPanel({
           </>
         )}
 
-        <div>
-          <label className="block text-app-primary text-xs font-medium mb-2 uppercase tracking-wider">
-            Device Name
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={deviceLabel}
-              onChange={(e) => setDeviceLabel(e.target.value)}
-              placeholder="My Walkman"
-              className="flex-1 px-4 py-2 bg-app-surface text-app-primary border border-app-border rounded-sm focus:outline-none focus:ring-2 focus:ring-accent-primary text-sm"
-            />
-            <button
-              type="button"
-              onClick={handleSaveDeviceSettings}
-              disabled={isSavingSettings || isSyncing}
-              className="flex items-center gap-1.5 px-3 py-2 bg-accent-primary text-white rounded-sm hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium shrink-0"
-            >
-              {isSavingSettings ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Save className="size-4" />
-              )}
-              Save
-            </button>
+        {(!deviceDetailsSlotId || !deviceProfileOverride) && (
+          <div className="flex items-center gap-1.5 min-w-0 group">
+            {isEditingDeviceName ? (
+              <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                <input
+                  type="text"
+                  value={editingDeviceName}
+                  onChange={(e) => setEditingDeviceName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveDeviceName();
+                    else if (e.key === "Escape") handleCancelEditDeviceName();
+                  }}
+                  placeholder="My device"
+                  className="flex-1 px-2 py-1 bg-app-surface text-app-primary rounded-sm border border-accent-primary focus:outline-none focus:ring-1 focus:ring-accent-primary text-sm"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => handleSaveDeviceName()}
+                  disabled={isSavingSettings || isSyncing}
+                  className="p-1 hover:bg-accent-primary/20 text-accent-primary rounded-sm transition-colors shrink-0 disabled:opacity-50"
+                  aria-label="Save"
+                >
+                  <Check className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelEditDeviceName}
+                  className="p-1 hover:bg-app-surface-hover text-app-secondary rounded-sm transition-colors shrink-0"
+                  aria-label="Cancel"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                <span className="text-app-primary text-sm font-medium truncate">
+                  {deviceLabel || "Device"}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleStartEditDeviceName}
+                  className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-app-surface rounded-sm transition-all text-app-secondary hover:text-accent-primary shrink-0"
+                  aria-label="Edit device name"
+                  title="Edit device name"
+                >
+                  <Edit className="size-3" />
+                </button>
+              </div>
+            )}
           </div>
-        </div>
+        )}
 
         {isJellyfinPreset && (
           <>
@@ -2660,7 +3227,7 @@ export function DeviceSyncPanel({
           </div>
         )}
 
-        {isIpodPreset && (
+        {isIpodPreset && (!deviceDetailsSlotId || !deviceProfileOverride) && (
           <div className="md:col-span-2">
             <label className="block text-app-primary text-xs font-medium mb-2 uppercase tracking-wider">
               iPod Detection & Setup
@@ -2683,23 +3250,23 @@ export function DeviceSyncPanel({
                 type="button"
                 onClick={handleDetectIpodUsb}
                 disabled={!supportsWebUSB()}
-                className="px-3 py-2 bg-app-surface text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover text-sm disabled:opacity-50"
+                className="inline-flex items-center px-2 py-1 rounded-sm border border-app-border text-[11px] text-app-primary bg-app-surface hover:bg-app-surface-hover disabled:opacity-50"
               >
-                Detect iPod (WebUSB)
+                Detect iPod
               </button>
               <button
                 type="button"
                 onClick={handleSelectDeviceFolder}
-                className="flex items-center gap-2 px-3 py-2 bg-app-surface text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover text-sm"
+                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-sm border border-app-border text-[11px] text-app-primary bg-app-surface hover:bg-app-surface-hover"
               >
-                <HardDrive className="size-4" />
+                <HardDrive className="size-3.5" />
                 {deviceHandleRef ? "Change iPod Folder" : "Select iPod Folder"}
               </button>
               <button
                 type="button"
                 onClick={handleRunIpodSetup}
                 disabled={!supportsWebUSB() || !deviceHandleRef || ipodSetupStatus === "checking"}
-                className="px-3 py-2 bg-app-surface text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover text-sm disabled:opacity-50"
+                className="inline-flex items-center px-2 py-1 rounded-sm border border-app-border text-[11px] text-app-primary bg-app-surface hover:bg-app-surface-hover disabled:opacity-50"
               >
                 {ipodSetupStatus === "checking" ? "Setting up..." : "Run iPod Setup"}
               </button>
@@ -2707,19 +3274,36 @@ export function DeviceSyncPanel({
                 <button
                   type="button"
                   onClick={handleSkipIpodSetup}
-                  className="px-3 py-2 bg-app-surface text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover text-sm"
+                  className="inline-flex items-center px-2 py-1 rounded-sm border border-app-border text-[11px] text-app-primary bg-app-surface hover:bg-app-surface-hover"
                 >
                   Skip Setup
                 </button>
               )}
+              <button
+                type="button"
+                onClick={handleCheckWriteAccess}
+                disabled={!deviceHandleRef || isCheckingWriteAccess || useCompanionApp}
+                className="inline-flex items-center px-2 py-1 rounded-sm border border-app-border text-[11px] text-app-primary bg-app-surface hover:bg-app-surface-hover disabled:opacity-50"
+              >
+                {isCheckingWriteAccess ? "Checking write access..." : "Check write access"}
+              </button>
+              {writeAccessStatus === "ok" && (
+                <Check className="size-4 text-green-500 shrink-0" aria-label="Writable" />
+              )}
+              {writeAccessStatus === "read-only" && (
+                <span className="text-[11px] text-yellow-500">Read-only</span>
+              )}
+              {writeAccessStatus === "error" && (
+                <X className="size-4 text-red-500 shrink-0" aria-label="Check failed" />
+              )}
               {ipodSetupStatus === "ready" && (
-                <span className="text-xs text-green-500">Ready</span>
+                <span className="text-[11px] text-green-500">Ready</span>
               )}
               {ipodSetupStatus === "needs_setup" && (
-                <span className="text-xs text-yellow-500">Setup required</span>
+                <span className="text-[11px] text-yellow-500">Setup required</span>
               )}
               {ipodSetupStatus === "error" && (
-                <span className="text-xs text-red-500">Setup failed</span>
+                <span className="text-[11px] text-red-500">Setup failed</span>
               )}
             </div>
             {(ipodUsbInfo || ipodKnownDevices.length > 0 || ipodDeviceInfo) && (
@@ -2777,38 +3361,35 @@ export function DeviceSyncPanel({
                       )}
                   </div>
                 )}
-                {ipodKnownDevices.length > 0 && (
-                  <div>
-                    Known iPods: {ipodKnownDevices.map((device) => device.productName).join(", ")}
-                  </div>
-                )}
               </div>
             )}
             <div className="mt-3 text-xs text-app-tertiary">
               <div>
-                Step 1: Detect iPod (WebUSB){" "}
+                1. Detect iPod (WebUSB){" "}
                 {ipodUsbInfo ? <span className="text-green-500">✓</span> : null}
               </div>
               <div>
-                Step 2: Select iPod folder{" "}
+                2. Select iPod folder{" "}
                 {deviceHandleRef ? <span className="text-green-500">✓</span> : null}
               </div>
               <div>
-                Step 3: Run iPod setup{" "}
+                3. Run iPod setup{" "}
                 {ipodSetupStatus === "ready" ? (
                   <span className="text-green-500">✓</span>
                 ) : null}
               </div>
-              <div>Step 4: Sync playlist</div>
             </div>
           </div>
         )}
 
         {isIpodPreset && (
-          <div className="md:col-span-2">
-            <label className="block text-app-primary text-xs font-medium mb-2 uppercase tracking-wider">
-              iPod Collection Sync
-            </label>
+          <div className="md:col-span-2 space-y-4">
+            <div>
+              <h3 className="text-app-primary text-xl font-semibold">iPod Collection Sync</h3>
+              <p className="text-app-secondary text-sm mt-1">
+                Select tracks, albums, and artists to sync to your device.
+              </p>
+            </div>
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <label className="block text-app-primary text-xs font-medium mb-2 uppercase tracking-wider">
@@ -2827,19 +3408,26 @@ export function DeviceSyncPanel({
                   {collections.length === 0 && <option value="">No collections found</option>}
                 </select>
               </div>
-              <div>
-                <label className="block text-app-primary text-xs font-medium mb-2 uppercase tracking-wider">
-                  Track Search
-                </label>
-                <input
-                  type="text"
-                  value={collectionTrackSearch}
-                  onChange={(e) => setCollectionTrackSearch(e.target.value)}
-                  placeholder="Filter by title, artist, album"
-                  className="w-full px-4 py-2 bg-app-surface text-app-primary border border-app-border rounded-sm focus:outline-none focus:ring-2 focus:ring-accent-primary text-sm"
-                />
-              </div>
             </div>
+            <Input
+              value={collectionTrackSearch}
+              onChange={(e) => setCollectionTrackSearch(e.target.value)}
+              placeholder="Search: title, artist, album, genre, BPM, mood, intensity…"
+            />
+            <Tabs
+              value={collectionContentTab}
+              onValueChange={(v) => setCollectionContentTab(v as "tracks" | "albums" | "artists")}
+              items={[
+                {
+                  value: "tracks",
+                  label: `${visibleCollectionTracks.length} tracks`,
+                  icon: <Music className="size-4" />,
+                },
+                { value: "albums", label: `${albumCount} albums` },
+                { value: "artists", label: `${artistNames.length} artists` },
+              ]}
+              className="mb-2"
+            />
             {collectionTracksStatus === "loading" && (
               <div className="text-xs text-app-tertiary mt-2">Loading collection tracks...</div>
             )}
@@ -2848,264 +3436,350 @@ export function DeviceSyncPanel({
             )}
             {collectionTracksStatus === "ready" && (
               <>
+                {collectionContentTab === "albums" && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                    {albumList.map(({ artist, album, trackIds, trackCount }) => {
+                      const allSelected = trackIds.every((id) =>
+                        selectedCollectionTrackIds.has(id)
+                      );
+                      const someSelected = trackIds.some((id) =>
+                        selectedCollectionTrackIds.has(id)
+                      );
+                      return (
+                        <Card
+                          key={`${artist}-${album}`}
+                          padding="none"
+                          className={`overflow-hidden ${
+                            someSelected || allSelected
+                              ? "border-accent-primary ring-1 ring-accent-primary"
+                              : ""
+                          }`}
+                        >
+                          <div className="aspect-square bg-app-hover flex items-center justify-center relative">
+                            <Music className="size-12 text-app-tertiary" />
+                            <label className="absolute top-2 right-2">
+                              <input
+                                type="checkbox"
+                                checked={allSelected}
+                                onChange={(e) => {
+                                  const next = new Set(selectedCollectionTrackIds);
+                                  if (e.target.checked) {
+                                    trackIds.forEach((id) => next.add(id));
+                                  } else {
+                                    trackIds.forEach((id) => next.delete(id));
+                                  }
+                                  setSelectedCollectionTrackIds(next);
+                                }}
+                                className="rounded border-app-border"
+                              />
+                            </label>
+                          </div>
+                          <div className="p-2">
+                            <div className="text-app-primary font-semibold text-sm truncate">
+                              {album}
+                            </div>
+                            <div className="text-app-secondary text-xs truncate">{artist}</div>
+                            <div className="text-app-tertiary text-xs">{trackCount} tracks</div>
+                          </div>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+                {collectionContentTab === "artists" && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                    {artistNames.map((artist) => {
+                      const albums = groupedTracks[artist];
+                      const albumCount = Object.keys(albums).length;
+                      const trackIds = Object.values(albums).flat().map((t) => t.trackFileId);
+                      const trackCount = trackIds.length;
+                      const allSelected = trackIds.every((id) =>
+                        selectedCollectionTrackIds.has(id)
+                      );
+                      return (
+                        <Card
+                          key={artist}
+                          padding="none"
+                          className={`overflow-hidden ${
+                            allSelected ? "border-accent-primary ring-1 ring-accent-primary" : ""
+                          }`}
+                        >
+                          <div className="aspect-square bg-app-hover flex items-center justify-center relative rounded-t-sm">
+                            <div className="size-16 rounded-full bg-app-surface flex items-center justify-center text-app-primary font-semibold text-lg">
+                              {artist.charAt(0).toUpperCase()}
+                            </div>
+                            <label className="absolute top-2 right-2">
+                              <input
+                                type="checkbox"
+                                checked={allSelected}
+                                onChange={(e) => {
+                                  const next = new Set(selectedCollectionTrackIds);
+                                  if (e.target.checked) {
+                                    trackIds.forEach((id) => next.add(id));
+                                  } else {
+                                    trackIds.forEach((id) => next.delete(id));
+                                  }
+                                  setSelectedCollectionTrackIds(next);
+                                }}
+                                className="rounded border-app-border"
+                              />
+                            </label>
+                          </div>
+                          <div className="p-2">
+                            <div className="text-app-primary font-semibold text-sm truncate">
+                              {artist}
+                            </div>
+                            <div className="text-app-tertiary text-xs">
+                              {albumCount} albums • {trackCount} tracks
+                            </div>
+                          </div>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+                {collectionContentTab === "tracks" && (
+                  <>
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-app-tertiary">
                   <span>
-                    Showing {visibleCollectionTracks.length} of {filteredCollectionTracks.length}{" "}
-                    tracks.
+                    {filteredCollectionTracks.length > collectionTracksPageSize
+                      ? `${(collectionTracksCurrentPage - 1) * collectionTracksPageSize + 1}–${Math.min(
+                          collectionTracksCurrentPage * collectionTracksPageSize,
+                          filteredCollectionTracks.length
+                        )} of ${filteredCollectionTracks.length}`
+                      : `${filteredCollectionTracks.length} track${filteredCollectionTracks.length === 1 ? "" : "s"}`}
                   </span>
                   <span>Selected {selectedCollectionTrackIds.size}.</span>
-                  {filteredCollectionTracks.length > visibleCollectionTracks.length && (
-                    <span>Refine search to see more.</span>
-                  )}
                 </div>
-                <div className="mt-3 grid gap-3 md:grid-cols-3">
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-app-tertiary">View</span>
-                    <button
-                      type="button"
-                      onClick={() => setCollectionViewMode("recent")}
-                      className={`px-3 py-1 rounded-sm border ${
-                        collectionViewMode === "recent"
-                          ? "bg-app-surface text-app-primary border-app-border"
-                          : "text-app-tertiary border-app-border/60"
-                      }`}
-                    >
-                      Recent to sync
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCollectionViewMode("all")}
-                      className={`px-3 py-1 rounded-sm border ${
-                        collectionViewMode === "all"
-                          ? "bg-app-surface text-app-primary border-app-border"
-                          : "text-app-tertiary border-app-border/60"
-                      }`}
-                    >
-                      All tracks
-                    </button>
-                  </div>
-                  <div>
-                    <label className="block text-app-tertiary text-[11px] uppercase tracking-wider mb-1">
-                      Filter by artist
-                    </label>
-                    <select
-                      value={selectedArtistFilter}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setSelectedArtistFilter(value);
-                        if (value !== "all") {
-                          artistScrollRefs.current[value]?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start",
-                          });
-                        }
-                      }}
-                      className="w-full px-2 py-1 bg-app-surface text-app-primary border border-app-border rounded-sm text-xs"
-                    >
-                      <option value="all">All artists</option>
-                      {artistNames.map((artist) => (
-                        <option key={artist} value={artist}>
-                          {artist}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-app-tertiary text-[11px] uppercase tracking-wider mb-1">
-                      Jump to artist
-                    </label>
-                    <select
-                      value=""
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        if (value) {
-                          artistScrollRefs.current[value]?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start",
-                          });
-                        }
-                      }}
-                      className="w-full px-2 py-1 bg-app-surface text-app-primary border border-app-border rounded-sm text-xs"
-                    >
-                      <option value="">Select artist</option>
-                      {artistNames.map((artist) => (
-                        <option key={artist} value={artist}>
-                          {artist}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                {collectionViewMode === "recent" && ipodTrackIndexStatus !== "ready" && (
-                  <div className="mt-2 text-xs text-yellow-500">
-                    Connect the iPod folder to compare tracks and show recent additions.
-                  </div>
-                )}
-                {ipodTrackIndexStatus === "error" && (
-                  <div className="mt-2 text-xs text-red-500">{ipodTrackIndexError}</div>
-                )}
-                <div className="mt-3 border border-app-border rounded-sm max-h-72 overflow-y-auto bg-app-surface">
-                  {artistNames.length === 0 && (
-                    <div className="px-3 py-2 text-xs text-app-tertiary">
-                      No tracks match your search.
-                    </div>
-                  )}
-                  {artistNames.map((artist) => {
-                    const albums = groupedTracks[artist];
-                    const artistTrackIds = Object.values(albums)
-                      .flat()
-                      .map((track) => track.trackFileId);
-                    return (
-                      <div
-                        key={artist}
-                        ref={(node) => {
-                          artistScrollRefs.current[artist] = node;
-                        }}
-                      >
-                        <div className="sticky top-0 z-10 bg-app-surface px-3 py-2 border-b border-app-border/60 flex items-center justify-between">
-                          <span className="text-xs font-semibold text-app-primary">{artist}</span>
-                          <div className="flex items-center gap-2 text-[11px] text-app-tertiary">
-                            <button
-                              type="button"
-                              onClick={() => addSelection(artistTrackIds)}
-                              className="px-2 py-1 border border-app-border rounded-sm hover:bg-app-surface-hover"
-                            >
-                              Select artist
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => removeSelection(artistTrackIds)}
-                              className="px-2 py-1 border border-app-border rounded-sm hover:bg-app-surface-hover"
-                            >
-                              Clear artist
-                            </button>
-                          </div>
-                        </div>
-                        {Object.keys(albums).map((album) => {
-                          const albumTracks = albums[album];
-                          const albumTrackIds = albumTracks.map((track) => track.trackFileId);
-                          return (
-                            <div key={`${artist}-${album}`}>
-                              <div className="sticky top-8 z-10 bg-app-surface px-3 py-2 border-b border-app-border/40 flex items-center justify-between">
-                                <span className="text-xs text-app-secondary">{album}</span>
-                                <div className="flex items-center gap-2 text-[11px] text-app-tertiary">
-                                  <button
-                                    type="button"
-                                    onClick={() => addSelection(albumTrackIds)}
-                                    className="px-2 py-1 border border-app-border rounded-sm hover:bg-app-surface-hover"
-                                  >
-                                    Select album
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => removeSelection(albumTrackIds)}
-                                    className="px-2 py-1 border border-app-border rounded-sm hover:bg-app-surface-hover"
-                                  >
-                                    Clear album
-                                  </button>
-                                </div>
-                              </div>
-                              {albumTracks.map((track) => {
-                                const checked = selectedCollectionTrackIds.has(track.trackFileId);
-                                return (
-                                  <label
-                                    key={track.trackFileId}
-                                    className="flex items-start gap-2 px-3 py-2 text-xs text-app-primary border-b border-app-border/40 last:border-b-0"
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={(e) => {
-                                        const next = new Set(selectedCollectionTrackIds);
-                                        if (e.target.checked) {
-                                          next.add(track.trackFileId);
-                                        } else {
-                                          next.delete(track.trackFileId);
-                                        }
-                                        setSelectedCollectionTrackIds(next);
-                                      }}
-                                      className="rounded border-app-border mt-0.5"
-                                    />
-                                    <span className="flex-1">
-                                      {track.title}
-                                      {track.onDevice === true && (
-                                        <span className="ml-2 text-[10px] text-green-500">
-                                          On iPod
-                                        </span>
-                                      )}
-                                      {track.onDevice === false && (
-                                        <span className="ml-2 text-[10px] text-yellow-500">
-                                          New
-                                        </span>
-                                      )}
-                                    </span>
-                                    {track.addedAt && (
-                                      <span className="text-[10px] text-app-tertiary">
-                                        {formatAddedAt(track.addedAt)}
-                                      </span>
-                                    )}
-                                  </label>
+                <div className="app-table-wrap mt-2 overflow-x-auto bg-transparent border-0 shadow-none">
+                  <table className="app-table">
+                    <thead>
+                      <tr>
+                        <th className="w-10">
+                          <input
+                            type="checkbox"
+                            ref={collectionTableHeaderCheckboxRef}
+                            checked={allVisibleCollectionSelected}
+                            onChange={() => {
+                              if (allVisibleCollectionSelected) {
+                                setSelectedCollectionTrackIds(new Set());
+                              } else {
+                                setSelectedCollectionTrackIds(
+                                  new Set(
+                                    paginatedCollectionTracks.map(
+                                      (t: CollectionTrackWithStatus) => t.trackFileId
+                                    )
+                                  )
                                 );
-                              })}
-                            </div>
+                              }
+                            }}
+                            className="rounded border-app-border"
+                            aria-label="Select visible"
+                          />
+                        </th>
+                        <th className="w-10">Play</th>
+                        <th>Title</th>
+                        <th>Artist</th>
+                        <th>Album</th>
+                        <th>Genre</th>
+                        <th className="w-16">Duration</th>
+                        <th className="w-14">BPM</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedCollectionTracks.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="p-4 text-app-tertiary text-center text-xs">
+                            No tracks match your search.
+                          </td>
+                        </tr>
+                      ) : (
+                        paginatedCollectionTracks.map((track: CollectionTrackWithStatus) => {
+                          const checked = selectedCollectionTrackIds.has(track.trackFileId);
+                          const durationStr =
+                            track.durationSeconds != null
+                              ? `${Math.floor(track.durationSeconds / 60)}:${String(
+                                  track.durationSeconds % 60
+                                ).padStart(2, "0")}`
+                              : "";
+                          const trackInfo = {
+                            title: track.title,
+                            artist: track.artist ?? "Unknown Artist",
+                            album: track.album,
+                          };
+                          return (
+                            <Fragment key={track.trackFileId}>
+                              <tr>
+                                <td>
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) => {
+                                      const next = new Set(selectedCollectionTrackIds);
+                                      if (e.target.checked) next.add(track.trackFileId);
+                                      else next.delete(track.trackFileId);
+                                      setSelectedCollectionTrackIds(next);
+                                    }}
+                                    className="rounded border-app-border"
+                                    aria-label={`Select ${track.title}`}
+                                  />
+                                </td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleCollectionTrackPlayClick(track.trackFileId, trackInfo)
+                                    }
+                                    disabled={collectionSearchingTrackId === track.trackFileId}
+                                    className="flex items-center justify-center size-8 text-app-tertiary hover:text-accent-primary transition-colors shrink-0 cursor-pointer disabled:opacity-50"
+                                    aria-label={
+                                      collectionPlayingTrackId === track.trackFileId
+                                        ? "Pause"
+                                        : "Play"
+                                    }
+                                    title={
+                                      collectionPlayingTrackId === track.trackFileId
+                                        ? "Pause"
+                                        : "Play 30-second preview"
+                                    }
+                                  >
+                                    {collectionSearchingTrackId === track.trackFileId ? (
+                                      <Loader2 className="size-4 animate-spin" />
+                                    ) : collectionPlayingTrackId === track.trackFileId ? (
+                                      <Pause className="size-4" />
+                                    ) : (
+                                      <Play className="size-4" />
+                                    )}
+                                  </button>
+                                </td>
+                                <td className="cell-primary min-w-0 max-w-[14rem]">
+                                  <span className="break-words">
+                                    {track.title}
+                                    {track.onDevice === true && (
+                                      <span className="ml-1 text-[10px] text-green-500">On iPod</span>
+                                    )}
+                                    {track.onDevice === false && (
+                                      <span className="ml-1 text-[10px] text-yellow-500">New</span>
+                                    )}
+                                  </span>
+                                </td>
+                                <td className="cell-secondary min-w-0 max-w-[10rem] break-words">
+                                  {track.artist ?? "—"}
+                                </td>
+                                <td className="cell-secondary min-w-0 max-w-[10rem] break-words">
+                                  {track.album ?? "—"}
+                                </td>
+                                <td className="cell-tertiary min-w-0 max-w-[8rem] break-words">
+                                  {track.genre ?? "—"}
+                                </td>
+                                <td className="cell-tertiary tabular-nums">{durationStr || "—"}</td>
+                                <td className="cell-tertiary tabular-nums">
+                                  {track.bpm != null ? track.bpm : "—"}
+                                </td>
+                              </tr>
+                            </Fragment>
                           );
-                        })}
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setSelectedCollectionTrackIds(
-                        new Set(visibleCollectionTracks.map((track) => track.trackFileId))
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                  {/* Hidden audio players so refs work without adding table rows */}
+                  <div className="sr-only" aria-hidden="true">
+                    {paginatedCollectionTracks
+                      .filter((t: CollectionTrackWithStatus) =>
+                        collectionHasSampleResult(t.trackFileId)
                       )
-                    }
-                    className="px-3 py-2 bg-app-surface text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover text-sm"
-                  >
-                    Select visible
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedCollectionTrackIds(new Set())}
-                    className="px-3 py-2 bg-app-surface text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover text-sm"
-                  >
-                    Clear selection
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSyncSelectedTracks}
-                    disabled={isSyncing || selectedCollectionTrackIds.size === 0}
-                    className="px-3 py-2 bg-accent-primary text-white rounded-sm hover:bg-accent-primary/90 text-sm disabled:opacity-50"
-                  >
-                    Sync selected to iPod
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleMirrorCollectionSync}
-                    disabled={isSyncing || collectionTracks.length === 0}
-                    className="px-3 py-2 bg-app-surface text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover text-sm disabled:opacity-50"
-                  >
-                    Mirror collection to iPod
-                  </button>
+                      .map((track: CollectionTrackWithStatus) => (
+                        <InlineAudioPlayer
+                          key={track.trackFileId}
+                          ref={(ref) =>
+                            registerCollectionTrackAudioRef(track.trackFileId, ref)
+                          }
+                          trackFileId={track.trackFileId}
+                          sampleResult={
+                            collectionGetSampleResult(track.trackFileId) ?? null
+                          }
+                          autoPlay={
+                            collectionPlayingTrackId === track.trackFileId &&
+                            !collectionSearchingTrackId &&
+                            collectionHasSampleResult(track.trackFileId)
+                          }
+                          onPlay={() => {
+                            collectionSetPlayingTrack(track.trackFileId);
+                            collectionSetSearchingTrack(null);
+                          }}
+                          onPause={() => collectionClearPlayingTrack()}
+                          onEnded={() => collectionClearPlayingTrack()}
+                          onError={() => {
+                            collectionSetTrackError(track.trackFileId, "Playback failed");
+                            collectionClearPlayingTrack();
+                            collectionSetSearchingTrack(null);
+                          }}
+                        />
+                      ))}
+                  </div>
                 </div>
-                <label className="flex items-start gap-2 text-app-primary text-xs mt-3">
-                  <input
-                    type="checkbox"
-                    checked={mirrorDeleteFromDevice}
-                    onChange={(e) => setMirrorDeleteFromDevice(e.target.checked)}
-                    className="rounded border-app-border mt-0.5"
-                  />
-                  <span>Also delete removed tracks from the iPod storage.</span>
-                </label>
-                <p className="text-app-tertiary text-xs mt-2">
-                  Mirror sync removes tracks from the playlist that are not in the collection.
-                </p>
-                {mirrorDeleteFromDevice && (
-                  <p className="text-yellow-500 text-xs mt-1">
-                    Files deleted from iPod storage may still be referenced by other playlists.
-                  </p>
+                {filteredCollectionTracks.length > collectionTracksPageSize && (
+                  <div className="flex flex-col gap-2 py-3 border-t border-app-border md:flex-row md:items-center md:justify-between">
+                    <div className="flex items-center gap-2 text-xs text-app-tertiary">
+                      <span className="tabular-nums">
+                        {`${(collectionTracksCurrentPage - 1) * collectionTracksPageSize + 1}–${Math.min(
+                          collectionTracksCurrentPage * collectionTracksPageSize,
+                          filteredCollectionTracks.length
+                        )} of ${filteredCollectionTracks.length}`}
+                      </span>
+                      <label className="flex items-center gap-1">
+                        <span>Per page</span>
+                        <select
+                          value={collectionTracksPageSize}
+                          onChange={(e) => {
+                            setCollectionTracksPageSize(Number(e.target.value));
+                            setCollectionTracksCurrentPage(1);
+                          }}
+                          className="px-1.5 py-1 text-xs bg-app-hover text-app-primary rounded-sm border border-app-border focus:outline-none focus:border-accent-primary"
+                          aria-label="Tracks per page"
+                        >
+                          {[25, 50, 100, 200].map((n) => (
+                            <option key={n} value={n}>
+                              {n}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <nav
+                      className="flex items-center gap-1 justify-end"
+                      aria-label="Pagination"
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCollectionTracksCurrentPage((p) => Math.max(1, p - 1))
+                        }
+                        disabled={collectionTracksCurrentPage <= 1}
+                        className="px-2 py-1 text-xs bg-app-hover text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Prev
+                      </button>
+                      <span className="px-2 py-1 text-xs text-app-secondary tabular-nums">
+                        {collectionTracksCurrentPage}/{totalCollectionPages}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCollectionTracksCurrentPage((p) =>
+                            Math.min(totalCollectionPages, p + 1)
+                          )
+                        }
+                        disabled={collectionTracksCurrentPage >= totalCollectionPages}
+                        className="px-2 py-1 text-xs bg-app-hover text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Next
+                      </button>
+                    </nav>
+                  </div>
+                )}
+                  </>
                 )}
               </>
             )}
@@ -3380,202 +4054,320 @@ export function DeviceSyncPanel({
         )}
       </div>
 
-      <div className="mt-4 p-3 bg-app-surface border border-app-border rounded-sm text-xs text-app-secondary space-y-2">
-        <div className="text-app-primary font-medium uppercase tracking-wider text-[11px]">
-          Diagnostics
         </div>
-        <div>
-          <span className="text-app-tertiary">Device profile:</span>{" "}
-          {selectedDeviceProfile?.label || "New device"}
-        </div>
-        {selectedDeviceProfile?.lastSyncAt && (
-          <div>
-            <span className="text-app-tertiary">Last sync:</span>{" "}
-            {new Date(selectedDeviceProfile.lastSyncAt).toLocaleString()}
-          </div>
-        )}
-        <div>
-          <span className="text-app-tertiary">Scan status:</span>{" "}
-          {deviceScanStatus === "idle" ? "Not scanned" : deviceScanStatus}
-        </div>
-        <div className="text-app-tertiary">
-          Troubleshooting: reselect the device folder if permissions were revoked or the device was unplugged.
-        </div>
-        {selectedDeviceProfile?.label?.toLowerCase().includes("zune") && (
-          <div className="text-yellow-500">
-            Zune devices often use MTP and may require a companion app for full sync.
-          </div>
-        )}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleCheckWriteAccess}
-            disabled={!deviceHandleRef || isCheckingWriteAccess || useCompanionApp}
-            className="px-2 py-1 rounded-sm border border-app-border text-[11px] text-app-primary hover:bg-app-hover disabled:opacity-50"
-          >
-            {isCheckingWriteAccess ? "Checking write access..." : "Check write access"}
-          </button>
-          {writeAccessStatus === "ok" && (
-            <span className="text-green-500">Writable</span>
-          )}
-          {writeAccessStatus === "read-only" && (
-            <span className="text-yellow-500">Read-only</span>
-          )}
-          {writeAccessStatus === "error" && (
-            <span className="text-red-500">Check failed</span>
-          )}
-        </div>
-        {writeAccessMessage && (
-          <div className="text-app-tertiary">{writeAccessMessage}</div>
-        )}
-        {deviceMatchStats && deviceMatchStats.total > 0 && (
-          <div className="text-app-tertiary">
-            Path matches: {deviceMatchStats.matched}/{deviceMatchStats.total} (
-            {(deviceMatchStats.ratio * 100).toFixed(0)}%)
-          </div>
-        )}
-        {pathValidationStatus !== "idle" && (
-          <div className="text-app-tertiary">
-            <span>Path validation:</span>{" "}
-            {pathValidationStatus === "validating" && "Checking playlist paths..."}
-            {pathValidationStatus === "error" &&
-              `Failed (${pathValidationError || "Unknown error"})`}
-            {pathValidationStatus === "done" && pathValidationResult && (
-              <>
-                {pathValidationPlaylistTitle ? ` ${pathValidationPlaylistTitle} •` : ""}{" "}
-                {pathValidationResult.missing}/{pathValidationResult.total} missing
-                {pathValidationResult.missingSamples.length > 0 && (
-                  <span>
-                    {" "}
-                    (samples: {pathValidationResult.missingSamples.join(", ")})
-                  </span>
-                )}
-              </>
-            )}
-          </div>
-        )}
-      </div>
 
-      {playlists && playlists.length > 0 && (
-        <div className="bg-app-surface border border-app-border rounded-sm p-4 space-y-3 text-sm">
-          <div className="flex items-center justify-between">
-            <div className="text-app-primary font-medium">Saved Playlists</div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setSelectedPlaylistIds(playlists.map((item) => item.playlist.id))}
-                className="text-xs text-accent-primary hover:text-accent-hover"
-              >
-                Select all
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedPlaylistIds([])}
-                className="text-xs text-app-tertiary hover:text-app-secondary"
-              >
-                Clear
-              </button>
+        <aside className="w-full lg:w-80 lg:max-w-sm shrink-0 sticky top-0 self-start">
+          <div className="rounded-lg bg-app-surface p-4 space-y-4">
+          {/* Device header: icon, name, connection status */}
+          <div className="flex items-start gap-3">
+            <div className="size-10 rounded-md bg-accent-primary flex items-center justify-center shrink-0 text-white">
+              {isIpodPreset ? (
+                <Smartphone className="size-5" />
+              ) : devicePreset === "jellyfin" ? (
+                <JellyfinIcon className="size-6" />
+              ) : devicePreset === "walkman" ? (
+                <WalkmanIcon className="size-6" />
+              ) : (
+                <Usb className="size-5" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-app-primary font-semibold text-lg truncate">
+                {selectedDeviceProfile?.label || deviceLabel || "New device"}
+              </div>
+              <div className="text-xs mt-0.5 flex items-center gap-2">
+                {deviceHandleRef ? (
+                  <>
+                    <Check className="size-3.5 text-green-500 shrink-0" />
+                    <span className="text-green-500">Connected</span>
+                  </>
+                ) : (
+                  <span className="text-app-tertiary">Not connected</span>
+                )}
+              </div>
             </div>
           </div>
-          <div className="max-h-64 overflow-y-auto space-y-2">
-            {playlists.map((item) => {
-              const isChecked = selectedPlaylistIds.includes(item.playlist.id);
-              return (
-                <label
-                  key={item.playlist.id}
-                  className="flex items-start gap-2 cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedPlaylistIds((prev) => [...prev, item.playlist.id]);
-                      } else {
-                        setSelectedPlaylistIds((prev) =>
-                          prev.filter((id) => id !== item.playlist.id)
-                        );
-                      }
-                    }}
-                    className="mt-1 rounded border-app-border"
-                  />
-                  <div>
-                    <div className="text-app-primary font-medium">
-                      {item.playlist.title}
-                    </div>
-                    <div className="text-app-tertiary text-xs">
-                      Tracks: {item.playlist.trackFileIds.length}
-                      {item.collectionName ? ` • ${item.collectionName}` : ""}
-                    </div>
-                  </div>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
-      <div className="flex items-center justify-between gap-3 pt-2">
-        <p className="text-app-tertiary text-xs">
-          {isIpodPreset
-            ? "iPod sync uses iTunesDB and may require one-time SysInfo setup (WebUSB)."
-            : isJellyfinPreset
-            ? "Jellyfin export uses container paths and avoids ../ traversal."
-            : "USB sync writes playlists directly to your device."}
-        </p>
-        {deviceMatchStats &&
-          deviceMatchStats.total > 0 &&
-          deviceMatchStats.ratio < 0.8 && (
-            <span className="text-xs text-yellow-500">
-              Low path match rate. Consider rescanning or adjusting scan roots.
-            </span>
-          )}
-        {isIpodPreset && (
-          <label className="flex items-start gap-2 text-app-primary text-xs mt-2">
-            <input
-              type="checkbox"
-              checked={overwriteExistingPlaylistOnIpod}
-              onChange={(e) => setOverwriteExistingPlaylistOnIpod(e.target.checked)}
-              className="rounded border-app-border mt-0.5"
-            />
-            <span>Replace existing playlist on device if same name.</span>
-          </label>
-        )}
-        <div className="flex items-center gap-2">
-          {isJellyfinPreset ? (
-            <button
-              onClick={handleExportForJellyfin}
-              disabled={
-                isSyncing ||
-                (jellyfinExportMode === "library-root" && !supportsFileSystemAccess())
-              }
-              className="flex items-center gap-2 px-4 py-2 bg-accent-primary hover:bg-accent-hover text-white rounded-sm transition-colors disabled:opacity-50 text-sm"
-            >
-              <Usb className="size-4" />
-              {jellyfinExportMode === "library-root"
-                ? "Save to Library"
-                : "Export for Jellyfin"}
-            </button>
-          ) : (
-            <button
-              onClick={handleDeviceSync}
-              disabled={isSyncing || (!supportsFileSystemAccess() && !useCompanionApp)}
-              className="flex items-center gap-2 px-4 py-2 bg-accent-primary hover:bg-accent-hover text-white rounded-sm transition-colors disabled:opacity-50 text-sm"
-            >
-              {isSyncing ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  {syncPhase === "writing" ? "Writing..." : "Syncing..."}
-                </>
+          {/* Device Capacity card */}
+          <Card padding="md">
+            <div className="text-app-tertiary text-xs font-medium uppercase tracking-wider mb-1.5">
+              Device capacity
+            </div>
+            {ipodDeviceInfo?.capacity_gb != null &&
+            ipodTrackIndexStatus === "ready" &&
+            ipodTrackIndex.usedBytes != null ? (
+              <>
+                <div className="flex items-baseline justify-between gap-2 text-sm">
+                  <span className="text-app-primary font-medium">
+                    {(ipodTrackIndex.usedBytes / 1e9).toFixed(1)} GB of{" "}
+                    {ipodDeviceInfo.capacity_gb.toFixed(0)} GB used
+                  </span>
+                  <span className="text-app-primary tabular-nums">
+                    {Math.round(
+                      (ipodTrackIndex.usedBytes / (ipodDeviceInfo.capacity_gb * 1e9)) * 100
+                    )}
+                    %
+                  </span>
+                </div>
+                <div className="mt-1.5 h-1.5 bg-app-hover rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-white rounded-full transition-[width]"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        (ipodTrackIndex.usedBytes / (ipodDeviceInfo.capacity_gb * 1e9)) * 100
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </>
+            ) : (
+              <p className="text-app-tertiary text-xs">Capacity N/A</p>
+            )}
+          </Card>
+
+          {/* Ready to Sync card */}
+          <Card padding="md">
+            <div className="text-app-tertiary text-xs font-medium uppercase tracking-wider mb-2">
+              Ready to Sync
+            </div>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center gap-2">
+                <Music className="size-4 text-accent-primary shrink-0" />
+                <span className="text-app-primary">Tracks</span>
+                <span
+                  className={
+                    selectedTracksCount > 0 ? "text-accent-primary ml-auto font-medium" : "text-app-tertiary ml-auto"
+                  }
+                >
+                  {selectedTracksCount}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Circle className="size-4 text-accent-primary shrink-0" />
+                <span className="text-app-primary">Albums</span>
+                <span
+                  className={
+                    selectedAlbumsCount > 0 ? "text-accent-primary ml-auto font-medium" : "text-app-tertiary ml-auto"
+                  }
+                >
+                  {selectedAlbumsCount}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <User className="size-4 text-accent-primary shrink-0" />
+                <span className="text-app-primary">Artists</span>
+                <span
+                  className={
+                    selectedArtistsCount > 0 ? "text-accent-primary ml-auto font-medium" : "text-app-tertiary ml-auto"
+                  }
+                >
+                  {selectedArtistsCount}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <ListMusic className="size-4 text-accent-primary shrink-0" />
+                <span className="text-app-primary">Playlists</span>
+                <span
+                  className={
+                    selectedPlaylistsCount > 0 ? "text-accent-primary ml-auto font-medium" : "text-app-tertiary ml-auto"
+                  }
+                >
+                  {selectedPlaylistsCount}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 pt-2 mt-2 border-t border-app-border">
+                <span className="text-app-primary font-medium">Total Tracks</span>
+                <span
+                  className={
+                    totalTracksCount > 0 ? "text-accent-primary font-medium ml-auto" : "text-app-tertiary ml-auto"
+                  }
+                >
+                  {totalTracksCount}
+                </span>
+              </div>
+            </div>
+          </Card>
+
+          {/* Action buttons (no card) */}
+          <div className="flex flex-col gap-2">
+              {!isJellyfinPreset && (
+                <Button
+                  variant="secondary"
+                  onClick={handleScanDevicePaths}
+                  disabled={!deviceHandleRef || deviceScanStatus === "scanning"}
+                  className="w-full justify-center"
+                >
+                  {deviceScanStatus === "scanning" ? (
+                    "Scanning..."
+                  ) : deviceScanStatus === "idle" ? (
+                    "Not scanned"
+                  ) : deviceScanStatus === "done" ? (
+                    "Scanned"
+                  ) : deviceScanStatus === "error" ? (
+                    "Scan failed"
+                  ) : (
+                    "Not scanned"
+                  )}
+                </Button>
+              )}
+              {isJellyfinPreset ? (
+                <Button
+                  variant="primary"
+                  leftIcon={<Usb className="size-4" />}
+                  onClick={handleExportForJellyfin}
+                  disabled={
+                    isSyncing ||
+                    (jellyfinExportMode === "library-root" && !supportsFileSystemAccess())
+                  }
+                >
+                  {jellyfinExportMode === "library-root"
+                    ? "Save to Library"
+                    : "Export for Jellyfin"}
+                </Button>
               ) : (
+                <Button
+                  variant="primary"
+                  leftIcon={
+                    isSyncing ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Usb className="size-4" />
+                    )
+                  }
+                  onClick={handleDeviceSync}
+                  disabled={isSyncing || (!supportsFileSystemAccess() && !useCompanionApp)}
+                >
+                  {isSyncing
+                    ? syncPhase === "writing"
+                      ? "Writing..."
+                      : "Syncing..."
+                    : isIpodPreset
+                    ? "Sync to iPod"
+                    : playlists && playlists.length > 0
+                    ? "Sync Selected"
+                    : "Sync Playlist"}
+                </Button>
+              )}
+              {isIpodPreset && (
                 <>
-                  <Usb className="size-4" />
-                  {playlists && playlists.length > 0 ? "Sync Selected" : "Sync Playlist"}
+                  <Button
+                    variant="secondary"
+                    onClick={handleMirrorCollectionSync}
+                    disabled={isSyncing || collectionTracks.length === 0}
+                    className="w-full justify-center"
+                  >
+                    Mirror collection to iPod
+                  </Button>
+                  <div className="space-y-2 text-app-primary text-xs">
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={mirrorDeleteFromDevice}
+                        onChange={(e) => setMirrorDeleteFromDevice(e.target.checked)}
+                        className="rounded border-app-border mt-0.5"
+                      />
+                      <span>Also delete removed tracks from the iPod storage.</span>
+                    </label>
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={overwriteExistingPlaylistOnIpod}
+                        onChange={(e) => setOverwriteExistingPlaylistOnIpod(e.target.checked)}
+                        className="rounded border-app-border mt-0.5"
+                      />
+                      <span>Replace existing playlist on device if same name.</span>
+                    </label>
+                  </div>
                 </>
               )}
-            </button>
+
+            {/* Last synced */}
+            {selectedDeviceProfile?.lastSyncAt && (
+              <div className="pt-2 mt-2 border-t border-app-border text-app-tertiary text-xs">
+                Last synced:{" "}
+                {new Date(selectedDeviceProfile.lastSyncAt).toLocaleString()}
+              </div>
+            )}
+          </div>
+
+          {/* Saved Playlists card */}
+          {playlists && playlists.length > 0 && (
+            <Card padding="md" className="space-y-4 mt-4">
+              <div className="flex items-start gap-3">
+                <div className="size-10 rounded-md bg-accent-primary flex items-center justify-center shrink-0 text-white">
+                  <ListMusic className="size-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-app-primary font-semibold text-base">Saved Playlists</h3>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPlaylistIds(playlists.map((item) => item.playlist.id))}
+                        className="text-xs text-accent-primary hover:text-accent-hover font-medium"
+                      >
+                        Select all
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPlaylistIds([])}
+                        className="text-xs text-accent-primary hover:text-accent-hover font-medium"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-app-tertiary text-xs mt-0.5">Select playlists to sync to device</p>
+                </div>
+              </div>
+              <div className="max-h-64 overflow-y-auto space-y-2">
+                {playlists.map((item) => {
+                  const isChecked = selectedPlaylistIds.includes(item.playlist.id);
+                  return (
+                    <label
+                      key={item.playlist.id}
+                      className={`flex items-start gap-3 cursor-pointer rounded-md p-3 transition-colors border-2 ${
+                        isChecked
+                          ? "bg-app-hover border-accent-primary"
+                          : "border-transparent bg-app-surface hover:bg-app-hover"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedPlaylistIds((prev) => [...prev, item.playlist.id]);
+                          } else {
+                            setSelectedPlaylistIds((prev) =>
+                              prev.filter((id) => id !== item.playlist.id)
+                            );
+                          }
+                        }}
+                        className="sr-only"
+                        aria-label={`Select ${item.playlist.title} for sync`}
+                      />
+                      <div className="flex items-start gap-2 min-w-0 flex-1">
+                        <ListMusic className="size-4 text-app-tertiary shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+<div className="text-app-primary font-medium text-xs">
+                                            {item.playlist.title}
+                                          </div>
+                          <div className="text-app-tertiary text-xs mt-0.5">
+                            Tracks: {item.playlist.trackFileIds.length}
+                            {item.collectionName ? ` • ${item.collectionName}` : ""}
+                          </div>
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </Card>
           )}
-        </div>
+          </div>
+        </aside>
       </div>
       <Modal
         isOpen={showMissingTracksDialog}
@@ -3665,6 +4457,7 @@ export function DeviceSyncPanel({
           </div>
         </div>
       </Modal>
-    </div>
+      </div>
+    </>
   );
 }

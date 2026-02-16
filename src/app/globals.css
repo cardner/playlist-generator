@@ -27,6 +27,17 @@
   --accent-primary: #e91e63;
   --accent-secondary: #c2185b;
   --accent-hover: #f06292;
+  /* Table theme */
+  --table-wrap-bg: var(--app-surface);
+  --table-wrap-border: var(--app-border);
+  --table-wrap-radius: var(--radius);
+  --table-header-bg: var(--app-surface-hover);
+  --table-header-text: var(--app-tertiary);
+  --table-row-bg: var(--app-surface);
+  --table-row-border: var(--app-border);
+  --table-row-hover-bg: var(--app-hover);
+  --table-cell-padding-x: 0.75rem;
+  --table-cell-padding-y: 0.5rem;
 }
 
 [data-theme="light"] {
@@ -41,6 +52,17 @@
   --accent-primary: #e91e63;
   --accent-secondary: #c2185b;
   --accent-hover: #f06292;
+  /* Table theme */
+  --table-wrap-bg: var(--app-surface);
+  --table-wrap-border: var(--app-border);
+  --table-wrap-radius: var(--radius);
+  --table-header-bg: var(--app-surface-hover);
+  --table-header-text: var(--app-tertiary);
+  --table-row-bg: var(--app-surface);
+  --table-row-border: var(--app-border);
+  --table-row-hover-bg: var(--app-hover);
+  --table-cell-padding-x: 0.75rem;
+  --table-cell-padding-y: 0.5rem;
 }
 
 /* Default to dark theme - will be overridden by data-theme attribute */
@@ -56,6 +78,17 @@
   --accent-primary: #e91e63;
   --accent-secondary: #c2185b;
   --accent-hover: #f06292;
+  /* Table theme */
+  --table-wrap-bg: var(--app-surface);
+  --table-wrap-border: var(--app-border);
+  --table-wrap-radius: var(--radius);
+  --table-header-bg: var(--app-surface-hover);
+  --table-header-text: var(--app-tertiary);
+  --table-row-bg: var(--app-surface);
+  --table-row-border: var(--app-border);
+  --table-row-hover-bg: var(--app-hover);
+  --table-cell-padding-x: 0.75rem;
+  --table-cell-padding-y: 0.5rem;
 }
 
 html {
@@ -68,5 +101,62 @@ body {
   font-family: ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* App table: uses theme variables (--table-*) from [data-theme] / :root */
+.app-table-wrap {
+  border-radius: var(--table-wrap-radius);
+  overflow: hidden;
+  border: 1px solid var(--table-wrap-border);
+  background: var(--table-wrap-bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.app-table {
+  width: 100%;
+  font-size: 0.875rem;
+  border-collapse: collapse;
+}
+.app-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--table-header-bg);
+  border-bottom: 1px solid var(--table-row-border);
+}
+.app-table thead th {
+  text-align: left;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--table-header-text);
+  font-size: 0.75rem;
+  padding: var(--table-cell-padding-y) var(--table-cell-padding-x);
+}
+/* Sticky header offset for pages with fixed nav (e.g. library) */
+.app-table-wrap.sticky-top-12 .app-table thead th {
+  top: 3rem;
+}
+.app-table tbody tr {
+  border-bottom: 1px solid var(--table-row-border);
+  background: var(--table-row-bg);
+}
+.app-table tbody tr:last-child {
+  border-bottom-width: 0;
+}
+.app-table tbody tr:hover {
+  background: var(--table-row-hover-bg);
+}
+.app-table tbody td {
+  padding: var(--table-cell-padding-y) var(--table-cell-padding-x);
+  vertical-align: middle;
+}
+.app-table tbody td .cell-primary {
+  color: var(--app-primary);
+}
+.app-table tbody td .cell-secondary {
+  color: var(--app-secondary);
+}
+.app-table tbody td .cell-tertiary {
+  color: var(--app-tertiary);
 }
 

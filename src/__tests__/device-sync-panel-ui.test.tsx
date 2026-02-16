@@ -113,7 +113,7 @@ describe("DeviceSyncPanel iPod collection UI", () => {
       expect(screen.getByText("iPod Collection Sync")).toBeInTheDocument();
     });
 
-    expect(await screen.findByText("Sync selected to iPod")).toBeInTheDocument();
+    expect(await screen.findByText("Sync to iPod")).toBeInTheDocument();
     expect(screen.getByText("Mirror collection to iPod")).toBeInTheDocument();
     expect(
       screen.getByText("Also delete removed tracks from the iPod storage.")
@@ -193,5 +193,76 @@ describe("DeviceSyncPanel iPod overwrite playlist option", () => {
         name: /replace existing playlist on device if same name/i,
       })
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("DeviceSyncPanel iPod collection tabs and sidebar", () => {
+  it("shows Ready to Sync counts in sidebar when iPod preset", async () => {
+    render(
+      <DeviceSyncPanel
+        deviceProfileOverride={ipodProfileOverride}
+        showDeviceSelector={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("iPod Collection Sync")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Ready to Sync")).toBeInTheDocument();
+    expect(screen.getByText("Tracks")).toBeInTheDocument();
+    expect(screen.getByText("Albums")).toBeInTheDocument();
+    expect(screen.getByText("Artists")).toBeInTheDocument();
+    expect(screen.getByText("Playlists")).toBeInTheDocument();
+    expect(screen.getByText("Total Tracks")).toBeInTheDocument();
+  });
+
+  it("shows Tracks, Albums, Artists tabs with counts", async () => {
+    render(
+      <DeviceSyncPanel
+        deviceProfileOverride={ipodProfileOverride}
+        showDeviceSelector={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("iPod Collection Sync")).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: /Select visible/i })).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("tab", { name: /tracks/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /albums/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /artists/i })).toBeInTheDocument();
+
+    // Switch to Albums tab and verify we can switch back to Tracks
+    const albumsTab = screen.getByRole("tab", { name: /albums/i });
+    fireEvent.click(albumsTab);
+    const tracksTab = screen.getByRole("tab", { name: /tracks/i });
+    fireEvent.click(tracksTab);
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: /Select visible/i })).toBeInTheDocument();
+    });
+  });
+
+  it("Tracks tab shows table and header select-visible checkbox when collection ready", async () => {
+    render(
+      <DeviceSyncPanel
+        deviceProfileOverride={ipodProfileOverride}
+        showDeviceSelector={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("iPod Collection Sync")).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: /Select visible/i })).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("columnheader", { name: /Title/i })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /Artist/i })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /Album/i })).toBeInTheDocument();
   });
 });
