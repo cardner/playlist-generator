@@ -3674,7 +3674,7 @@ export function DeviceSyncPanel({
                   <table className="app-table">
                     <thead>
                       <tr>
-                        <th className="w-10">
+                        <th className="w-10 shrink-0">
                           <input
                             type="checkbox"
                             ref={collectionTableHeaderCheckboxRef}
@@ -3696,13 +3696,13 @@ export function DeviceSyncPanel({
                             aria-label="Select visible"
                           />
                         </th>
-                        <th className="w-10">Play</th>
-                        <th>Title</th>
-                        <th>Artist</th>
-                        <th>Album</th>
-                        <th>Genre</th>
-                        <th className="w-16">Duration</th>
-                        <th className="w-14">BPM</th>
+                        <th className="w-10 shrink-0">Play</th>
+                        <th className="min-w-0">Title</th>
+                        <th className="min-w-0">Artist</th>
+                        <th className="min-w-0">Album</th>
+                        <th className="min-w-0">Genre</th>
+                        <th className="w-16 shrink-0">Duration</th>
+                        <th className="w-14 shrink-0">BPM</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3771,28 +3771,26 @@ export function DeviceSyncPanel({
                                     )}
                                   </button>
                                 </td>
-                                <td className="cell-primary min-w-0 max-w-[14rem]">
-                                  <span className="break-words">
-                                    {track.title}
-                                    {track.onDevice === true && (
-                                      <span className="ml-1 text-[10px] text-green-500">On iPod</span>
-                                    )}
-                                    {track.onDevice === false && (
-                                      <span className="ml-1 text-[10px] text-yellow-500">New</span>
-                                    )}
-                                  </span>
+                                <td className="cell-primary app-table-td-truncate" title={track.title}>
+                                  {track.title}
+                                  {track.onDevice === true && (
+                                    <span className="ml-1 text-[10px] text-green-500 shrink-0">On iPod</span>
+                                  )}
+                                  {track.onDevice === false && (
+                                    <span className="ml-1 text-[10px] text-yellow-500 shrink-0">New</span>
+                                  )}
                                 </td>
-                                <td className="cell-secondary min-w-0 max-w-[10rem] break-words">
+                                <td className="cell-secondary app-table-td-truncate" title={track.artist ?? undefined}>
                                   {track.artist ?? "—"}
                                 </td>
-                                <td className="cell-secondary min-w-0 max-w-[10rem] break-words">
+                                <td className="cell-secondary app-table-td-truncate" title={track.album ?? undefined}>
                                   {track.album ?? "—"}
                                 </td>
-                                <td className="cell-tertiary min-w-0 max-w-[8rem] break-words">
+                                <td className="cell-tertiary app-table-td-truncate" title={track.genre ?? undefined}>
                                   {track.genre ?? "—"}
                                 </td>
-                                <td className="cell-tertiary tabular-nums">{durationStr || "—"}</td>
-                                <td className="cell-tertiary tabular-nums">
+                                <td className="cell-tertiary tabular-nums shrink-0 w-16">{durationStr || "—"}</td>
+                                <td className="cell-tertiary tabular-nums shrink-0 w-14">
                                   {track.bpm != null ? track.bpm : "—"}
                                 </td>
                               </tr>

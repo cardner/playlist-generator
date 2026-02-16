@@ -115,6 +115,7 @@ body {
   width: 100%;
   font-size: 0.875rem;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 .app-table thead {
   position: sticky;
@@ -149,6 +150,12 @@ body {
 .app-table tbody td {
   padding: var(--table-cell-padding-y) var(--table-cell-padding-x);
   vertical-align: middle;
+}
+.app-table tbody td.app-table-td-truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .app-table tbody td .cell-primary {
   color: var(--app-primary);

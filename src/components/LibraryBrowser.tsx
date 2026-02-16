@@ -55,7 +55,7 @@ import {
   LibrarySearchCombo,
   type FilterTag,
 } from "./LibrarySearchCombo";
-import type { InlineAudioPlayerRef } from "./InlineAudioPlayer";
+import { InlineAudioPlayer, type InlineAudioPlayerRef } from "./InlineAudioPlayer";
 import { searchTrackSample } from "@/features/audio-preview/platform-searcher";
 import { useAudioPreviewState } from "@/hooks/useAudioPreviewState";
 import { useMetadataWriteback } from "@/hooks/useMetadataWriteback";
@@ -841,14 +841,14 @@ export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onF
               <table className="app-table">
                 <thead>
                   <tr>
-                    <th className="w-12">Play</th>
-                    <th>Title</th>
-                    <th>Artist</th>
-                    <th>Album</th>
-                    <th>Genre</th>
-                    <th>Duration</th>
-                    <th>BPM</th>
-                    <th className="w-16">Actions</th>
+                    <th className="w-12 shrink-0">Play</th>
+                    <th className="min-w-0">Title</th>
+                    <th className="min-w-0">Artist</th>
+                    <th className="min-w-0">Album</th>
+                    <th className="min-w-0">Genre</th>
+                    <th className="w-16 shrink-0">Duration</th>
+                    <th className="w-24 shrink-0">BPM</th>
+                    <th className="w-16 shrink-0">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -872,8 +872,6 @@ export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onF
                       writebackState={writebackState}
                       playingTrackId={playingTrackId}
                       searchingTrackId={searchingTrackId}
-                      hasSampleResult={hasSampleResult}
-                      getSampleResult={getSampleResult}
                       onPlayClick={handleInlinePlayClick}
                       onMouseEnter={handleTrackRowMouseEnter}
                       onMouseLeave={handleTrackRowMouseLeave}
@@ -881,17 +879,41 @@ export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onF
                       onEditCancel={handleEditCancel}
                       onSave={handleTrackSave}
                       formatDuration={formatDuration}
-                      registerAudioRef={registerAudioRef}
-                      onAudioLoaded={handleAudioLoaded}
-                      setPlayingTrack={setPlayingTrack}
-                      setSearchingTrack={setSearchingTrack}
-                      setError={setError}
-                      clearPlayingTrack={clearPlayingTrack}
                     />
                   );
                 })}
                 </tbody>
               </table>
+              {/* Hidden audio players so prefetch/hover does not add extra table rows */}
+              <div className="sr-only" aria-hidden="true">
+                {paginatedTracks
+                  .filter((track) => hasSampleResult(track.trackFileId))
+                  .map((track) => (
+                    <InlineAudioPlayer
+                      key={track.trackFileId}
+                      ref={(ref) => registerAudioRef(track.trackFileId, ref)}
+                      trackFileId={track.trackFileId}
+                      sampleResult={getSampleResult(track.trackFileId) || null}
+                      autoPlay={
+                        playingTrackId === track.trackFileId &&
+                        !searchingTrackId &&
+                        hasSampleResult(track.trackFileId)
+                      }
+                      onPlay={() => {
+                        setPlayingTrack(track.trackFileId);
+                        setSearchingTrack(null);
+                      }}
+                      onPause={() => clearPlayingTrack()}
+                      onEnded={() => clearPlayingTrack()}
+                      onError={(error) => {
+                        setError(track.trackFileId, error);
+                        clearPlayingTrack();
+                        setSearchingTrack(null);
+                      }}
+                      onLoaded={() => handleAudioLoaded(track.trackFileId)}
+                    />
+                  ))}
+              </div>
             </div>
           </div>
           {filteredTracks.length > pageSize && (

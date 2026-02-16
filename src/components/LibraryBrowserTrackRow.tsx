@@ -1,6 +1,7 @@
 /**
  * Memoized track row for LibraryBrowser.
- * Renders a single track with play button, metadata, edit, and optional inline audio player.
+ * Renders a single track with play button, metadata, and edit. Audio players are rendered
+ * outside the table (in LibraryBrowser) so prefetch/hover does not add extra table rows.
  */
 
 "use client";
@@ -8,9 +9,7 @@
 import { memo, Fragment } from "react";
 import { Edit2, Play, Pause, Loader2, Clock, AlertTriangle, Check } from "lucide-react";
 import type { TrackRecord, TrackWritebackRecord } from "@/db/schema";
-import type { SampleResult } from "@/features/audio-preview/types";
 import { TrackMetadataEditor } from "./TrackMetadataEditor";
-import { InlineAudioPlayer, type InlineAudioPlayerRef } from "./InlineAudioPlayer";
 
 export interface LibraryBrowserTrackRowProps {
   track: TrackRecord;
@@ -20,8 +19,6 @@ export interface LibraryBrowserTrackRowProps {
   writebackState: "pending" | "error" | "synced" | null;
   playingTrackId: string | null;
   searchingTrackId: string | null;
-  hasSampleResult: (trackFileId: string) => boolean;
-  getSampleResult: (trackFileId: string) => SampleResult | null | undefined;
   onPlayClick: (trackFileId: string, trackInfo: { title: string; artist: string; album?: string }) => void;
   onMouseEnter: (trackFileId: string, trackInfo: { title: string; artist: string; album?: string }) => void;
   onMouseLeave: () => void;
@@ -29,12 +26,6 @@ export interface LibraryBrowserTrackRowProps {
   onEditCancel: () => void;
   onSave: () => Promise<void>;
   formatDuration: (seconds?: number) => string;
-  registerAudioRef: (trackFileId: string, ref: InlineAudioPlayerRef | null) => void;
-  onAudioLoaded: (trackFileId: string) => void;
-  setPlayingTrack: (trackFileId: string) => void;
-  setSearchingTrack: (trackFileId: string | null) => void;
-  setError: (trackFileId: string, error: string) => void;
-  clearPlayingTrack: () => void;
 }
 
 function LibraryBrowserTrackRowInner({
@@ -45,8 +36,6 @@ function LibraryBrowserTrackRowInner({
   writebackState,
   playingTrackId,
   searchingTrackId,
-  hasSampleResult,
-  getSampleResult,
   onPlayClick,
   onMouseEnter,
   onMouseLeave,
@@ -54,12 +43,6 @@ function LibraryBrowserTrackRowInner({
   onEditCancel,
   onSave,
   formatDuration,
-  registerAudioRef,
-  onAudioLoaded,
-  setPlayingTrack,
-  setSearchingTrack,
-  setError,
-  clearPlayingTrack,
 }: LibraryBrowserTrackRowProps) {
   const trackInfo = {
     title: track.tags.title || "Unknown Title",
@@ -93,11 +76,19 @@ function LibraryBrowserTrackRowInner({
             )}
           </button>
         </td>
-        <td className="cell-primary">{track.tags.title}</td>
-        <td className="cell-primary">{track.tags.artist}</td>
-        <td className="cell-secondary">{track.tags.album}</td>
-        <td className="cell-secondary">{displayGenres}</td>
-        <td className="cell-tertiary tabular-nums">
+        <td className="cell-primary app-table-td-truncate" title={track.tags.title}>
+          {track.tags.title}
+        </td>
+        <td className="cell-primary app-table-td-truncate" title={track.tags.artist}>
+          {track.tags.artist}
+        </td>
+        <td className="cell-secondary app-table-td-truncate" title={track.tags.album ?? undefined}>
+          {track.tags.album ?? "—"}
+        </td>
+        <td className="cell-secondary app-table-td-truncate" title={displayGenres}>
+          {displayGenres}
+        </td>
+        <td className="cell-tertiary tabular-nums shrink-0 w-16">
           {formatDuration(track.tech?.durationSeconds)}
         </td>
         <td className="cell-tertiary">
@@ -128,7 +119,7 @@ function LibraryBrowserTrackRowInner({
             "—"
           )}
         </td>
-        <td>
+        <td className="shrink-0 w-16">
           <div className="flex items-center gap-2">
             {writebackState === "pending" && (
               <span title="Metadata sync pending">
@@ -181,36 +172,6 @@ function LibraryBrowserTrackRowInner({
                 inline={true}
               />
             </div>
-          </td>
-        </tr>
-      )}
-      {hasSampleResult(track.trackFileId) && (
-        <tr>
-          <td colSpan={7} className="p-0">
-            <InlineAudioPlayer
-              ref={(ref) => registerAudioRef(track.trackFileId, ref)}
-              trackFileId={track.trackFileId}
-              sampleResult={getSampleResult(track.trackFileId) || null}
-              autoPlay={
-                playingTrackId === track.trackFileId &&
-                !searchingTrackId &&
-                hasSampleResult(track.trackFileId)
-              }
-              onPlay={() => {
-                setPlayingTrack(track.trackFileId);
-                setSearchingTrack(null);
-              }}
-              onPause={() => clearPlayingTrack()}
-              onEnded={() => clearPlayingTrack()}
-              onError={(error) => {
-                setError(track.trackFileId, error);
-                clearPlayingTrack();
-                setSearchingTrack(null);
-              }}
-              onLoaded={() => {
-                onAudioLoaded(track.trackFileId);
-              }}
-            />
           </td>
         </tr>
       )}
