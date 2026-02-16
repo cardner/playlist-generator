@@ -953,14 +953,18 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
   const handleSaveEdits = async (options: { mode: "override" | "remix"; title: string; description?: string }) => {
     setIsSavingChanges(true);
     try {
-      const storedRequest = getRequestFromSessionStorage();
+      const targetLibraryRootId = playlistCollectionId ?? libraryRootId;
+      const storedRequest =
+        getRequestFromSessionStorage() ??
+        (isSaved ? await getSavedPlaylistRequest(playlist.id) : undefined);
+
       if (options.mode === "override") {
         const updated: GeneratedPlaylist = {
           ...editedPlaylist,
           title: options.title,
           description: options.description ?? editedPlaylist.description,
         };
-        await updateSavedPlaylist(updated, libraryRootId, storedRequest);
+        await updateSavedPlaylist(updated, targetLibraryRootId, storedRequest);
         setPlaylist(updated);
         markClean(updated);
         setIsSaved(true);
@@ -974,7 +978,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
           description: options.description ?? editedPlaylist.description,
           createdAt: Date.now(),
         };
-        await savePlaylist(remixed, libraryRootId, storedRequest);
+        await savePlaylist(remixed, targetLibraryRootId, storedRequest);
         setPlaylist(remixed);
         markClean(remixed);
         setIsSaved(true);
@@ -982,6 +986,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       }
     } catch (error) {
       logger.error("Failed to save playlist edits:", error);
+      alert("Failed to save changes. Please try again.");
     } finally {
       setIsSavingChanges(false);
       setShowSaveDialog(false);
@@ -2375,6 +2380,8 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
         defaultDescription={editedPlaylist.description || displayPlaylist.description}
         onClose={() => setShowSaveDialog(false)}
         onConfirm={handleSaveEdits}
+        titleText={isSaved ? "Save Changes" : "Save Playlist"}
+        confirmLabel={isSaved ? "Save Changes" : "Save"}
       />
 
       <SavePlaylistDialog
