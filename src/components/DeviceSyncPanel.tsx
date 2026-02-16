@@ -149,6 +149,7 @@ export function DeviceSyncPanel({
     model_name?: string;
     generation_name?: string;
     checksum_type?: number;
+    capacity_gb?: number;
   } | null>(null);
   const [ipodSetupSkipped, setIpodSetupSkipped] = useState(false);
   const [ipodMonitor, setIpodMonitor] = useState<{
@@ -248,6 +249,7 @@ export function DeviceSyncPanel({
   const [ipodTrackIndex, setIpodTrackIndex] = useState<{
     tagSize: Set<string>;
     tagOnly: Set<string>;
+    usedBytes?: number;
   }>({ tagSize: new Set(), tagOnly: new Set() });
   const [showMissingTracksDialog, setShowMissingTracksDialog] = useState(false);
   const [missingTrackCount, setMissingTrackCount] = useState(0);
@@ -564,6 +566,7 @@ export function DeviceSyncPanel({
         if (cancelled) return;
         const tagSize = new Set<string>();
         const tagOnly = new Set<string>();
+        let usedBytes = 0;
         for (const track of tracks) {
           const tagKey = buildTagKey({
             title: track.title,
@@ -573,6 +576,7 @@ export function DeviceSyncPanel({
           });
           tagOnly.add(tagKey);
           if (typeof track.size === "number") {
+            usedBytes += track.size;
             tagSize.add(
               buildTagSizeKey({
                 title: track.title,
@@ -584,7 +588,7 @@ export function DeviceSyncPanel({
             );
           }
         }
-        setIpodTrackIndex({ tagSize, tagOnly });
+        setIpodTrackIndex({ tagSize, tagOnly, usedBytes });
         setIpodTrackIndexStatus("ready");
       } catch (error) {
         if (cancelled) return;
@@ -1134,6 +1138,7 @@ export function DeviceSyncPanel({
           model_name: info?.model_name,
           generation_name: info?.generation_name,
           checksum_type: info?.checksum_type,
+          capacity_gb: info?.capacity_gb,
         });
         if (info?.checksum_type === 0) {
           setIpodSetupStatus("ready");
@@ -2717,7 +2722,7 @@ export function DeviceSyncPanel({
                 <span className="text-xs text-red-500">Setup failed</span>
               )}
             </div>
-            {(ipodUsbInfo || ipodKnownDevices.length > 0) && (
+            {(ipodUsbInfo || ipodKnownDevices.length > 0 || ipodDeviceInfo) && (
               <div className="mt-3 text-xs text-app-tertiary space-y-1">
                 {ipodUsbInfo && (
                   <div>
@@ -2731,6 +2736,45 @@ export function DeviceSyncPanel({
                     {ipodDeviceInfo.generation_name
                       ? `(${ipodDeviceInfo.generation_name})`
                       : ""}
+                  </div>
+                )}
+                {(ipodDeviceInfo?.capacity_gb != null ||
+                  (ipodTrackIndexStatus === "ready" &&
+                    ipodTrackIndex.usedBytes != null)) && (
+                  <div>
+                    Storage:{" "}
+                    {ipodDeviceInfo?.capacity_gb != null && (
+                      <span>
+                        {ipodDeviceInfo.capacity_gb.toFixed(2)} GB capacity
+                      </span>
+                    )}
+                    {ipodDeviceInfo?.capacity_gb != null &&
+                      ipodTrackIndexStatus === "ready" &&
+                      ipodTrackIndex.usedBytes != null && (
+                        <span> · </span>
+                      )}
+                    {ipodTrackIndexStatus === "ready" &&
+                      ipodTrackIndex.usedBytes != null && (
+                        <span>
+                          {(ipodTrackIndex.usedBytes / 1e9).toFixed(2)} GB used
+                          (music)
+                        </span>
+                      )}
+                    {ipodDeviceInfo?.capacity_gb != null &&
+                      ipodTrackIndexStatus === "ready" &&
+                      ipodTrackIndex.usedBytes != null && (
+                        <>
+                          <span> · </span>
+                          <span>
+                            {(Math.max(
+                              0,
+                              ipodDeviceInfo.capacity_gb * 1e9 -
+                                (ipodTrackIndex.usedBytes ?? 0)
+                            ) / 1e9).toFixed(2)}{" "}
+                            GB free
+                          </span>
+                        </>
+                      )}
                   </div>
                 )}
                 {ipodKnownDevices.length > 0 && (
