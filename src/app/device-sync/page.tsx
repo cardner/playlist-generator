@@ -35,6 +35,7 @@ export default function DeviceSyncPage() {
   const [playlists, setPlaylists] = useState<PlaylistWithCollection[]>([]);
   const [deviceProfiles, setDeviceProfiles] = useState<DeviceProfileRecord[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  const [selectionIsUserInitiated, setSelectionIsUserInitiated] = useState(false);
   const [deviceStatuses, setDeviceStatuses] = useState<Record<string, DeviceStatus>>({});
   const [isCheckingDevices, setIsCheckingDevices] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -92,6 +93,7 @@ export default function DeviceSyncPage() {
       const firstAvailable = resolved.find((item) => item.status === "available");
       if (firstAvailable) {
         setSelectedDeviceId(firstAvailable.id);
+        setSelectionIsUserInitiated(false);
       }
     }
   }, [deviceProfiles, selectedDeviceId]);
@@ -169,6 +171,7 @@ export default function DeviceSyncPage() {
       });
       await loadDevices();
       setSelectedDeviceId(profile.id);
+      setSelectionIsUserInitiated(true);
     } catch (err) {
       logger.error("Failed to add device:", err);
       setError(err instanceof Error ? err.message : "Failed to add device");
@@ -187,6 +190,7 @@ export default function DeviceSyncPage() {
       });
       await loadDevices();
       setSelectedDeviceId(profile.id);
+      setSelectionIsUserInitiated(true);
     } catch (err) {
       logger.error("Failed to add companion device:", err);
       setError(err instanceof Error ? err.message : "Failed to add companion device");
@@ -208,6 +212,7 @@ export default function DeviceSyncPage() {
       });
       await loadDevices();
       setSelectedDeviceId(profile.id);
+      setSelectionIsUserInitiated(true);
     } catch (err) {
       logger.error("Failed to add Jellyfin profile:", err);
       setError(err instanceof Error ? err.message : "Failed to add Jellyfin profile");
@@ -229,6 +234,7 @@ export default function DeviceSyncPage() {
       });
       await loadDevices();
       setSelectedDeviceId(updated.id);
+      setSelectionIsUserInitiated(true);
     } catch (err) {
       logger.error("Failed to reconnect device:", err);
       setError(err instanceof Error ? err.message : "Failed to reconnect device");
@@ -479,11 +485,15 @@ export default function DeviceSyncPage() {
                   key={profile.id}
                   role="button"
                   tabIndex={0}
-                  onClick={() => setSelectedDeviceId(profile.id)}
+                  onClick={() => {
+                    setSelectedDeviceId(profile.id);
+                    setSelectionIsUserInitiated(true);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
                       setSelectedDeviceId(profile.id);
+                      setSelectionIsUserInitiated(true);
                     }
                   }}
                   className={`text-left rounded-sm border p-4 transition-colors cursor-pointer ${
@@ -571,6 +581,7 @@ export default function DeviceSyncPage() {
           <DeviceSyncPanel
             playlists={playlists}
             deviceProfileOverride={selectedDeviceProfile}
+            selectionIsFromUserAction={selectionIsUserInitiated}
             onDeviceProfileUpdated={loadDevices}
             showDeviceSelector={false}
           />
