@@ -683,6 +683,8 @@ export async function syncPlaylistsToDevice(options: {
   onlyIncludeMatchedPaths?: boolean;
   /** When true, only add playlist entries for tracks already on device (iPod); skip copying missing */
   onlyReferenceExistingTracks?: boolean;
+  /** When true, replace existing iPod playlist with same name (clear then add synced tracks) */
+  overwriteExistingPlaylist?: boolean;
 }): Promise<{ playlistPath?: string; configHash?: string }> {
   const {
     deviceProfile,
@@ -691,6 +693,7 @@ export async function syncPlaylistsToDevice(options: {
     deviceEntries,
     onlyIncludeMatchedPaths,
     onlyReferenceExistingTracks,
+    overwriteExistingPlaylist,
   } = options;
   if (deviceProfile.deviceType === "ipod") {
     const ipodTargets = targets.map((t) => ({
@@ -700,6 +703,7 @@ export async function syncPlaylistsToDevice(options: {
     await syncPlaylistsToIpod({
       deviceProfile,
       targets: ipodTargets,
+      overwriteExistingPlaylist,
     });
     return {};
   }

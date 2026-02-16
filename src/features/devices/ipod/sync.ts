@@ -184,7 +184,11 @@ async function getFileFromLibrary(
   return await fileHandle.getFile();
 }
 
-async function ensurePlaylistIndex(name: string, playlistCache: Map<string, number>) {
+async function ensurePlaylistIndex(
+  name: string,
+  playlistCache: Map<string, number>,
+  options?: { clearIfExisting?: boolean }
+) {
   if (playlistCache.has(name)) {
     return playlistCache.get(name)!;
   }
@@ -195,6 +199,18 @@ async function ensurePlaylistIndex(name: string, playlistCache: Map<string, numb
     for (let i = 0; i < playlists.length; i += 1) {
       const pl = playlists[i];
       if (pl?.name === name) {
+        if (options?.clearIfExisting) {
+          const playlistTracks = wasmGetJson("ipod_get_playlist_tracks_json", i) as
+            | IpodTrack[]
+            | null;
+          if (Array.isArray(playlistTracks)) {
+            for (const playlistTrack of playlistTracks) {
+              if (typeof playlistTrack.id === "number") {
+                wasmCall("ipod_playlist_remove_track", i, playlistTrack.id);
+              }
+            }
+          }
+        }
         playlistCache.set(name, i);
         return i;
       }
@@ -254,8 +270,10 @@ export async function syncPlaylistsToIpod(options: {
   deviceProfile: DeviceProfileRecord;
   targets: IpodSyncTarget[];
   onProgress?: (progress: { current: number; total: number; title?: string }) => void;
+  /** When true, clear existing playlist with same name before adding synced tracks */
+  overwriteExistingPlaylist?: boolean;
 }): Promise<IpodSyncResult> {
-  const { deviceProfile, targets, onProgress } = options;
+  const { deviceProfile, targets, onProgress, overwriteExistingPlaylist } = options;
   if (!deviceProfile.handleRef) {
     throw new Error("Device folder handle not found");
   }
@@ -346,7 +364,9 @@ export async function syncPlaylistsToIpod(options: {
   logger.info(`Starting iPod sync: ${targets.length} playlist(s), ${totalTracks} track(s)`);
 
   for (const target of targets) {
-    const playlistIndex = await ensurePlaylistIndex(target.playlist.title, playlistIndexCache);
+    const playlistIndex = await ensurePlaylistIndex(target.playlist.title, playlistIndexCache, {
+      clearIfExisting: overwriteExistingPlaylist,
+    });
     const playlistAddedTrackIds = new Set<number>();
     const desiredKeys = target.mirrorMode
       ? new Set(
