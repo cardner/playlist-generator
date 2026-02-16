@@ -6,7 +6,8 @@
 
 import type { PlaylistRequest } from "@/types/playlist";
 import type { PlaylistStrategy } from "./strategy";
-import type { GeneratedPlaylist } from "./matching-engine";
+import type { GeneratedPlaylist, TrackSelection } from "./matching-engine";
+import { generateReplacementTracks } from "./matching-engine";
 import { getAllTracks } from "@/db/storage";
 import { db } from "@/db/schema";
 import type { TrackRecord } from "@/db/schema";
@@ -331,4 +332,70 @@ export async function generatePlaylistFromStrategy(
     logger.warn("Deterministic validation failed:", error);
     return playlist;
   }
+}
+
+/**
+ * Generate N replacement tracks for playlist editing (e.g. when user deletes a track).
+ * Keeps the same request/strategy context and excludes removed + existing tracks.
+ */
+export async function generateReplacementTracksFromStrategy(
+  request: PlaylistRequest,
+  strategy: PlaylistStrategy,
+  libraryRootId: string | undefined,
+  count: number,
+  contextSelections: TrackSelection[],
+  excludeTrackIds: string[],
+  seed?: string
+): Promise<TrackSelection[]> {
+  const isBuiltInAgent =
+    request.agentType !== "llm" ||
+    !request.llmConfig?.apiKey ||
+    !request.llmConfig?.provider;
+
+  const normalizedRequest = normalizePlaylistRequest(
+    applyTempoMappingsToRequest({
+      ...request,
+      mood: [...request.mood],
+      activity: [...request.activity],
+      tempo: { ...request.tempo },
+    }),
+    isBuiltInAgent ? { mergeInstructions: true } : undefined
+  );
+
+  let allTracks: TrackRecord[];
+  if (libraryRootId) {
+    allTracks = await db.tracks.where("libraryRootId").equals(libraryRootId).toArray();
+  } else {
+    allTracks = await getAllTracks();
+  }
+
+  if (allTracks.length === 0) {
+    return [];
+  }
+
+  const excludeSet = new Set(excludeTrackIds);
+  allTracks = allTracks.filter((t) => !excludeSet.has(t.trackFileId));
+
+  if (allTracks.length === 0) {
+    return [];
+  }
+
+  allTracks = applyRecentFilter(allTracks, normalizedRequest);
+  if (normalizedRequest.sourcePool === "recent" && allTracks.length === 0) {
+    return [];
+  }
+
+  const { buildMatchingIndex } = await import("@/features/library/summarization");
+  const matchingIndex = await buildMatchingIndex(libraryRootId);
+
+  return generateReplacementTracks(
+    normalizedRequest,
+    strategy,
+    matchingIndex,
+    allTracks,
+    count,
+    contextSelections,
+    excludeTrackIds,
+    seed
+  );
 }

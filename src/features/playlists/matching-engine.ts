@@ -946,3 +946,211 @@ export async function generatePlaylist(
   };
 }
 
+/**
+ * Generate N replacement tracks for playlist editing (e.g. when user deletes a track).
+ * Uses the same candidate filtering and scoring as full generation, but excludes
+ * context tracks and returns only the requested count.
+ *
+ * @param count Number of replacement tracks to generate
+ * @param contextSelections Existing track selections (used for diversity/scoring context)
+ * @param excludeTrackIds Track IDs to exclude (e.g. user-removed tracks)
+ * @param seed Optional seed for deterministic selection
+ */
+export function generateReplacementTracks(
+  request: PlaylistRequest,
+  strategy: PlaylistStrategy,
+  index: MatchingIndex,
+  allTracks: TrackRecord[],
+  count: number,
+  contextSelections: TrackSelection[],
+  excludeTrackIds: string[],
+  seed?: string | number
+): TrackSelection[] {
+  const excludeSet = new Set([
+    ...excludeTrackIds,
+    ...contextSelections.map((s) => s.trackFileId),
+  ]);
+
+  let seedValue: number;
+  if (typeof seed === "string") {
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+      const char = seed.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    seedValue = Math.abs(hash);
+  } else if (typeof seed === "number") {
+    seedValue = seed;
+  } else {
+    seedValue = request.genres.join(",").length + request.length.value;
+  }
+  const rng = new SeededRandom(seedValue);
+
+  const targetDurationSeconds =
+    request.length.type === "minutes"
+      ? request.length.value * 60
+      : request.length.value * 180;
+  const affinityContext = buildAffinityContext(request, allTracks);
+
+  const candidateIds = new Set<string>();
+  let genresToMatch = strategy.constraints.requiredGenres || request.genres;
+  if (strategy.genreMixGuidance) {
+    const mixGenres = [
+      ...(strategy.genreMixGuidance.primaryGenres || []),
+      ...(strategy.genreMixGuidance.secondaryGenres || []),
+    ];
+    if (mixGenres.length > 0) {
+      genresToMatch = [...new Set([...genresToMatch, ...mixGenres])];
+    }
+  }
+
+  if (genresToMatch.length > 0) {
+    for (const genre of genresToMatch) {
+      const genreTracks = index.byGenre.get(genre) || [];
+      for (const trackId of genreTracks) {
+        candidateIds.add(trackId);
+      }
+    }
+  } else {
+    index.allTrackIds.forEach((id) => candidateIds.add(id));
+  }
+
+  if (affinityContext.artists.size > 0) {
+    for (const track of allTracks) {
+      const artistKey = normalizeKey(track.tags.artist);
+      if (artistKey && affinityContext.artists.has(artistKey)) {
+        candidateIds.add(track.trackFileId);
+      }
+    }
+  }
+
+  if (strategy.constraints.excludedGenres) {
+    for (const genre of strategy.constraints.excludedGenres) {
+      const excludedTracks = index.byGenre.get(genre) || [];
+      for (const trackId of excludedTracks) {
+        candidateIds.delete(trackId);
+      }
+    }
+  }
+
+  if (
+    strategy.tempoGuidance.targetBucket &&
+    !strategy.tempoGuidance.allowVariation
+  ) {
+    const tempoTracks =
+      index.byTempoBucket.get(strategy.tempoGuidance.targetBucket) || [];
+    const tempoSet = new Set(tempoTracks);
+    for (const trackId of candidateIds) {
+      if (!tempoSet.has(trackId)) {
+        candidateIds.delete(trackId);
+      }
+    }
+  }
+
+  if (request.disallowedArtists && request.disallowedArtists.length > 0) {
+    const disallowedSet = new Set(
+      request.disallowedArtists.map((a) => a.toLowerCase().trim())
+    );
+    const filteredIds = new Set<string>();
+    for (const trackId of candidateIds) {
+      const track = allTracks.find((t) => t.trackFileId === trackId);
+      if (track) {
+        const artist = track.tags.artist?.toLowerCase().trim();
+        if (!artist || !disallowedSet.has(artist)) {
+          filteredIds.add(trackId);
+        }
+      }
+    }
+    candidateIds.clear();
+    for (const id of filteredIds) {
+      candidateIds.add(id);
+    }
+  }
+
+  if ((request.mood.length > 0 || request.activity.length > 0) && candidateIds.size > 0) {
+    const filteredIds = new Set<string>();
+    for (const trackId of candidateIds) {
+      const track = allTracks.find((t) => t.trackFileId === trackId);
+      if (!track) continue;
+
+      const moodTags = getMappedMoodTags(track);
+      const activityTags = getMappedActivityTags(track);
+
+      const moodPass =
+        request.mood.length === 0 ||
+        moodTags.length === 0 ||
+        moodTags.some((m) => request.mood.includes(m));
+      const activityPass =
+        request.activity.length === 0 ||
+        activityTags.length === 0 ||
+        activityTags.some((a) => request.activity.includes(a));
+
+      if (moodPass && activityPass) {
+        filteredIds.add(trackId);
+      }
+    }
+
+    if (filteredIds.size > 0) {
+      candidateIds.clear();
+      for (const id of filteredIds) {
+        candidateIds.add(id);
+      }
+    }
+  }
+
+  for (const id of excludeSet) {
+    candidateIds.delete(id);
+  }
+
+  const candidates = Array.from(candidateIds)
+    .map((id) => allTracks.find((t) => t.trackFileId === id))
+    .filter((t): t is TrackRecord => !!t);
+
+  if (candidates.length === 0) {
+    return [];
+  }
+
+  const previousTracks = contextSelections.map((s) => s.track);
+  const currentDuration = previousTracks.reduce(
+    (sum, t) => sum + (t.tech?.durationSeconds || 180),
+    0
+  );
+
+  const result: TrackSelection[] = [];
+  let workingCandidates = [...candidates];
+
+  for (let i = 0; i < count && workingCandidates.length > 0; i++) {
+    const remainingSlots = count - result.length;
+    const scored = workingCandidates.map((track) =>
+      scoreTrack(
+        track,
+        request,
+        strategy,
+        index,
+        [...previousTracks, ...result.map((r) => r.track)],
+        currentDuration + result.reduce((s, r) => s + (r.track.tech?.durationSeconds || 180), 0),
+        targetDurationSeconds,
+        remainingSlots,
+        affinityContext
+      )
+    );
+
+    scored.sort((a, b) => b.score - a.score);
+
+    const surpriseWindow = Math.max(
+      1,
+      Math.floor(scored.length * (1 - request.surprise * 0.5))
+    );
+    const topCandidates = scored.slice(0, Math.min(10, surpriseWindow));
+    const selected = topCandidates[Math.floor(rng.next() * topCandidates.length)];
+
+    result.push(selected);
+    workingCandidates = workingCandidates.filter(
+      (t) => t.trackFileId !== selected.trackFileId
+    );
+  }
+
+  return result;
+}
+
