@@ -7,7 +7,7 @@
  * - Playlist editing and management
  */
 
-export { generatePlaylistFromStrategy } from "./generation";
+export { generatePlaylistFromStrategy, generateReplacementTracksFromStrategy } from "./generation";
 export type {
   GeneratedPlaylist,
   TrackSelection,

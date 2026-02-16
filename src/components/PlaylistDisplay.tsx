@@ -105,6 +105,7 @@ import { ChipInput } from "./ChipInput";
 import {
   getStrategy,
   generatePlaylistFromStrategy,
+  generateReplacementTracksFromStrategy,
   remixSavedPlaylist,
 } from "@/features/playlists";
 import type { PlaylistRequest } from "@/types/playlist";
@@ -1376,59 +1377,272 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
       const targetCount = playlist.trackFileIds.length;
       const neededCount = targetCount - remainingTrackIds.length;
 
-      if (neededCount > 0) {
-        // Generate new tracks to fill the gap, excluding removed tracks
-        const generated = await generatePlaylistFromStrategy(
+      // Discovery tracks: just remove, no replacement (replacements come from library)
+      const isDiscoveryTrack = trackFileId.startsWith("discovery:");
+
+      if (neededCount > 0 && !isDiscoveryTrack) {
+        const removedIndex = playlist.trackFileIds.indexOf(trackFileId);
+
+        // Build context: remaining library tracks (for diversity/scoring)
+        const contextSelections = (playlist.trackSelections ?? []).filter(
+          (s) =>
+            s.trackFileId !== trackFileId &&
+            remainingTrackIds.includes(s.trackFileId) &&
+            !s.trackFileId.startsWith("discovery:")
+        );
+
+        const replacements = await generateReplacementTracksFromStrategy(
           request,
           strategy,
           root?.id,
-          stableMode ? playlist.id : undefined,
-          removedTracks
+          1,
+          contextSelections,
+          removedTracks,
+          stableMode ? playlist.id : undefined
         );
 
-        // Get new tracks that aren't already in the playlist
-        const newTracks = generated.trackFileIds.filter(
-          (id) => !remainingTrackIds.includes(id) && !removedTracks.includes(id)
-        );
+        if (replacements.length > 0) {
+          const newSelection = replacements[0];
+          const finalTrackIds = [
+            ...remainingTrackIds.slice(0, removedIndex),
+            newSelection.trackFileId,
+            ...remainingTrackIds.slice(removedIndex),
+          ];
 
-        // Regenerate full playlist with updated track list
-        const refilled = await generatePlaylistFromStrategy(
-          request,
-          strategy,
-          root?.id,
-          stableMode ? playlist.id : undefined,
-          removedTracks
-        );
+          const removedOrderedTrack = playlist.orderedTracks?.find(
+            (o) => o.trackFileId === trackFileId
+          );
 
-        // Use the refilled playlist but ensure we have the right number of tracks
-        const finalTrackIds = refilled.trackFileIds
-          .filter((id) => !removedTracks.includes(id))
-          .slice(0, targetCount);
+          const libraryTrackIds = finalTrackIds.filter(
+            (id) => !id.startsWith("discovery:")
+          );
+          const updatedOrderedTracks = libraryTrackIds.map((id, idx) => {
+            if (id === newSelection.trackFileId) {
+              return {
+                trackFileId: id,
+                position: idx,
+                section: removedOrderedTrack?.section ?? "transition",
+                reasons: newSelection.reasons,
+                transitionScore: 0.8,
+              };
+            }
+            const existing = playlist.orderedTracks?.find(
+              (o) => o.trackFileId === id
+            );
+            return existing ? { ...existing, position: idx } : null;
+          }).filter((o): o is NonNullable<typeof o> => o !== null);
 
-        // Update playlist
-        const updatedPlaylist = {
-          ...refilled,
-          trackFileIds: finalTrackIds,
-        };
+          const selectionMap = new Map(
+            (playlist.trackSelections ?? [])
+              .filter((s) => s.trackFileId !== trackFileId)
+              .map((s) => [s.trackFileId, s] as const)
+          );
+          selectionMap.set(newSelection.trackFileId, newSelection);
+          const updatedTrackSelections = libraryTrackIds
+            .map((id) => selectionMap.get(id))
+            .filter((s): s is TrackSelection => !!s);
 
-        setPlaylist(updatedPlaylist);
-        sessionStorage.setItem(
-          "generated-playlist",
-          JSON.stringify({
-            ...updatedPlaylist,
-            summary: {
-              ...updatedPlaylist.summary,
-              genreMix: Object.fromEntries(updatedPlaylist.summary.genreMix),
-              tempoMix: Object.fromEntries(updatedPlaylist.summary.tempoMix),
-              artistMix: Object.fromEntries(updatedPlaylist.summary.artistMix),
-            },
-          })
-        );
+          const discoveryMap = new Map<
+            string,
+            NonNullable<GeneratedPlaylist["discoveryTracks"]>[number]
+          >();
+          if (playlist.discoveryTracks) {
+            for (const dt of playlist.discoveryTracks) {
+              discoveryMap.set(`discovery:${dt.discoveryTrack.mbid}`, dt);
+            }
+          }
+
+          const summaryInputs: SummaryTrackInput[] = [];
+          for (const id of finalTrackIds) {
+            if (id.startsWith("discovery:")) {
+              const discovery = discoveryMap.get(id);
+              if (discovery) {
+                summaryInputs.push({
+                  trackFileId: id,
+                  genres: discovery.discoveryTrack.genres || [],
+                  artist: discovery.discoveryTrack.artist,
+                  durationSeconds: discovery.discoveryTrack.duration,
+                });
+              }
+              continue;
+            }
+            const track =
+              id === newSelection.trackFileId
+                ? newSelection.track
+                : tracks.get(id);
+            if (track) {
+              summaryInputs.push({
+                trackFileId: id,
+                genres: track.tags.genres || [],
+                artist: track.tags.artist,
+                durationSeconds: track.tech?.durationSeconds,
+                bpm: track.tech?.bpm,
+              });
+            }
+          }
+
+          const summary = calculatePlaylistSummaryFromTracks(summaryInputs);
+
+          const updatedPlaylist: GeneratedPlaylist = {
+            ...playlist,
+            trackFileIds: finalTrackIds,
+            trackSelections: updatedTrackSelections,
+            orderedTracks: updatedOrderedTracks,
+            summary,
+            totalDuration: summary.totalDuration,
+          };
+
+          setTracks((prev) => {
+            const next = new Map(prev);
+            next.set(newSelection.trackFileId, newSelection.track);
+            return next;
+          });
+          setPlaylist(updatedPlaylist);
+          sessionStorage.setItem(
+            "generated-playlist",
+            JSON.stringify({
+              ...updatedPlaylist,
+              summary: {
+                ...updatedPlaylist.summary,
+                genreMix: Object.fromEntries(updatedPlaylist.summary.genreMix),
+                tempoMix: Object.fromEntries(updatedPlaylist.summary.tempoMix),
+                artistMix: Object.fromEntries(updatedPlaylist.summary.artistMix),
+              },
+            })
+          );
+        } else {
+          // No candidates: just remove the track
+          const updatedTrackSelectionsNoCandidates = (
+            playlist.trackSelections ?? []
+          ).filter((s) => s.trackFileId !== trackFileId);
+          const updatedOrderedTracksNoCandidates = (
+            playlist.orderedTracks ?? []
+          ).filter((o) => o.trackFileId !== trackFileId);
+
+          const discoveryMapNoCandidates = new Map<
+            string,
+            NonNullable<GeneratedPlaylist["discoveryTracks"]>[number]
+          >();
+          if (playlist.discoveryTracks) {
+            for (const dt of playlist.discoveryTracks) {
+              discoveryMapNoCandidates.set(
+                `discovery:${dt.discoveryTrack.mbid}`,
+                dt
+              );
+            }
+          }
+          const summaryInputsNoCandidates: SummaryTrackInput[] = [];
+          for (const id of remainingTrackIds) {
+            if (id.startsWith("discovery:")) {
+              const discovery = discoveryMapNoCandidates.get(id);
+              if (discovery) {
+                summaryInputsNoCandidates.push({
+                  trackFileId: id,
+                  genres: discovery.discoveryTrack.genres || [],
+                  artist: discovery.discoveryTrack.artist,
+                  durationSeconds: discovery.discoveryTrack.duration,
+                });
+              }
+              continue;
+            }
+            const track = tracks.get(id);
+            if (track) {
+              summaryInputsNoCandidates.push({
+                trackFileId: id,
+                genres: track.tags.genres || [],
+                artist: track.tags.artist,
+                durationSeconds: track.tech?.durationSeconds,
+                bpm: track.tech?.bpm,
+              });
+            }
+          }
+          const summaryNoCandidates =
+            calculatePlaylistSummaryFromTracks(summaryInputsNoCandidates);
+
+          const updatedPlaylistNoCandidates = {
+            ...playlist,
+            trackFileIds: remainingTrackIds,
+            trackSelections: updatedTrackSelectionsNoCandidates,
+            orderedTracks: updatedOrderedTracksNoCandidates,
+            summary: summaryNoCandidates,
+            totalDuration: summaryNoCandidates.totalDuration,
+          };
+          setPlaylist(updatedPlaylistNoCandidates);
+          sessionStorage.setItem(
+            "generated-playlist",
+            JSON.stringify({
+              ...updatedPlaylistNoCandidates,
+              summary: {
+                ...updatedPlaylistNoCandidates.summary,
+                genreMix: Object.fromEntries(
+                  updatedPlaylistNoCandidates.summary.genreMix
+                ),
+                tempoMix: Object.fromEntries(
+                  updatedPlaylistNoCandidates.summary.tempoMix
+                ),
+                artistMix: Object.fromEntries(
+                  updatedPlaylistNoCandidates.summary.artistMix
+                ),
+              },
+            })
+          );
+        }
       } else {
-        // Just remove the track
+        // Just remove the track (neededCount === 0, discovery track, or no candidates)
+        const updatedTrackSelections = (playlist.trackSelections ?? []).filter(
+          (s) => s.trackFileId !== trackFileId
+        );
+        const updatedOrderedTracks = (playlist.orderedTracks ?? []).filter(
+          (o) => o.trackFileId !== trackFileId
+        );
+
+        const discoveryMapForRemove = new Map<
+          string,
+          NonNullable<GeneratedPlaylist["discoveryTracks"]>[number]
+        >();
+        if (playlist.discoveryTracks) {
+          for (const dt of playlist.discoveryTracks) {
+            discoveryMapForRemove.set(
+              `discovery:${dt.discoveryTrack.mbid}`,
+              dt
+            );
+          }
+        }
+        const summaryInputsRemove: SummaryTrackInput[] = [];
+        for (const id of remainingTrackIds) {
+          if (id.startsWith("discovery:")) {
+            const discovery = discoveryMapForRemove.get(id);
+            if (discovery) {
+              summaryInputsRemove.push({
+                trackFileId: id,
+                genres: discovery.discoveryTrack.genres || [],
+                artist: discovery.discoveryTrack.artist,
+                durationSeconds: discovery.discoveryTrack.duration,
+              });
+            }
+            continue;
+          }
+          const track = tracks.get(id);
+          if (track) {
+            summaryInputsRemove.push({
+              trackFileId: id,
+              genres: track.tags.genres || [],
+              artist: track.tags.artist,
+              durationSeconds: track.tech?.durationSeconds,
+              bpm: track.tech?.bpm,
+            });
+          }
+        }
+        const summaryRemove =
+          calculatePlaylistSummaryFromTracks(summaryInputsRemove);
+
         const updatedPlaylist = {
           ...playlist,
           trackFileIds: remainingTrackIds,
+          trackSelections: updatedTrackSelections,
+          orderedTracks: updatedOrderedTracks,
+          summary: summaryRemove,
+          totalDuration: summaryRemove.totalDuration,
         };
         setPlaylist(updatedPlaylist);
         sessionStorage.setItem(
@@ -1449,7 +1663,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
     } finally {
       setIsRegenerating(false);
     }
-  }, [isEditMode, playlist, stableMode, updatePlaylist]);
+  }, [isEditMode, playlist, stableMode, tracks, updatePlaylist]);
 
   useEffect(() => {
     if (!isEditMode) return;
