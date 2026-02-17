@@ -44,6 +44,7 @@ jest.mock("@/features/devices/device-scan", () => ({
     finalProgress: { scanned: 0, matched: 0, hashed: 0 },
   })),
   buildDeviceMatchCandidates: jest.fn(() => []),
+  isTrackOnDeviceUsb: jest.fn(() => false),
 }));
 
 jest.mock("@/features/devices/ipod", () => ({
@@ -71,6 +72,7 @@ jest.mock("@/lib/feature-detection", () => ({
 jest.mock("@/lib/library-selection-fs-api", () => ({
   getDirectoryHandle: jest.fn(async () => null),
   storeDirectoryHandle: jest.fn(async () => null),
+  verifyDeviceConnection: jest.fn(async () => false),
 }));
 
 jest.mock("@/lib/library-selection-permissions", () => ({
@@ -114,9 +116,9 @@ describe("DeviceSyncPanel iPod collection UI", () => {
     });
 
     expect(await screen.findByText("Sync to iPod")).toBeInTheDocument();
-    expect(screen.getByText("Mirror collection to iPod")).toBeInTheDocument();
+    expect(await screen.findByText("Mirror collection to iPod")).toBeInTheDocument();
     expect(
-      screen.getByText("Also delete removed tracks from the iPod storage.")
+      await screen.findByText("Also delete removed tracks from the iPod storage.")
     ).toBeInTheDocument();
   });
 });
@@ -144,7 +146,7 @@ describe("DeviceSyncPanel iPod overwrite playlist option", () => {
       expect(screen.getByText("iPod Collection Sync")).toBeInTheDocument();
     });
 
-    const checkbox = screen.getByRole("checkbox", {
+    const checkbox = await screen.findByRole("checkbox", {
       name: /replace existing playlist on device if same name/i,
     });
     expect(checkbox).toBeInTheDocument();
@@ -163,7 +165,7 @@ describe("DeviceSyncPanel iPod overwrite playlist option", () => {
       expect(screen.getByText("iPod Collection Sync")).toBeInTheDocument();
     });
 
-    const checkbox = screen.getByRole("checkbox", {
+    const checkbox = await screen.findByRole("checkbox", {
       name: /replace existing playlist on device if same name/i,
     });
     fireEvent.click(checkbox);
@@ -264,5 +266,163 @@ describe("DeviceSyncPanel iPod collection tabs and sidebar", () => {
     expect(screen.getByRole("columnheader", { name: /Title/i })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: /Artist/i })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: /Album/i })).toBeInTheDocument();
+  });
+});
+
+const walkmanProfileOverride = {
+  id: "dev-walkman-1",
+  label: "Walkman NW-A55",
+  deviceType: "walkman" as const,
+  playlistFormat: "m3u" as const,
+  playlistFolder: "MUSIC",
+  pathStrategy: "relative-to-playlist" as const,
+  handleRef: "handle-walkman",
+};
+
+describe("DeviceSyncPanel Walkman collection sync", () => {
+  it("renders collection sync UI for Walkman with correct labels", async () => {
+    render(
+      <DeviceSyncPanel
+        deviceProfileOverride={walkmanProfileOverride}
+        showDeviceSelector={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Walkman Collection Sync")).toBeInTheDocument();
+    });
+
+    expect(await screen.findByText("Sync selected to Walkman")).toBeInTheDocument();
+    expect(await screen.findByText("Sync full collection")).toBeInTheDocument();
+    expect(screen.queryByText("Also delete removed tracks")).not.toBeInTheDocument();
+  });
+
+  it("shows Tracks, Albums, Artists tabs for Walkman", async () => {
+    render(
+      <DeviceSyncPanel
+        deviceProfileOverride={walkmanProfileOverride}
+        showDeviceSelector={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Walkman Collection Sync")).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("tab", { name: /tracks/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /albums/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /artists/i })).toBeInTheDocument();
+  });
+});
+
+const genericProfileOverride = {
+  id: "dev-generic-1",
+  label: "USB Drive",
+  deviceType: "generic" as const,
+  playlistFormat: "m3u" as const,
+  playlistFolder: "PLAYLISTS",
+  pathStrategy: "relative-to-playlist" as const,
+  handleRef: "handle-generic",
+};
+
+const zuneProfileOverride = {
+  id: "dev-zune-1",
+  label: "Zune HD",
+  deviceType: "zune" as const,
+  playlistFormat: "m3u" as const,
+  playlistFolder: "playlists",
+  pathStrategy: "relative-to-playlist" as const,
+  handleRef: "handle-zune",
+};
+
+describe("DeviceSyncPanel Generic and Zune collection sync", () => {
+  it("renders collection sync UI for Generic preset", async () => {
+    render(
+      <DeviceSyncPanel
+        deviceProfileOverride={genericProfileOverride}
+        showDeviceSelector={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Collection Sync")).toBeInTheDocument();
+    });
+
+    expect(await screen.findByText("Sync selected")).toBeInTheDocument();
+    expect(await screen.findByText("Sync full collection")).toBeInTheDocument();
+  });
+
+  it("renders collection sync UI for Zune preset", async () => {
+    render(
+      <DeviceSyncPanel
+        deviceProfileOverride={zuneProfileOverride}
+        showDeviceSelector={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Collection Sync")).toBeInTheDocument();
+    });
+
+    expect(await screen.findByText("Sync selected to Zune")).toBeInTheDocument();
+    expect(await screen.findByText("Sync full collection")).toBeInTheDocument();
+  });
+
+  it("shows device settings for Generic preset", async () => {
+    render(
+      <DeviceSyncPanel
+        deviceProfileOverride={genericProfileOverride}
+        showDeviceSelector={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Collection Sync")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Playlist Format")).toBeInTheDocument();
+    expect(screen.getByText("Playlist Folder")).toBeInTheDocument();
+  });
+});
+
+const jellyfinProfileOverride = {
+  id: "dev-jellyfin-1",
+  label: "Jellyfin (Docker)",
+  deviceType: "jellyfin" as const,
+  playlistFormat: "m3u" as const,
+  playlistFolder: "",
+  pathStrategy: "relative-to-library-root" as const,
+};
+
+describe("DeviceSyncPanel Jellyfin collection export", () => {
+  it("renders collection export UI for Jellyfin preset", async () => {
+    render(
+      <DeviceSyncPanel
+        deviceProfileOverride={jellyfinProfileOverride}
+        showDeviceSelector={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Jellyfin Collection Export")).toBeInTheDocument();
+    });
+
+    expect(await screen.findByText("Export selected")).toBeInTheDocument();
+    expect(await screen.findByText("Export full collection")).toBeInTheDocument();
+  });
+
+  it("does not show On device column for Jellyfin", async () => {
+    render(
+      <DeviceSyncPanel
+        deviceProfileOverride={jellyfinProfileOverride}
+        showDeviceSelector={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Jellyfin Collection Export")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("On device")).not.toBeInTheDocument();
   });
 });

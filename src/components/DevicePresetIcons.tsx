@@ -1,40 +1,24 @@
 "use client";
 
-import { useId } from "react";
 import type { SVGProps } from "react";
 
-/** Jellyfin logo with app accent colors (replaces brand purple/blue gradient). */
+/** Jellyfin logo, colored via currentColor (e.g. white on accent background). */
 export function JellyfinIcon(props: SVGProps<SVGSVGElement>) {
-  const id = useId();
-  const gradientId = `jellyfin-app-gradient-${id.replace(/:/g, "")}`;
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 512 512"
-      fill="none"
+      fill="currentColor"
       aria-hidden
       {...props}
     >
-      <defs>
-        <linearGradient
-          id={gradientId}
-          x1="0%"
-          y1="0%"
-          x2="100%"
-          y2="100%"
-          gradientUnits="objectBoundingBox"
-        >
-          <stop offset="0" stopColor="var(--accent-primary)" />
-          <stop offset="1" stopColor="var(--accent-secondary)" />
-        </linearGradient>
-      </defs>
       <path
         d="M256 196.2c-22.4 0-94.8 131.3-83.8 153.4s156.8 21.9 167.7 0-61.3-153.4-83.9-153.4"
-        fill={`url(#${gradientId})`}
+        fill="currentColor"
       />
       <path
         d="M256 0C188.3 0-29.8 395.4 3.4 462.2s472.3 66 505.2 0S323.8 0 256 0m165.6 404.3c-21.6 43.2-309.3 43.8-331.1 0S211.7 101.4 256 101.4 443.2 361 421.6 404.3"
-        fill={`url(#${gradientId})`}
+        fill="currentColor"
       />
     </svg>
   );

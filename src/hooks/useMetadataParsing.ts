@@ -98,6 +98,11 @@ export interface UseMetadataParsingReturn {
     libraryRootId: string,
     scanRunId?: string
   ) => Promise<void>;
+  /** Re-process all tracks in the collection (e.g. to re-extract artwork) */
+  handleReprocessCollection: (
+    root: LibraryRoot,
+    libraryRootId: string
+  ) => Promise<void>;
   /** Clear the current error */
   clearError: () => void;
   /** Clear the metadata results */
@@ -731,6 +736,34 @@ export function useMetadataParsing(
     [handleParseMetadata]
   );
 
+  const handleReprocessCollection = useCallback(
+    async (root: LibraryRoot, libraryRootId: string) => {
+      const { getFileIndexEntries } = await import("@/db/storage");
+      const entries = await getFileIndexEntries(libraryRootId);
+      if (entries.length === 0) {
+        return;
+      }
+      const scanResult: ScanResult = {
+        total: entries.length,
+        added: 0,
+        changed: 0,
+        removed: 0,
+        duration: 0,
+        entries: entries.map((entry) => ({
+          trackFileId: entry.trackFileId,
+          relativePath: entry.relativePath,
+          name: entry.name,
+          extension: entry.extension,
+          size: entry.size,
+          mtime: entry.mtime,
+        })),
+      };
+      const reprocessScanRunId = `reprocess-${libraryRootId}-${Date.now()}`;
+      await handleParseMetadata(scanResult, root, libraryRootId, reprocessScanRunId);
+    },
+    [handleParseMetadata]
+  );
+
   return {
     isParsingMetadata,
     metadataResults,
@@ -741,6 +774,7 @@ export function useMetadataParsing(
     handleParseMetadata,
     handleResumeProcessing,
     handleProcessUnprocessed,
+    handleReprocessCollection,
     clearError,
     clearMetadataResults,
     pauseProcessing,

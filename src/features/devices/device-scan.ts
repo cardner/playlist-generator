@@ -68,6 +68,31 @@ export function buildDeviceMatchCandidates(options: {
   return Array.from(new Set(candidates));
 }
 
+/**
+ * Check if a track is on the USB device based on device path map.
+ * Uses filename and size from the track's file index to match against scanned device paths.
+ */
+export function isTrackOnDeviceUsb(
+  track: { fileName?: string; fileSize?: number; trackFileId?: string },
+  devicePathMap: Map<string, string>,
+  fileIndexMap?: Map<string, { name: string; size?: number; mtime?: number }>
+): boolean {
+  if (!devicePathMap || devicePathMap.size === 0) return false;
+  const filename = track.fileName ?? fileIndexMap?.get(track.trackFileId ?? "")?.name;
+  if (!filename) return false;
+  const size = track.fileSize ?? fileIndexMap?.get(track.trackFileId ?? "")?.size;
+  const mtime = fileIndexMap?.get(track.trackFileId ?? "")?.mtime;
+  const candidates = buildDeviceMatchCandidates({
+    filename,
+    size,
+    mtime: typeof mtime === "number" ? mtime : undefined,
+  });
+  for (const key of candidates) {
+    if (devicePathMap.has(key)) return true;
+  }
+  return false;
+}
+
 type FileSystemPermissionMode = "read" | "readwrite";
 
 async function ensureDirectoryPermission(

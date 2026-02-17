@@ -8,6 +8,7 @@ import {
   buildDeviceMatchKey,
   buildDeviceMatchCandidates,
   hashDeviceFileContent,
+  isTrackOnDeviceUsb,
 } from "@/features/devices/device-scan";
 
 const mockSyncPlaylistsToIpod = jest.fn().mockResolvedValue(undefined);
@@ -187,6 +188,55 @@ describe("buildDeviceMatchCandidates", () => {
   it("handles filename only when size and mtime missing", () => {
     const candidates = buildDeviceMatchCandidates({ filename: "Track.mp3" });
     expect(candidates).toEqual(["track.mp3"]);
+  });
+});
+
+describe("isTrackOnDeviceUsb", () => {
+  it("returns false when devicePathMap is empty", () => {
+    expect(
+      isTrackOnDeviceUsb(
+        { fileName: "track.mp3", fileSize: 100 },
+        new Map()
+      )
+    ).toBe(false);
+  });
+
+  it("returns false when track has no filename", () => {
+    const map = new Map([["track.mp3|100", "/MUSIC/track.mp3"]]);
+    expect(isTrackOnDeviceUsb({ fileSize: 100 }, map)).toBe(false);
+  });
+
+  it("returns true when filename|size matches", () => {
+    const map = new Map([["track.mp3|100", "/MUSIC/track.mp3"]]);
+    expect(
+      isTrackOnDeviceUsb({ fileName: "track.mp3", fileSize: 100 }, map)
+    ).toBe(true);
+  });
+
+  it("returns true when filename-only fallback matches", () => {
+    const map = new Map([["track.mp3", "/MUSIC/track.mp3"]]);
+    expect(isTrackOnDeviceUsb({ fileName: "Track.MP3" }, map)).toBe(true);
+  });
+
+  it("uses fileIndexMap when track lacks fileName", () => {
+    const map = new Map([["song.mp3|200", "/MUSIC/song.mp3"]]);
+    const fileIndexMap = new Map([
+      ["tid-1", { name: "song.mp3", size: 200, mtime: 100 }],
+    ]);
+    expect(
+      isTrackOnDeviceUsb(
+        { trackFileId: "tid-1", fileSize: 200 },
+        map,
+        fileIndexMap
+      )
+    ).toBe(true);
+  });
+
+  it("returns false when no candidate matches", () => {
+    const map = new Map([["other.mp3", "/MUSIC/other.mp3"]]);
+    expect(
+      isTrackOnDeviceUsb({ fileName: "track.mp3", fileSize: 100 }, map)
+    ).toBe(false);
   });
 });
 

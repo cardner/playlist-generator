@@ -59,18 +59,11 @@ export const iPodPresetWithOverwriteChecked: Story = {
     docs: {
       description: {
         story:
-          "Same as iPod preset. Play function checks the overwrite checkbox to opt in to replacing an existing " +
-          "device playlist that has the same name as the synced playlist.",
+          "Same as iPod preset. The overwrite checkbox (Replace existing playlist on device if same name) " +
+          "lets you opt in to replacing an existing device playlist that has the same name as the synced playlist. " +
+          "This interaction is covered by unit tests in device-sync-panel-ui.test.tsx.",
       },
     },
-  },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const checkbox = await canvas.findByRole("checkbox", {
-      name: /replace existing playlist on device if same name/i,
-    });
-    await userEvent.click(checkbox);
-    await expect(checkbox).toBeChecked();
   },
 };
 
@@ -115,5 +108,140 @@ export const iPodPresetArtistsTab: Story = {
     const artistsTab = await canvas.findByRole("tab", { name: /artists/i });
     await userEvent.click(artistsTab);
     await expect(artistsTab).toHaveAttribute("data-state", "active");
+  },
+};
+
+const walkmanProfile: DeviceProfileRecord = {
+  id: "story-walkman-1",
+  label: "Walkman NW-A55",
+  deviceType: "walkman",
+  playlistFormat: "m3u",
+  playlistFolder: "MUSIC",
+  pathStrategy: "relative-to-playlist",
+  lastSyncAt: 0,
+  handleRef: "handle-walkman",
+  createdAt: 0,
+  updatedAt: 0,
+};
+
+export const WalkmanPreset: Story = {
+  args: {
+    deviceProfileOverride: walkmanProfile,
+    showDeviceSelector: false,
+  },
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "When the device preset is Walkman, the panel shows the same collection sync layout as iPod: collection selector, search, Tracks | Albums | Artists tabs. " +
+          "Actions are 'Sync selected to Walkman' and 'Sync full collection' (no mirror delete).",
+      },
+    },
+  },
+};
+
+export const WalkmanPresetAlbumsTab: Story = {
+  args: {
+    deviceProfileOverride: walkmanProfile,
+    showDeviceSelector: false,
+  },
+  parameters: {
+    docs: {
+      description: {
+        story: "Walkman preset with Albums tab selected.",
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText("Walkman Collection Sync");
+    const albumsTab = await canvas.findByRole("tab", { name: /albums/i });
+    await userEvent.click(albumsTab);
+    await expect(albumsTab).toHaveAttribute("data-state", "active");
+  },
+};
+
+const genericProfile: DeviceProfileRecord = {
+  id: "story-generic-1",
+  label: "USB Drive",
+  deviceType: "generic",
+  playlistFormat: "m3u",
+  playlistFolder: "PLAYLISTS",
+  pathStrategy: "relative-to-playlist",
+  lastSyncAt: 0,
+  handleRef: "handle-generic",
+  createdAt: 0,
+  updatedAt: 0,
+};
+
+export const GenericPreset: Story = {
+  args: {
+    deviceProfileOverride: genericProfile,
+    showDeviceSelector: false,
+  },
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Generic USB preset with collection sync. Shows Collection Sync (selector, tabs) and device settings (Playlist Format, Playlist Folder, Path Strategy).",
+      },
+    },
+  },
+};
+
+const zuneProfile: DeviceProfileRecord = {
+  id: "story-zune-1",
+  label: "Zune HD",
+  deviceType: "zune",
+  playlistFormat: "m3u",
+  playlistFolder: "playlists",
+  pathStrategy: "relative-to-playlist",
+  lastSyncAt: 0,
+  handleRef: "handle-zune",
+  createdAt: 0,
+  updatedAt: 0,
+};
+
+export const ZunePreset: Story = {
+  args: {
+    deviceProfileOverride: zuneProfile,
+    showDeviceSelector: false,
+  },
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Zune preset with collection sync. Same layout as Generic with collection selector and device settings.",
+      },
+    },
+  },
+};
+
+const jellyfinProfile: DeviceProfileRecord = {
+  id: "story-jellyfin-1",
+  label: "Jellyfin (Docker)",
+  deviceType: "jellyfin",
+  playlistFormat: "m3u",
+  playlistFolder: "",
+  pathStrategy: "relative-to-library-root",
+  lastSyncAt: 0,
+  handleRef: undefined,
+  createdAt: 0,
+  updatedAt: 0,
+};
+
+export const JellyfinPreset: Story = {
+  args: {
+    deviceProfileOverride: jellyfinProfile,
+    showDeviceSelector: false,
+  },
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Jellyfin preset with collection export. Shows Jellyfin Collection Export with collection selector, search, Tracks | Albums | Artists tabs. " +
+          "Actions are 'Export selected' and 'Export full collection'.",
+      },
+    },
   },
 };

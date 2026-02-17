@@ -410,7 +410,7 @@ export default function DeviceSyncPage() {
                       : "border-app-border bg-app-surface hover:border-accent-primary/50"
                   }`}
                 >
-                  <div className="size-10 rounded-sm bg-accent-primary/20 flex items-center justify-center shrink-0">
+                  <div className="size-10 rounded-sm bg-accent-primary/20 flex items-center justify-center shrink-0 text-accent-primary">
                     <JellyfinIcon className="size-5" />
                   </div>
                   <div className="min-w-0">
