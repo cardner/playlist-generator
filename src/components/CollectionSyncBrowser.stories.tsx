@@ -103,7 +103,7 @@ export const AlbumsTab: Story = {
       const [tab, setTab] = useState<"tracks" | "albums" | "artists">("tracks");
       return (
         <CollectionSyncBrowser
-          {...(context.args as object)}
+          {...(context.args as typeof defaultArgs)}
           tab={tab}
           onTabChange={(v) => setTab(v as "tracks" | "albums" | "artists")}
         />
@@ -128,7 +128,7 @@ export const ArtistsTab: Story = {
       const [tab, setTab] = useState<"tracks" | "albums" | "artists">("tracks");
       return (
         <CollectionSyncBrowser
-          {...(context.args as object)}
+          {...(context.args as typeof defaultArgs)}
           tab={tab}
           onTabChange={(v) => setTab(v as "tracks" | "albums" | "artists")}
         />
