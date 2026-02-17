@@ -9,6 +9,7 @@ import type { LibraryFile } from "@/lib/library-selection";
 import { parseMetadataForFiles, type MetadataProgressCallback } from "./metadata-parser";
 import type { MetadataResult } from "./metadata";
 import { saveTrackMetadata } from "@/db/storage";
+import { saveArtworkCacheFromResults } from "./artwork-cache";
 import { isQuotaExceededError, getStorageQuotaInfo } from "@/db/storage-errors";
 import {
   applySidecarEnhancements,
@@ -141,6 +142,7 @@ export async function parseMetadataBatched(
       // Save this batch to IndexedDB if enabled
       if (saveAfterEachBatch && batchSuccessCount > 0) {
         try {
+          await saveArtworkCacheFromResults(results, libraryRootId);
           await saveTrackMetadata(
             results,
             libraryRootId,

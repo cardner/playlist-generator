@@ -13,6 +13,7 @@ type WasmModule = {
   UTF8ToString?: (ptr: number) => string;
   lengthBytesUTF8?: (value: string) => number;
   stringToUTF8?: (value: string, ptr: number, len: number) => void;
+  HEAPU8?: Uint8Array;
   [key: string]: any;
 };
 
@@ -60,6 +61,9 @@ export async function initIpodWasm(options?: { scriptUrl?: string }): Promise<bo
         print: (text: string) => logger.info(text),
         printErr: (text: string) => logger.error(text),
       });
+      if (typeof (wasmModule as any)._ipod_set_track_artwork !== "function") {
+        (wasmModule as any)._ipod_set_track_artwork = (_trackIndex: number, _dataPtr: number, _dataLen: number) => -1;
+      }
       wasmReady = true;
       return true;
     } catch (error) {
@@ -252,4 +256,39 @@ export function wasmUpdateTrack(input: {
     ["number", "string", "string", "string", "string", "number", "number", "number"],
     [input.trackIndex, safeTitle, safeArtist, safeAlbum, safeGenre, safeTrackNr, safeYear, safeRating]
   );
+}
+
+/**
+ * Set JPEG thumbnail for a track (ArtworkDB/ITHMB). Requires the WASM build to expose
+ * ipod_set_track_artwork(trackIndex, dataPtr, dataLen). If the export is missing, returns -1.
+ *
+ * @param trackIndex - 0-based track index in the current iTunesDB
+ * @param jpegBytes - JPEG thumbnail bytes (e.g. from resizeToIpodThumbnail)
+ * @returns 0 on success, non-zero on failure or if artwork API is not available
+ */
+export function wasmSetTrackArtwork(trackIndex: number, jpegBytes: Uint8Array): number {
+  if (!wasmModule || !wasmReady) return -1;
+  const malloc = wasmModule._malloc;
+  const free = wasmModule._free;
+  const heap = wasmModule.HEAPU8;
+  if (!malloc || !free || !heap) return -1;
+
+  const func = (wasmModule as any)._ipod_set_track_artwork;
+  if (typeof func !== "function") {
+    return -1;
+  }
+
+  const len = jpegBytes.length;
+  if (len <= 0) return -1;
+
+  const ptr = malloc(len);
+  if (!ptr) return -1;
+
+  try {
+    heap.set(jpegBytes, ptr);
+    const result = func(trackIndex, ptr, len);
+    return typeof result === "number" ? result : -1;
+  } finally {
+    free(ptr);
+  }
 }

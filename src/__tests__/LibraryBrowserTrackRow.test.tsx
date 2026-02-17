@@ -30,29 +30,6 @@ jest.mock("@/components/TrackMetadataEditor", () => ({
   ),
 }));
 
-jest.mock("@/components/InlineAudioPlayer", () => {
-  const InlineAudioPlayer = React.forwardRef(
-    (
-      {
-        trackFileId,
-        onLoaded,
-      }: {
-        trackFileId: string;
-        onLoaded?: () => void;
-      },
-      _ref: React.Ref<unknown>
-    ) => (
-      <div data-testid="inline-audio-player" data-track-id={trackFileId}>
-        <button type="button" onClick={onLoaded}>
-          Simulate loaded
-        </button>
-      </div>
-    )
-  );
-  InlineAudioPlayer.displayName = "InlineAudioPlayer";
-  return { InlineAudioPlayer };
-});
-
 function createTrack(overrides: Partial<TrackRecord> = {}): TrackRecord {
   const trackFileId = overrides.trackFileId ?? "track-1";
   const libraryRootId = overrides.libraryRootId ?? "root-1";
@@ -89,8 +66,6 @@ const defaultProps = {
   writebackState: null as "pending" | "error" | "synced" | null,
   playingTrackId: null as string | null,
   searchingTrackId: null as string | null,
-  hasSampleResult: jest.fn(() => false),
-  getSampleResult: jest.fn(() => null),
   onPlayClick: jest.fn(),
   onMouseEnter: jest.fn(),
   onMouseLeave: jest.fn(),
@@ -103,12 +78,6 @@ const defaultProps = {
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   },
-  registerAudioRef: jest.fn(),
-  onAudioLoaded: jest.fn(),
-  setPlayingTrack: jest.fn(),
-  setSearchingTrack: jest.fn(),
-  setError: jest.fn(),
-  clearPlayingTrack: jest.fn(),
 };
 
 function renderInTable(ui: React.ReactElement) {
@@ -210,45 +179,6 @@ describe("LibraryBrowserTrackRow", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
     expect(onSave).toHaveBeenCalled();
-  });
-
-  it("shows InlineAudioPlayer when hasSampleResult returns true", () => {
-    const hasSampleResult = jest.fn(() => true);
-    const getSampleResult = jest.fn(() => ({
-      url: "https://example.com/preview.mp3",
-      platform: "itunes" as const,
-      title: "Test Song",
-      artist: "Test Artist",
-    }));
-    renderInTable(
-      <LibraryBrowserTrackRow
-        {...defaultProps}
-        hasSampleResult={hasSampleResult}
-        getSampleResult={getSampleResult}
-      />
-    );
-    expect(screen.getByTestId("inline-audio-player")).toBeInTheDocument();
-  });
-
-  it("calls onAudioLoaded when audio player reports loaded", () => {
-    const onAudioLoaded = jest.fn();
-    const hasSampleResult = jest.fn(() => true);
-    const getSampleResult = jest.fn(() => ({
-      url: "https://example.com/preview.mp3",
-      platform: "itunes" as const,
-      title: "Test Song",
-      artist: "Test Artist",
-    }));
-    renderInTable(
-      <LibraryBrowserTrackRow
-        {...defaultProps}
-        hasSampleResult={hasSampleResult}
-        getSampleResult={getSampleResult}
-        onAudioLoaded={onAudioLoaded}
-      />
-    );
-    fireEvent.click(screen.getByRole("button", { name: /simulate loaded/i }));
-    expect(onAudioLoaded).toHaveBeenCalledWith("track-1");
   });
 
   it("displays writeback pending state", () => {

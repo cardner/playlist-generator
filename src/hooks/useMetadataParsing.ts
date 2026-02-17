@@ -29,6 +29,7 @@ import { getLibraryFilesForEntries } from "@/features/library/metadata-integrati
 import { saveTrackMetadata, updateScanRun, removeTrackMetadata } from "@/db/storage";
 import { detectTempoForLibrary } from "@/features/library/metadata-enhancement";
 import { isQuotaExceededError, getStorageQuotaInfo } from "@/db/storage-errors";
+import { saveArtworkCacheFromResults } from "@/features/library/artwork-cache";
 import {
   applySidecarEnhancements,
   applySidecarToResults,
@@ -96,6 +97,11 @@ export interface UseMetadataParsingReturn {
     root: LibraryRoot,
     libraryRootId: string,
     scanRunId?: string
+  ) => Promise<void>;
+  /** Re-process all tracks in the collection (e.g. to re-extract artwork) */
+  handleReprocessCollection: (
+    root: LibraryRoot,
+    libraryRootId: string
   ) => Promise<void>;
   /** Clear the current error */
   clearError: () => void;
@@ -398,6 +404,9 @@ export function useMetadataParsing(
           errorCount = results.filter((r) => r.error).length;
 
           setMetadataResults(results);
+
+          // Persist artwork cache (thumbnails for UI and iPod sync)
+          await saveArtworkCacheFromResults(results, libraryRootId);
 
           // Persist metadata results (with progress tracking for large libraries)
           try {
@@ -727,6 +736,34 @@ export function useMetadataParsing(
     [handleParseMetadata]
   );
 
+  const handleReprocessCollection = useCallback(
+    async (root: LibraryRoot, libraryRootId: string) => {
+      const { getFileIndexEntries } = await import("@/db/storage");
+      const entries = await getFileIndexEntries(libraryRootId);
+      if (entries.length === 0) {
+        return;
+      }
+      const scanResult: ScanResult = {
+        total: entries.length,
+        added: 0,
+        changed: 0,
+        removed: 0,
+        duration: 0,
+        entries: entries.map((entry) => ({
+          trackFileId: entry.trackFileId,
+          relativePath: entry.relativePath,
+          name: entry.name,
+          extension: entry.extension,
+          size: entry.size,
+          mtime: entry.mtime,
+        })),
+      };
+      const reprocessScanRunId = `reprocess-${libraryRootId}-${Date.now()}`;
+      await handleParseMetadata(scanResult, root, libraryRootId, reprocessScanRunId);
+    },
+    [handleParseMetadata]
+  );
+
   return {
     isParsingMetadata,
     metadataResults,
@@ -737,6 +774,7 @@ export function useMetadataParsing(
     handleParseMetadata,
     handleResumeProcessing,
     handleProcessUnprocessed,
+    handleReprocessCollection,
     clearError,
     clearMetadataResults,
     pauseProcessing,

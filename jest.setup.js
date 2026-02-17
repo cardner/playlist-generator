@@ -41,6 +41,15 @@ jest.mock('@ffmpeg/util', () => ({
   fetchFile: jest.fn().mockResolvedValue(new Uint8Array(10)),
 }))
 
+// Polyfill URL.createObjectURL/revokeObjectURL for tests (e.g. iPod artwork resize)
+if (typeof globalThis.URL !== 'undefined' && typeof globalThis.URL.createObjectURL !== 'function') {
+  let blobId = 0
+  globalThis.URL.createObjectURL = function (blob) {
+    return 'blob:mock-' + (blobId++)
+  }
+  globalThis.URL.revokeObjectURL = function () {}
+}
+
 // Polyfill Blob.arrayBuffer - jsdom does not implement it
 if (typeof Blob !== 'undefined' && typeof Blob.prototype.arrayBuffer !== 'function') {
   Blob.prototype.arrayBuffer = function () {

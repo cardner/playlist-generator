@@ -12729,6 +12729,13 @@
     const parserFactory = new ParserFactory();
     return parserFactory.parse(tokenizer, void 0, options);
   }
+  function selectCover(pictures) {
+    return pictures ? pictures.reduce((acc, cur) => {
+      if (cur.name && cur.name.toLowerCase() in ["front", "cover", "cover (front)"])
+        return cur;
+      return acc;
+    }) : null;
+  }
   async function scanAppendingHeaders(tokenizer, options = {}) {
     let apeOffset = tokenizer.fileInfo.size;
     if (await hasID3v1Header(tokenizer)) {
@@ -12920,15 +12927,26 @@
       if (!metadata.format.duration) {
         warnings.push("Duration not available");
       }
+      let picture;
+      const pictures = metadata.common.picture;
+      if (pictures?.length) {
+        const cover = selectCover(pictures) ?? pictures[0];
+        if (cover?.data?.length) {
+          const data = cover.data;
+          const buffer = data.byteLength === data.buffer.byteLength ? data.buffer : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+          picture = { format: cover.format ?? "image/jpeg", data: buffer };
+        }
+      }
       const response = {
         trackFileId,
         tags,
         tech,
         isrc: normalizeIsrc(metadata.common.isrc),
         acoustidId: normalizeAcoustId(extractAcoustId(metadata)),
+        picture,
         warnings: warnings.length > 0 ? warnings : void 0
       };
-      self.postMessage(response);
+      self.postMessage(response, picture ? { transfer: [picture.data] } : void 0);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error parsing metadata";
       const response = {

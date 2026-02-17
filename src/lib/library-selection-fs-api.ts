@@ -241,6 +241,25 @@ export async function getDirectoryHandle(
 }
 
 /**
+ * Verify that a device handle is still accessible (e.g. USB drive still connected).
+ * Performs a lightweight read to detect disconnection.
+ *
+ * @param handleId Handle ID from IndexedDB
+ * @returns true if the device is reachable, false otherwise
+ */
+export async function verifyDeviceConnection(handleId: string): Promise<boolean> {
+  try {
+    const handle = await getDirectoryHandle(handleId);
+    if (!handle) return false;
+    const it = handle.entries();
+    await it.next();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Recursively traverse directory and yield files
  * 
  * Handles network drive issues gracefully by catching NotFoundError and

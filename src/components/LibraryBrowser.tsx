@@ -55,7 +55,7 @@ import {
   LibrarySearchCombo,
   type FilterTag,
 } from "./LibrarySearchCombo";
-import type { InlineAudioPlayerRef } from "./InlineAudioPlayer";
+import { InlineAudioPlayer, type InlineAudioPlayerRef } from "./InlineAudioPlayer";
 import { searchTrackSample } from "@/features/audio-preview/platform-searcher";
 import { useAudioPreviewState } from "@/hooks/useAudioPreviewState";
 import { useMetadataWriteback } from "@/hooks/useMetadataWriteback";
@@ -675,7 +675,7 @@ export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onF
 
   if (isLoading) {
     return (
-      <div className="bg-app-surface rounded-sm shadow-2xl p-6">
+      <div className="p-6">
         <p className="text-app-secondary">Loading tracks...</p>
       </div>
     );
@@ -683,7 +683,7 @@ export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onF
 
   if (tracks.length === 0) {
     return (
-      <div className="bg-app-surface rounded-sm shadow-2xl p-6">
+      <div className="p-6">
         <h2 className="text-app-primary mb-4">Track List</h2>
         <p className="text-app-tertiary">
           No tracks found. Scan your library to get started.
@@ -761,11 +761,11 @@ export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onF
         </div>
       )}
 
-      {/* Track List */}
-      <div className="bg-app-surface rounded-sm shadow-2xl">
+      {/* Track List — no card, sits on page background */}
+      <div>
         {/* Sticky header: search, filters, pagination, actions — stays at top when scrolling */}
-        <div className="sticky top-0 z-10 bg-app-surface border-b border-app-border shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2">
+        <div className="sticky top-0 z-10 bg-app-bg border-app-border">
+          <div className="flex flex-wrap items-center justify-between gap-2 py-2">
             <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
               <LibrarySearchCombo
                 filters={filters}
@@ -836,37 +836,22 @@ export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onF
           </p>
         ) : (
           <>
-          <div className="px-4">
-            <table className="w-full text-sm relative">
-              <thead>
-                <tr className="z-[5] border-b border-app-border bg-app-surface">
-                  <th className="sticky top-12 bg-app-surface border-b border-app-border text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider w-12">
-                    Play
-                  </th>
-                  <th className="sticky top-12 bg-app-surface border-b border-app-border text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
-                    Title
-                  </th>
-                  <th className="sticky top-12 bg-app-surface border-b border-app-border text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
-                    Artist
-                  </th>
-                  <th className="sticky top-12 bg-app-surface border-b border-app-border text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
-                    Album
-                  </th>
-                  <th className="sticky top-12 bg-app-surface border-b border-app-border text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
-                    Genre
-                  </th>
-                  <th className="sticky top-12 bg-app-surface border-b border-app-border text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
-                    Duration
-                  </th>
-                  <th className="sticky top-12 bg-app-surface border-b border-app-border text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider">
-                    BPM
-                  </th>
-                  <th className="sticky top-12 bg-app-surface border-b border-app-border text-left py-2 px-4 font-medium text-app-primary uppercase tracking-wider w-16">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
+          <div className="">
+            <div className="app-table-wrap sticky-top-12">
+              <table className="app-table">
+                <thead>
+                  <tr>
+                    <th className="w-12 shrink-0">Play</th>
+                    <th className="min-w-0">Title</th>
+                    <th className="min-w-0">Artist</th>
+                    <th className="min-w-0">Album</th>
+                    <th className="min-w-0">Genre</th>
+                    <th className="w-16 shrink-0">Duration</th>
+                    <th className="w-24 shrink-0">BPM</th>
+                    <th className="w-16 shrink-0">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
                 {paginatedTracks.map((track) => {
                   const writebackStatus = writebackStatuses.get(track.trackFileId);
                   const writebackState = writebackStatus?.pending
@@ -887,8 +872,6 @@ export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onF
                       writebackState={writebackState}
                       playingTrackId={playingTrackId}
                       searchingTrackId={searchingTrackId}
-                      hasSampleResult={hasSampleResult}
-                      getSampleResult={getSampleResult}
                       onPlayClick={handleInlinePlayClick}
                       onMouseEnter={handleTrackRowMouseEnter}
                       onMouseLeave={handleTrackRowMouseLeave}
@@ -896,17 +879,42 @@ export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onF
                       onEditCancel={handleEditCancel}
                       onSave={handleTrackSave}
                       formatDuration={formatDuration}
-                      registerAudioRef={registerAudioRef}
-                      onAudioLoaded={handleAudioLoaded}
-                      setPlayingTrack={setPlayingTrack}
-                      setSearchingTrack={setSearchingTrack}
-                      setError={setError}
-                      clearPlayingTrack={clearPlayingTrack}
                     />
                   );
                 })}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+              {/* Hidden audio players so prefetch/hover does not add extra table rows */}
+              <div className="sr-only" aria-hidden="true">
+                {paginatedTracks
+                  .filter((track) => hasSampleResult(track.trackFileId))
+                  .map((track) => (
+                    <InlineAudioPlayer
+                      key={track.trackFileId}
+                      ref={(ref) => registerAudioRef(track.trackFileId, ref)}
+                      trackFileId={track.trackFileId}
+                      sampleResult={getSampleResult(track.trackFileId) || null}
+                      autoPlay={
+                        playingTrackId === track.trackFileId &&
+                        !searchingTrackId &&
+                        hasSampleResult(track.trackFileId)
+                      }
+                      onPlay={() => {
+                        setPlayingTrack(track.trackFileId);
+                        setSearchingTrack(null);
+                      }}
+                      onPause={() => clearPlayingTrack()}
+                      onEnded={() => clearPlayingTrack()}
+                      onError={(error) => {
+                        setError(track.trackFileId, error);
+                        clearPlayingTrack();
+                        setSearchingTrack(null);
+                      }}
+                      onLoaded={() => handleAudioLoaded(track.trackFileId)}
+                    />
+                  ))}
+              </div>
+            </div>
           </div>
           {filteredTracks.length > pageSize && (
             <div className="flex flex-col gap-2 px-4 py-3 border-t border-app-border bg-app-surface md:flex-row md:items-center md:justify-between">

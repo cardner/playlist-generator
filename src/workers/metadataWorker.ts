@@ -4,7 +4,7 @@
  * Parses audio file metadata in a background thread
  */
 
-import { parseBlob } from "music-metadata";
+import { parseBlob, selectCover } from "music-metadata";
 import type {
   MetadataWorkerRequest,
   MetadataWorkerResponse,
@@ -77,16 +77,31 @@ self.onmessage = async (event: MessageEvent<MetadataWorkerRequest>) => {
       warnings.push("Duration not available");
     }
 
+    let picture: { format: string; data: ArrayBuffer } | undefined;
+    const pictures = metadata.common.picture;
+    if (pictures?.length) {
+      const cover = selectCover(pictures) ?? pictures[0];
+      if (cover?.data?.length) {
+        const data = cover.data;
+        const buffer =
+          data.byteLength === data.buffer.byteLength
+            ? data.buffer
+            : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+        picture = { format: cover.format ?? "image/jpeg", data: buffer as ArrayBuffer };
+      }
+    }
+
     const response: MetadataWorkerResponse = {
       trackFileId,
       tags,
       tech,
       isrc: normalizeIsrc(metadata.common.isrc),
       acoustidId: normalizeAcoustId(extractAcoustId(metadata)),
+      picture,
       warnings: warnings.length > 0 ? warnings : undefined,
     };
 
-    self.postMessage(response);
+    self.postMessage(response, picture ? { transfer: [picture.data] } : undefined);
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error parsing metadata";

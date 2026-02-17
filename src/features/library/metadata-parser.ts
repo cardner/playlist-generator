@@ -5,7 +5,7 @@
  * Tempo detection for tracks missing BPM runs on main thread (requires AudioContext).
  */
 
-import { parseBlob } from "music-metadata";
+import { parseBlob, selectCover } from "music-metadata";
 import type { LibraryFile } from "@/lib/library-selection";
 import type { MetadataResult, TechInfo } from "./metadata";
 import {
@@ -196,12 +196,27 @@ async function parseSingleFileMainThread(file: LibraryFile): Promise<MetadataRes
     if (!metadata.common.album) warnings.push("No album tag found, using 'Unknown Album'");
     if (!metadata.format.duration) warnings.push("Duration not available");
 
+    let picture: { format: string; data: ArrayBuffer } | undefined;
+    const pictures = metadata.common.picture;
+    if (pictures?.length) {
+      const cover = selectCover(pictures) ?? pictures[0];
+      if (cover?.data?.length) {
+        const data = cover.data;
+        const buffer =
+          data.byteLength === data.buffer.byteLength
+            ? data.buffer
+            : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+        picture = { format: cover.format ?? "image/jpeg", data: buffer as ArrayBuffer };
+      }
+    }
+
     return {
       trackFileId: file.trackFileId,
       tags,
       tech,
       isrc: normalizeIsrc(metadata.common.isrc),
       acoustidId: normalizeAcoustId(extractAcoustId(metadata)),
+      picture,
       warnings: warnings.length > 0 ? warnings : undefined,
     };
   } catch (error) {

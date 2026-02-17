@@ -169,6 +169,7 @@ export function LibraryScanner({
     handleParseMetadata,
     handleResumeProcessing,
     handleProcessUnprocessed,
+    handleReprocessCollection,
     clearError: clearParseError,
     clearMetadataResults,
     pauseProcessing,
@@ -268,11 +269,12 @@ export function LibraryScanner({
       !libraryRoot ||
       libraryRoot.mode !== "handle" ||
       permissionStatus !== "granted" ||
-      unprocessedCount === null ||
-      unprocessedCount === 0
+      !libraryRootId
     ) {
       return null;
     }
+    const hasUnprocessed =
+      unprocessedCount !== null && unprocessedCount > 0;
 
     return (
       <div className="bg-blue-500/10 border border-blue-500/20 rounded-sm p-4">
@@ -283,27 +285,48 @@ export function LibraryScanner({
             </svg>
           </div>
           <div className="flex-1">
-            <h3 className="text-blue-500 font-medium mb-1">Tracks Pending Processing</h3>
-            <p className="text-app-secondary text-sm mb-3">
-              {unprocessedCount} scanned tracks have not been processed yet.
-            </p>
-            <button
-              onClick={() => {
-                clearMetadataResults();
-                clearParseError();
-                if (libraryRootId) {
-                  handleProcessUnprocessed(
-                    libraryRoot,
-                    libraryRootId,
-                    scanRunId || undefined
-                  );
-                }
-              }}
-              disabled={!libraryRootId}
-              className="px-3 py-2 bg-blue-500 text-white rounded-sm text-xs uppercase tracking-wider hover:bg-blue-400 transition-colors"
-            >
-              {libraryRootId ? "Process Pending Tracks" : "Loading Library..."}
-            </button>
+            <h3 className="text-blue-500 font-medium mb-1">
+              {hasUnprocessed ? "Tracks Pending Processing" : "Metadata Processing"}
+            </h3>
+            {hasUnprocessed ? (
+              <p className="text-app-secondary text-sm mb-3">
+                {unprocessedCount} scanned tracks have not been processed yet.
+              </p>
+            ) : (
+              <p className="text-app-secondary text-sm mb-3">
+                Re-extract metadata (e.g. artwork) for all tracks in this collection.
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {hasUnprocessed && (
+                <button
+                  onClick={() => {
+                    clearMetadataResults();
+                    clearParseError();
+                    handleProcessUnprocessed(
+                      libraryRoot,
+                      libraryRootId,
+                      scanRunId || undefined
+                    );
+                  }}
+                  disabled={isParsingMetadata}
+                  className="px-3 py-2 bg-blue-500 text-white rounded-sm text-xs uppercase tracking-wider hover:bg-blue-400 transition-colors disabled:opacity-50"
+                >
+                  Process Pending Tracks
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  clearMetadataResults();
+                  clearParseError();
+                  handleReprocessCollection(libraryRoot, libraryRootId);
+                }}
+                disabled={isParsingMetadata}
+                className="px-3 py-2 bg-app-secondary/20 text-app-primary rounded-sm text-xs uppercase tracking-wider hover:bg-app-secondary/30 transition-colors disabled:opacity-50 border border-app-secondary/30"
+              >
+                Re-process all metadata
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -955,13 +978,34 @@ export function LibraryScanner({
                     Your library has been previously scanned. You can browse your tracks below or rescan to update the index.
                   </p>
                 </div>
-                <button
-                  onClick={handleRescanWithReset}
-                  disabled={isScanning || hasExistingScans === null}
-                  className="px-6 py-3 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
-                >
-                  Rescan Library
-                </button>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={handleRescanWithReset}
+                    disabled={isScanning || hasExistingScans === null}
+                    className="px-6 py-3 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
+                  >
+                    Rescan Library
+                  </button>
+                  <button
+                    onClick={() => {
+                      clearMetadataResults();
+                      clearParseError();
+                      if (libraryRoot && libraryRootId && libraryRoot.mode === "handle") {
+                        handleReprocessCollection(libraryRoot, libraryRootId);
+                      }
+                    }}
+                    disabled={
+                      isParsingMetadata ||
+                      hasExistingScans === null ||
+                      !libraryRootId ||
+                      !libraryRoot ||
+                      libraryRoot.mode !== "handle"
+                    }
+                    className="px-6 py-3 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
+                  >
+                    Re-process metadata
+                  </button>
+                </div>
               </div>
             </div>
           </div>
