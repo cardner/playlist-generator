@@ -457,9 +457,16 @@ export async function pickDeviceRootHandle(): Promise<{ handleId: string; name: 
     throw new Error("File System Access API not supported");
   }
 
-  const handle = await window.showDirectoryPicker({ mode: "readwrite" });
-  const handleId = await storeDirectoryHandle(handle);
-  return { handleId, name: handle.name };
+  try {
+    const handle = await window.showDirectoryPicker({ mode: "readwrite" });
+    const handleId = await storeDirectoryHandle(handle);
+    return { handleId, name: handle.name };
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Folder selection was cancelled");
+    }
+    throw err;
+  }
 }
 
 export async function checkDeviceWriteAccess(handleRef: string): Promise<boolean> {
@@ -677,6 +684,7 @@ export async function syncPlaylistsToDevice(options: {
     mirrorMode?: boolean;
     mirrorDeleteFromDevice?: boolean;
     onlyReferenceExistingTracks?: boolean;
+    libraryOnly?: boolean;
   }>;
   devicePathMap?: DevicePathMap;
   deviceEntries?: DeviceScanEntry[];
@@ -685,6 +693,8 @@ export async function syncPlaylistsToDevice(options: {
   onlyReferenceExistingTracks?: boolean;
   /** When true, replace existing iPod playlist with same name (clear then add synced tracks) */
   overwriteExistingPlaylist?: boolean;
+  /** Cumulative progress: current index, total items, optional title (tracks for iPod, playlists for others) */
+  onProgress?: (progress: { current: number; total: number; title?: string }) => void;
 }): Promise<{ playlistPath?: string; configHash?: string }> {
   const {
     deviceProfile,
@@ -694,6 +704,7 @@ export async function syncPlaylistsToDevice(options: {
     onlyIncludeMatchedPaths,
     onlyReferenceExistingTracks,
     overwriteExistingPlaylist,
+    onProgress,
   } = options;
   if (deviceProfile.deviceType === "ipod") {
     const ipodTargets = targets.map((t) => ({
@@ -704,12 +715,19 @@ export async function syncPlaylistsToDevice(options: {
       deviceProfile,
       targets: ipodTargets,
       overwriteExistingPlaylist,
+      onProgress,
     });
     return {};
   }
 
   let lastResult: { playlistPath: string; configHash: string } | null = null;
-  for (const target of targets) {
+  for (let index = 0; index < targets.length; index += 1) {
+    const target = targets[index];
+    onProgress?.({
+      current: index + 1,
+      total: targets.length,
+      title: target.playlist.title,
+    });
     lastResult = await syncPlaylistToDevice({
       playlist: target.playlist,
       trackLookups: target.trackLookups,

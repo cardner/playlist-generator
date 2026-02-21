@@ -58,6 +58,8 @@ interface DeviceSyncSidebarProps {
   onExport?: () => void;
   isSyncing: boolean;
   syncPhase?: "idle" | "preparing" | "writing";
+  /** Cumulative sync progress (all files). Shown above Sync button when isSyncing. */
+  syncProgress?: { current: number; total: number; title?: string } | null;
   deviceScanStatus?: "idle" | "scanning" | "done" | "error";
   lastSyncAt?: number;
   syncButtonLabel: string;
@@ -112,6 +114,7 @@ export function DeviceSyncSidebar({
   onExport,
   isSyncing,
   syncPhase = "idle",
+  syncProgress = null,
   deviceScanStatus = "idle",
   lastSyncAt,
   syncButtonLabel,
@@ -355,6 +358,12 @@ export function DeviceSyncSidebar({
                         </div>
                       </div>
                     )}
+                    {devicePathDetection.keyCoverageLog.keyMapSize === 0 &&
+                      devicePathDetection.keyCoverageLog.scanned > 0 && (
+                        <p className="mt-1 text-[11px] text-yellow-500">
+                          Device scan completed, but no library match keys were available.
+                        </p>
+                      )}
                   </div>
                 )}
                 {(devicePathDetection.missingMetadataCount ?? 0) > 0 && (
@@ -408,6 +417,36 @@ export function DeviceSyncSidebar({
 
         {/* Action buttons */}
         <div className="flex flex-col gap-2">
+          {isSyncing && syncProgress && syncProgress.total > 0 && (
+            <div className="rounded-md border border-app-border bg-app-surface p-3">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span className="text-app-primary text-xs font-medium uppercase tracking-wider">
+                  Syncing…
+                </span>
+                <span className="text-app-secondary text-xs tabular-nums">
+                  {Math.round((syncProgress.current / syncProgress.total) * 100)}%
+                </span>
+              </div>
+              <div className="w-full bg-app-hover rounded-full h-2 overflow-hidden">
+                <div
+                  className="bg-accent-primary h-2 rounded-full transition-all duration-300"
+                  style={{
+                    width: `${(syncProgress.current / syncProgress.total) * 100}%`,
+                  }}
+                />
+              </div>
+              <div className="mt-1.5 flex justify-between text-app-tertiary text-xs">
+                <span>
+                  {syncProgress.current} of {syncProgress.total}
+                </span>
+                {syncProgress.title && (
+                  <span className="truncate max-w-[60%]" title={syncProgress.title}>
+                    {syncProgress.title}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
           {showScanButton && onScan && (
             <Button
               variant="secondary"
@@ -420,7 +459,7 @@ export function DeviceSyncSidebar({
                 : deviceScanStatus === "idle"
                   ? "Not scanned"
                   : deviceScanStatus === "done"
-                    ? "Scanned"
+                    ? "Scan complete"
                     : deviceScanStatus === "error"
                       ? "Scan failed"
                       : "Not scanned"}
