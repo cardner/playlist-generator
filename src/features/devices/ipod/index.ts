@@ -4,6 +4,7 @@ export {
   getDeviceViaWebUSB,
   getModelInfo,
   requiresEncryption,
+  supportsArtwork,
   isSysInfoSetup,
   listKnownIpodDevices,
   writeSysInfoSetup,

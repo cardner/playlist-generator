@@ -6,27 +6,29 @@ type IpodModelInfo = {
   name: string;
   modelNumStr: string;
   encrypted: boolean;
+  /** True if the model supports album artwork (ArtworkDB/ITHMB). */
+  artworkSupported: boolean;
 };
 
 const IPOD_MODELS: Record<number, IpodModelInfo> = {
-  0x1201: { name: "iPod 3rd Gen", modelNumStr: "M8946", encrypted: false },
-  0x1202: { name: "iPod 2nd Gen", modelNumStr: "M8513", encrypted: false },
-  0x1203: { name: "iPod 4th Gen (Grayscale)", modelNumStr: "M9282", encrypted: false },
-  0x1204: { name: "iPod Photo/Color", modelNumStr: "MA079", encrypted: false },
-  0x1205: { name: "iPod Mini", modelNumStr: "M9160", encrypted: false },
-  0x1209: { name: "iPod Video (5th Gen)", modelNumStr: "MA002", encrypted: false },
-  0x120a: { name: "iPod Nano 1st Gen", modelNumStr: "MA350", encrypted: false },
-  0x1260: { name: "iPod Nano 2nd Gen", modelNumStr: "MA477", encrypted: false },
-  0x1261: { name: "iPod Classic 6th/7th Gen", modelNumStr: "MB029", encrypted: true },
-  0x1262: { name: "iPod Nano 3rd Gen", modelNumStr: "MA978", encrypted: true },
-  0x1263: { name: "iPod Nano 4th Gen", modelNumStr: "MB754", encrypted: true },
-  0x1265: { name: "iPod Nano 5th Gen", modelNumStr: "MC031", encrypted: true },
-  0x1266: { name: "iPod Nano 6th Gen", modelNumStr: "MC525", encrypted: true },
-  0x1267: { name: "iPod Nano 7th Gen", modelNumStr: "MD480", encrypted: true },
-  0x1300: { name: "iPod Shuffle 1st Gen", modelNumStr: "M9724", encrypted: false },
-  0x1301: { name: "iPod Shuffle 2nd Gen", modelNumStr: "MA564", encrypted: false },
-  0x1302: { name: "iPod Shuffle 3rd Gen", modelNumStr: "MB225", encrypted: false },
-  0x1303: { name: "iPod Shuffle 4th Gen", modelNumStr: "MC749", encrypted: false },
+  0x1201: { name: "iPod 3rd Gen", modelNumStr: "M8946", encrypted: false, artworkSupported: false },
+  0x1202: { name: "iPod 2nd Gen", modelNumStr: "M8513", encrypted: false, artworkSupported: false },
+  0x1203: { name: "iPod 4th Gen (Grayscale)", modelNumStr: "M9282", encrypted: false, artworkSupported: false },
+  0x1204: { name: "iPod Photo/Color", modelNumStr: "MA079", encrypted: false, artworkSupported: true },
+  0x1205: { name: "iPod Mini", modelNumStr: "M9160", encrypted: false, artworkSupported: true },
+  0x1209: { name: "iPod Video (5th Gen)", modelNumStr: "MA002", encrypted: false, artworkSupported: true },
+  0x120a: { name: "iPod Nano 1st Gen", modelNumStr: "MA350", encrypted: false, artworkSupported: true },
+  0x1260: { name: "iPod Nano 2nd Gen", modelNumStr: "MA477", encrypted: false, artworkSupported: true },
+  0x1261: { name: "iPod Classic 6th/7th Gen", modelNumStr: "MB029", encrypted: true, artworkSupported: true },
+  0x1262: { name: "iPod Nano 3rd Gen", modelNumStr: "MA978", encrypted: true, artworkSupported: true },
+  0x1263: { name: "iPod Nano 4th Gen", modelNumStr: "MB754", encrypted: true, artworkSupported: true },
+  0x1265: { name: "iPod Nano 5th Gen", modelNumStr: "MC031", encrypted: true, artworkSupported: true },
+  0x1266: { name: "iPod Nano 6th Gen", modelNumStr: "MC525", encrypted: true, artworkSupported: true },
+  0x1267: { name: "iPod Nano 7th Gen", modelNumStr: "MD480", encrypted: true, artworkSupported: true },
+  0x1300: { name: "iPod Shuffle 1st Gen", modelNumStr: "M9724", encrypted: false, artworkSupported: false },
+  0x1301: { name: "iPod Shuffle 2nd Gen", modelNumStr: "MA564", encrypted: false, artworkSupported: false },
+  0x1302: { name: "iPod Shuffle 3rd Gen", modelNumStr: "MB225", encrypted: false, artworkSupported: false },
+  0x1303: { name: "iPod Shuffle 4th Gen", modelNumStr: "MC749", encrypted: false, artworkSupported: false },
 };
 
 export type WebUsbDeviceInfo = {
@@ -45,6 +47,11 @@ type WebUsbNavigator = Navigator & {
 
 export function requiresEncryption(productId: number): boolean {
   return IPOD_MODELS[productId]?.encrypted ?? false;
+}
+
+/** Returns true if the iPod model supports album artwork (ArtworkDB/ITHMB). Unknown models are treated as not supporting artwork. */
+export function supportsArtwork(productId: number): boolean {
+  return IPOD_MODELS[productId]?.artworkSupported ?? false;
 }
 
 export function getModelInfo(productId: number): IpodModelInfo | null {

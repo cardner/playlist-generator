@@ -12,34 +12,68 @@ function getAssetBase(): string {
   return `${window.location.origin}${prefix}`;
 }
 
-async function verifyAsset(url: string) {
+const FFMPEG_CORE_VERSION = "0.12.9";
+const CDN_BASE = `https://unpkg.com/@ffmpeg/core@${FFMPEG_CORE_VERSION}/dist/umd`;
+
+async function verifyAsset(url: string): Promise<boolean> {
   try {
     const head = await fetch(url, { method: "HEAD" });
-    if (head.ok) return;
+    if (head.ok) return true;
   } catch {
     // fall through
   }
-  const get = await fetch(url);
-  if (!get.ok) {
-    throw new Error(`Missing ffmpeg asset: ${url}`);
+  try {
+    const get = await fetch(url);
+    return get.ok;
+  } catch {
+    return false;
   }
 }
 
 async function loadFfmpegInstance(ffmpeg: FFmpeg) {
   const base = getAssetBase();
-  const coreURL = new URL("/ffmpeg/ffmpeg-core.mjs", base).toString();
-  const wasmURL = new URL("/ffmpeg/ffmpeg-core.wasm", base).toString();
+  let coreURL = new URL("/ffmpeg/ffmpeg-core.js", base).toString();
+  let wasmURL = new URL("/ffmpeg/ffmpeg-core.wasm", base).toString();
 
-  await Promise.all([verifyAsset(coreURL), verifyAsset(wasmURL)]);
+  const cdnCore = `${CDN_BASE}/ffmpeg-core.js`;
+  const cdnWasm = `${CDN_BASE}/ffmpeg-core.wasm`;
+  const localOk = (await verifyAsset(coreURL)) && (await verifyAsset(wasmURL));
+  const cdnOk = (await verifyAsset(cdnCore)) && (await verifyAsset(cdnWasm));
+  if (!localOk) {
+    if (cdnOk) {
+      logger.info("Using FFmpeg core from CDN (local assets not found)");
+      coreURL = cdnCore;
+      wasmURL = cdnWasm;
+    } else {
+      throw new Error(
+        `Missing ffmpeg asset. Add files to public/ffmpeg/ or run: yarn add -D @ffmpeg/core@^0.12 && yarn copy-ffmpeg`
+      );
+    }
+  }
+
+  async function doLoad(core: string, wasm: string) {
+    await ffmpeg.load({ coreURL: core, wasmURL: wasm });
+  }
 
   try {
-    await ffmpeg.load({
-      coreURL,
-      wasmURL,
-    });
+    await doLoad(coreURL, wasmURL);
   } catch (error) {
-    logger.warn("Failed to load ffmpeg core (single-thread)", error);
-    throw error;
+    if (
+      (coreURL.startsWith("http://localhost") || coreURL.includes("/ffmpeg/")) &&
+      (await verifyAsset(cdnCore)) &&
+      (await verifyAsset(cdnWasm))
+    ) {
+      logger.info("FFmpeg local load failed, retrying with CDN", { error });
+      try {
+        await doLoad(cdnCore, cdnWasm);
+      } catch (cdnError) {
+        logger.warn("Failed to load ffmpeg core (single-thread)", cdnError);
+        throw cdnError;
+      }
+    } else {
+      logger.warn("Failed to load ffmpeg core (single-thread)", error);
+      throw error;
+    }
   }
   return ffmpeg;
 }

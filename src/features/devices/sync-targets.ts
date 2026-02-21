@@ -83,6 +83,8 @@ export interface SyncTarget {
   mirrorMode?: boolean;
   mirrorDeleteFromDevice?: boolean;
   onlyReferenceExistingTracks?: boolean;
+  /** When true (iPod), only add tracks to device/Library; do not create a named playlist */
+  libraryOnly?: boolean;
 }
 
 /**

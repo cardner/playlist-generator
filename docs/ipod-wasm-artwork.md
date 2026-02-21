@@ -1,5 +1,7 @@
 # iPod WASM: ArtworkDB / album art support
 
+**Note:** The app now has a **pure TypeScript iPod backend** (`USE_IPOD_TS_BACKEND`). When enabled, iTunesDB, device info, path conversion, and artwork (setTrackArtwork / writeArtwork) are implemented in TS with no WASM. The WASM path below applies when the TS backend is disabled or when using the prebuilt `ipod_manager` module.
+
 The prebuilt iPod WASM (`public/ipod/ipod_manager.js` + `.wasm`) is produced from a C build that wraps libgpod. This repo does not contain that C source. At runtime, if the module does not export `_ipod_set_track_artwork`, the app installs a no-op stub that returns -1 so the interface is always present and sync continues without artwork. To enable **album art sync** (ArtworkDB + ITHMB), the WASM must be rebuilt from C with the artwork API and the new artifacts placed under `public/ipod/`.
 
 ## Required C API

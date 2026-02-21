@@ -175,8 +175,13 @@ export default function DeviceSyncPage() {
       setSelectedDeviceId(profile.id);
       setSelectionIsUserInitiated(true);
     } catch (err) {
-      logger.error("Failed to add device:", err);
-      setError(err instanceof Error ? err.message : "Failed to add device");
+      const msg = err instanceof Error ? err.message : "Failed to add device";
+      if (msg === "Folder selection was cancelled") {
+        logger.debug("User cancelled device folder selection");
+      } else {
+        logger.error("Failed to add device:", err);
+      }
+      setError(msg);
     }
   }
 
@@ -247,8 +252,13 @@ export default function DeviceSyncPage() {
       setSelectedDeviceId(profile.id);
       setSelectionIsUserInitiated(true);
     } catch (err) {
-      logger.error("Failed to detect device:", err);
-      setError(err instanceof Error ? err.message : "Failed to detect device");
+      const msg = err instanceof Error ? err.message : "Failed to detect device";
+      if (msg === "Folder selection was cancelled") {
+        logger.debug("User cancelled device folder selection");
+      } else {
+        logger.error("Failed to detect device:", err);
+      }
+      setError(msg);
     }
   }
 
@@ -269,8 +279,13 @@ export default function DeviceSyncPage() {
       setSelectedDeviceId(updated.id);
       setSelectionIsUserInitiated(true);
     } catch (err) {
-      logger.error("Failed to reconnect device:", err);
-      setError(err instanceof Error ? err.message : "Failed to reconnect device");
+      const msg = err instanceof Error ? err.message : "Failed to reconnect device";
+      if (msg === "Folder selection was cancelled") {
+        logger.debug("User cancelled device folder selection");
+      } else {
+        logger.error("Failed to reconnect device:", err);
+      }
+      setError(msg);
     }
   }
 

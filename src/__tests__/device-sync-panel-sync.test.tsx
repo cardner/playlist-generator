@@ -8,6 +8,19 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { DeviceSyncPanel } from "@/components/DeviceSyncPanel";
 
 const mockSyncPlaylistsToDevice = jest.fn(async () => ({}));
+const mockScanDeviceForPaths = jest.fn(async () => ({
+  pathMap: new Map([["song.mp3|1000", "MUSIC/song.mp3"]]),
+  entries: [
+    {
+      matchKey: "song.mp3|1000",
+      relativePath: "MUSIC/song.mp3",
+      name: "song.mp3",
+      size: 1000,
+      mtime: 1234,
+    },
+  ],
+  finalProgress: { scanned: 1, matched: 1, hashed: 1 },
+}));
 const mockGetFileIndexEntries = jest.fn(async () => [
   { trackFileId: "t1", name: "track1.mp3", size: 1000, updatedAt: 1000 },
 ]);
@@ -75,11 +88,7 @@ jest.mock("@/features/devices/device-sync", () => ({
 }));
 
 jest.mock("@/features/devices/device-scan", () => ({
-  scanDeviceForPaths: jest.fn(async () => ({
-    pathMap: new Map(),
-    entries: [],
-    finalProgress: { scanned: 0, matched: 0, hashed: 0 },
-  })),
+  scanDeviceForPaths: (...args: unknown[]) => mockScanDeviceForPaths(...args),
   buildDeviceMatchCandidates: jest.fn(() => []),
   isTrackOnDeviceUsb: jest.fn(() => false),
 }));
@@ -148,6 +157,7 @@ const walkmanProfileOverride = {
 describe("DeviceSyncPanel sync actions", () => {
   beforeEach(() => {
     mockSyncPlaylistsToDevice.mockClear();
+    mockScanDeviceForPaths.mockClear();
     mockCollectionTracks = [
       {
         trackFileId: "t1",
@@ -194,5 +204,26 @@ describe("DeviceSyncPanel sync actions", () => {
       },
       { timeout: 3000 }
     );
+  });
+
+  it("scans device files even when no playlist metadata keys exist", async () => {
+    mockGetFileIndexEntries.mockResolvedValueOnce([]);
+    render(
+      <DeviceSyncPanel
+        deviceProfileOverride={walkmanProfileOverride}
+        showDeviceSelector={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Walkman Collection Sync")).toBeInTheDocument();
+    });
+
+    const scanButton = screen.getByRole("button", { name: /Not scanned/i });
+    fireEvent.click(scanButton);
+
+    await waitFor(() => {
+      expect(mockScanDeviceForPaths).toHaveBeenCalled();
+    });
   });
 });

@@ -16,6 +16,8 @@ export type DeviceProfileInput = Omit<
 > & {
   id?: string;
   lastSyncAt?: number;
+  /** When true, clear handleRef so the device can be safely ejected. */
+  clearHandleRef?: boolean;
 };
 
 export async function saveDeviceProfile(input: DeviceProfileInput): Promise<DeviceProfileRecord> {
@@ -27,7 +29,7 @@ export async function saveDeviceProfile(input: DeviceProfileInput): Promise<Devi
     id,
     label: input.label,
     deviceType: input.deviceType ?? existing?.deviceType,
-    handleRef: input.handleRef ?? existing?.handleRef,
+    handleRef: input.clearHandleRef ? undefined : (input.handleRef ?? existing?.handleRef),
     playlistFormat: input.playlistFormat,
     playlistFolder: input.playlistFolder,
     pathStrategy: input.pathStrategy,
@@ -59,6 +61,25 @@ export async function getDeviceProfiles(): Promise<DeviceProfileRecord[]> {
 
 export async function getDeviceProfile(id: string): Promise<DeviceProfileRecord | undefined> {
   return db.deviceProfiles.get(id);
+}
+
+/**
+ * Release the device folder handle so the OS can safely eject the volume.
+ * Removes the handle from IndexedDB and clears the profile's handleRef.
+ * Call after sync so the user can eject without "Force Eject". User must
+ * re-select the device folder next time they want to sync.
+ */
+export async function releaseDeviceHandle(profileId: string): Promise<void> {
+  const profile = await db.deviceProfiles.get(profileId);
+  if (!profile) return;
+  if (profile.handleRef) {
+    await db.directoryHandles.delete(profile.handleRef);
+  }
+  await saveDeviceProfile({
+    ...profile,
+    id: profileId,
+    clearHandleRef: true,
+  });
 }
 
 export async function deleteDeviceProfile(id: string): Promise<void> {

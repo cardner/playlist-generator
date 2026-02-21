@@ -117,6 +117,42 @@ describe("DeviceSyncSidebar", () => {
     expect(onScan).toHaveBeenCalled();
   });
 
+  it("shows scan complete label when scan status is done", () => {
+    render(<DeviceSyncSidebar {...defaultProps} deviceScanStatus="done" />);
+    expect(screen.getByRole("button", { name: /Scan complete/i })).toBeInTheDocument();
+  });
+
+  it("shows no-library-keys hint after full-device scan", () => {
+    render(
+      <DeviceSyncSidebar
+        {...defaultProps}
+        devicePathDetection={{
+          enabled: true,
+          onlyIncludeMatchedPaths: false,
+          scanRoots: "MUSIC",
+          onEnabledChange: jest.fn(),
+          onOnlyIncludeMatchedPathsChange: jest.fn(),
+          onScanRootsChange: jest.fn(),
+          scanProgress: { scanned: 20, matched: 0, hashed: 10 },
+          keyCoverageLog: {
+            tracksWithMetadata: 0,
+            totalTracks: 0,
+            keyMapSize: 0,
+            scanned: 20,
+            matched: 0,
+            hashed: 10,
+            scanMapSize: 12,
+            sampleLibraryKeys: [],
+            sampleDevicePaths: [],
+          },
+        }}
+      />
+    );
+    expect(
+      screen.getByText("Device scan completed, but no library match keys were available.")
+    ).toBeInTheDocument();
+  });
+
   it("renders Export button when showExportButton and onExport provided", () => {
     render(
       <DeviceSyncSidebar

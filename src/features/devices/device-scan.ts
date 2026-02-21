@@ -134,7 +134,12 @@ async function* traverseDevice(
       } catch (error) {
         const err = error as DOMException;
         if (err?.name === "NoModificationAllowedError") {
-          logger.warn(`Skipping read-only entry: ${currentPath}`, err);
+          const isSystemMeta = name.startsWith(".") || name === "System Volume Information";
+          if (isSystemMeta) {
+            logger.debug(`Skipping read-only entry: ${currentPath}`);
+          } else {
+            logger.warn(`Skipping read-only entry: ${currentPath}`, err);
+          }
           continue;
         }
         throw error;
@@ -143,7 +148,14 @@ async function* traverseDevice(
   } catch (error) {
     const err = error as DOMException;
     if (err?.name === "NoModificationAllowedError") {
-      logger.warn(`Skipping read-only directory: ${relativePath || "root"}`, err);
+      const isSystemMeta =
+        (relativePath || "root").startsWith(".") ||
+        relativePath === "System Volume Information";
+      if (isSystemMeta) {
+        logger.debug(`Skipping read-only directory: ${relativePath || "root"}`);
+      } else {
+        logger.warn(`Skipping read-only directory: ${relativePath || "root"}`, err);
+      }
       return;
     }
     throw error;

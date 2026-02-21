@@ -55,8 +55,8 @@ older iPods that appear as regular drives.
 - Requires a Chromium browser with File System Access API + WebUSB.
 - One-time SysInfo setup may be required (FirewireGuid + ModelNumStr).
 - Place `ipod_manager.js` + `.wasm` under `public/ipod/`.
-- FLAC uploads require `ffmpeg.wasm` assets under `public/ffmpeg/` and
-  hosting headers to enable `SharedArrayBuffer` (COOP/COEP).
+- FLAC uploads require FFmpeg WASM assets under `public/ffmpeg/`; see
+  [FFmpeg setup](ffmpeg-setup.md) for how to install them.
 
 **Matching existing tracks:** To avoid duplicating files, the app tries to match each playlist track to a track already on the device. Order: saved mapping from a previous sync, then AcoustID (if present in file metadata), then content hash, then tag+size and tag+duration. When a match is found, the playlist is updated to reference that device track; when not, the file is copied and a mapping is stored for next time. Tracks with AcoustID in their tags (e.g. from MusicBrainz Picard) match across transcodes (e.g. FLAC vs ALAC).
 
