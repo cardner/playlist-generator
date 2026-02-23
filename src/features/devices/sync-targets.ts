@@ -153,7 +153,7 @@ export async function getSyncTargetsFromCollectionTracks(
     return [];
   }
   const trackLookups = await buildTrackLookups(trackIds, collectionId, options);
-  const playlist = buildSyntheticPlaylist(`Selected Tracks - ${collectionName}`, trackIds);
+  const playlist = buildSyntheticPlaylist("Recently Added", trackIds);
   return [
     {
       playlist,
@@ -180,7 +180,7 @@ export async function getFullCollectionSyncTarget(
   const trackLookups = await buildTrackLookups(allTrackIds, collectionId, {
     tryLazyFileIndex: true,
   });
-  const playlist = buildSyntheticPlaylist(`Collection - ${collectionName}`, allTrackIds);
+  const playlist = buildSyntheticPlaylist("Recently Added", allTrackIds);
   return {
     playlist,
     trackLookups,
