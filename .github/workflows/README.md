@@ -6,13 +6,16 @@ This workflow automatically builds, deploys, and releases the application when c
 
 ### What it does:
 
-1. **Builds the application** using `yarn build`
-2. **Calculates semantic version** from conventional commits
-3. **Generates release notes** from commit history
-4. **Updates CHANGELOG.md** with new version entry
-5. **Deploys to GitHub Pages** as a static site
-6. **Creates a zip artifact** of the built site
-7. **Creates a GitHub Release** with the zip file attached
+1. **update-changelog-and-version** (runs first on push to main):
+   - Calculates semantic version from conventional commits and updates `package.json`
+   - Generates release notes from commit history
+   - Updates `CHANGELOG.md` with the new version entry
+   - Commits and pushes `package.json` and `CHANGELOG.md` with `[skip ci]`
+2. **build** (runs after update job; checks out `main` to include the version bump):
+   - Builds the application with `yarn build` (so the deployed site has the new version)
+   - Creates the git tag for the release
+   - Deploys to GitHub Pages and creates the zip artifact
+3. **release**: Creates the GitHub Release with the zip file and release notes attached
 
 ### Triggering:
 
