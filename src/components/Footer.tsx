@@ -2,9 +2,8 @@
 
 import { Github } from "lucide-react";
 
-/** Set NEXT_PUBLIC_GITHUB_REPO_URL to your repo (e.g. https://github.com/username/ai-playlist-generator) or leave unset for GitHub home. */
-const GITHUB_REPO_URL =
-  process.env.NEXT_PUBLIC_GITHUB_REPO_URL ?? "https://github.com";
+
+const GITHUB_REPO_URL = "https://github.com/cardner/playlist-generator";
 const TUNESRELOADED_URL = "https://tunesreloaded.com";
 
 export function Footer() {
