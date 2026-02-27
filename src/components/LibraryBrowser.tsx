@@ -39,7 +39,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import type { TrackRecord, TrackWritebackRecord } from "@/db/schema";
+import { db, getCompositeId, type TrackRecord, type TrackWritebackRecord } from "@/db/schema";
 import {
   getTracks,
   getAllGenresWithStats,
@@ -48,6 +48,7 @@ import {
 } from "@/db/storage";
 import { getCurrentLibraryRoot } from "@/db/storage";
 import type { GenreWithStats } from "@/features/library/genre-normalization";
+import { getAlbumArtist } from "@/features/library/metadata";
 import { normalizeGenre, buildGenreMappings } from "@/features/library/genre-normalization";
 import { mapMoodTagsToCategories } from "@/features/library/mood-mapping";
 import { mapActivityTagsToCategories } from "@/features/library/activity-mapping";
@@ -61,9 +62,10 @@ import { useAudioPreviewState } from "@/hooks/useAudioPreviewState";
 import { useMetadataWriteback } from "@/hooks/useMetadataWriteback";
 import { MAX_PLAY_ATTEMPTS } from "@/lib/audio-playback-config";
 import type { LibraryRoot } from "@/lib/library-selection";
-import { Save, SearchCheck, Trash2 } from "lucide-react";
+import { Music, Save, SearchCheck, Trash2 } from "lucide-react";
 import { logger } from "@/lib/logger";
 import { LibraryBrowserTrackRow } from "./LibraryBrowserTrackRow";
+import { Card, Tabs } from "@/design-system/components";
 
 type SortField = "title" | "artist" | "duration";
 type SortDirection = "asc" | "desc";
@@ -73,9 +75,16 @@ interface LibraryBrowserProps {
   /** When provided with onFiltersChange, filters are controlled by parent (e.g. library page) */
   filters?: FilterTag[];
   onFiltersChange?: (filters: FilterTag[]) => void;
+  /** Initial view mode (e.g. for testing); defaults to "tracks" */
+  initialViewMode?: "tracks" | "albums" | "artists";
 }
 
-export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onFiltersChange }: LibraryBrowserProps) {
+export function LibraryBrowser({
+  refreshTrigger,
+  filters: controlledFilters,
+  onFiltersChange,
+  initialViewMode = "tracks",
+}: LibraryBrowserProps) {
   const [tracks, setTracks] = useState<TrackRecord[]>([]);
   const [internalFilters, setInternalFilters] = useState<FilterTag[]>([]);
 
@@ -97,6 +106,7 @@ export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onF
   );
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
+  const [viewMode, setViewMode] = useState<"tracks" | "albums" | "artists">(initialViewMode);
 
   // Audio preview state
   const audioPreviewState = useAudioPreviewState();
@@ -115,7 +125,9 @@ export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onF
   const audioRefs = useRef<Map<string, InlineAudioPlayerRef>>(new Map());
   const hoverPrefetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prefetchInFlightRef = useRef<Set<string>>(new Set());
+  const artworkUrlMapRef = useRef<Map<string, string>>(new Map());
   const MAX_PREFETCH_CONCURRENT = 3;
+  const [artworkUrlMap, setArtworkUrlMap] = useState<Map<string, string>>(new Map());
 
   const {
     isWriting,
@@ -276,9 +288,11 @@ export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onF
           });
           return trackGenres.includes(ng);
         });
-        const matchesArtist = hasArtist && artistVals.some((av) =>
-          (t.tags.artist ?? "").toLowerCase().includes(av)
-        );
+        const matchesArtist = hasArtist && artistVals.some((av) => {
+          const trackArtist = (t.tags.artist ?? "").toLowerCase();
+          const trackAlbumArtist = getAlbumArtist(t.tags).toLowerCase();
+          return trackAlbumArtist.includes(av) || trackArtist.includes(av);
+        });
         if (hasGenre && hasArtist) return matchesGenre || matchesArtist;
         if (hasGenre) return matchesGenre;
         return matchesArtist;
@@ -375,6 +389,49 @@ export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onF
     });
   }, [tracks, filters, sortField, sortDirection, genreMappings]);
 
+  // Group filtered tracks by artist → album for Albums/Artists tab views
+  const groupedTracks = useMemo(() => {
+    const acc: Record<string, Record<string, TrackRecord[]>> = {};
+    for (const track of filteredTracks) {
+      const artist = getAlbumArtist(track.tags);
+      const album = track.tags.album ?? "Unknown Album";
+      if (!acc[artist]) acc[artist] = {};
+      if (!acc[artist][album]) acc[artist][album] = [];
+      acc[artist][album].push(track);
+    }
+    return acc;
+  }, [filteredTracks]);
+
+  const artistNames = useMemo(
+    () => Object.keys(groupedTracks).sort((a, b) => a.localeCompare(b)),
+    [groupedTracks]
+  );
+
+  const albumCount = useMemo(
+    () =>
+      Object.keys(groupedTracks).reduce(
+        (sum, artist) => sum + Object.keys(groupedTracks[artist]).length,
+        0
+      ),
+    [groupedTracks]
+  );
+
+  const albumList = useMemo(
+    () =>
+      Object.keys(groupedTracks).flatMap((artist) =>
+        Object.keys(groupedTracks[artist]).map((album) => {
+          const trackList = groupedTracks[artist][album];
+          return {
+            artist,
+            album,
+            trackIds: trackList.map((t) => t.trackFileId),
+            trackCount: trackList.length,
+          };
+        })
+      ),
+    [groupedTracks]
+  );
+
   const pendingWritebackCount = useMemo(() => {
     let count = 0;
     writebackStatuses.forEach((record) => {
@@ -389,6 +446,63 @@ export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onF
   useEffect(() => {
     setCurrentPage(1);
   }, [filteredTracks]);
+
+  // Load artwork for album/artist grid views (representative composite IDs, same pattern as DeviceSyncPanel)
+  useEffect(() => {
+    if (!libraryRootId || filteredTracks.length === 0) {
+      setArtworkUrlMap(new Map());
+      return;
+    }
+    const representativeIds = new Set<string>();
+    for (const artist of Object.keys(groupedTracks)) {
+      const albums = groupedTracks[artist];
+      const firstAlbumKey = Object.keys(albums)[0];
+      if (firstAlbumKey && albums[firstAlbumKey].length > 0) {
+        representativeIds.add(
+          getCompositeId(albums[firstAlbumKey][0].trackFileId, libraryRootId)
+        );
+      }
+      for (const album of Object.keys(albums)) {
+        const trackList = albums[album];
+        if (trackList.length > 0) {
+          representativeIds.add(
+            getCompositeId(trackList[0].trackFileId, libraryRootId)
+          );
+        }
+      }
+    }
+    const ids = Array.from(representativeIds);
+    if (ids.length === 0) {
+      setArtworkUrlMap(new Map());
+      return;
+    }
+    let cancelled = false;
+    const urlMapForCleanup = new Map<string, string>();
+    artworkUrlMapRef.current = urlMapForCleanup;
+    db.artworkCache
+      .bulkGet(ids)
+      .then((records) => {
+        if (cancelled) return;
+        urlMapForCleanup.forEach((url) => URL.revokeObjectURL(url));
+        urlMapForCleanup.clear();
+        records.forEach((record, i) => {
+          if (record?.thumbnail && ids[i]) {
+            const url = URL.createObjectURL(record.thumbnail);
+            urlMapForCleanup.set(ids[i], url);
+          }
+        });
+        setArtworkUrlMap(new Map(urlMapForCleanup));
+      })
+      .catch((err) => {
+        if (!cancelled) logger.warn("Failed to load artwork cache", err);
+      });
+    return () => {
+      cancelled = true;
+      urlMapForCleanup.forEach((url) => URL.revokeObjectURL(url));
+      urlMapForCleanup.clear();
+      setArtworkUrlMap(new Map());
+    };
+  }, [libraryRootId, groupedTracks, filteredTracks.length]);
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(filteredTracks.length / pageSize)),
@@ -799,7 +913,9 @@ export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onF
               </button>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <span className="text-app-primary text-sm font-medium mr-2">Tracks</span>
+              <span className="text-app-primary text-sm font-medium mr-2">
+                {viewMode === "tracks" ? "Tracks" : viewMode === "albums" ? "Albums" : "Artists"}
+              </span>
               <button
                 onClick={handleWritebackClick}
                 disabled={!pendingWritebackCount || isWriting}
@@ -830,11 +946,21 @@ export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onF
           </div>
         </div>
 
+        <Tabs
+          value={viewMode}
+          onValueChange={(v) => setViewMode(v as "tracks" | "albums" | "artists")}
+          items={[
+            { value: "tracks", label: `${filteredTracks.length} tracks`, icon: <Music className="size-4" /> },
+            { value: "albums", label: `${albumCount} albums` },
+            { value: "artists", label: `${artistNames.length} artists` },
+          ]}
+          className="mb-2"
+        />
         {filteredTracks.length === 0 ? (
           <p className="text-app-tertiary px-4 py-6 text-sm">
             No tracks match your filters.
           </p>
-        ) : (
+        ) : viewMode === "tracks" ? (
           <>
           <div className="">
             <div className="app-table-wrap sticky-top-12">
@@ -967,6 +1093,163 @@ export function LibraryBrowser({ refreshTrigger, filters: controlledFilters, onF
             </div>
           )}
           </>
+        ) : viewMode === "albums" ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {albumList.map(({ artist, album, trackIds, trackCount }) => {
+              const firstTrackId = trackIds[0];
+              const compositeId =
+                firstTrackId && libraryRootId
+                  ? getCompositeId(firstTrackId, libraryRootId)
+                  : null;
+              const artworkUrl = compositeId ? artworkUrlMap.get(compositeId) : null;
+              return (
+                <Card
+                  key={`${artist}-${album}`}
+                  padding="none"
+                  className="overflow-hidden cursor-pointer hover:ring-1 hover:ring-accent-primary"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    const hasAlbum = filters.some(
+                      (f) => f.type === "album" && f.value === album
+                    );
+                    const hasArtist = filters.some(
+                      (f) => f.type === "artist" && f.value === artist
+                    );
+                    if (!hasAlbum || !hasArtist) {
+                      const next = [...filters];
+                      if (!hasAlbum) next.push({ type: "album", value: album });
+                      if (!hasArtist) next.push({ type: "artist", value: artist });
+                      setFilters(next);
+                    }
+                    setViewMode("tracks");
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      const hasAlbum = filters.some(
+                        (f) => f.type === "album" && f.value === album
+                      );
+                      const hasArtist = filters.some(
+                        (f) => f.type === "artist" && f.value === artist
+                      );
+                      if (!hasAlbum || !hasArtist) {
+                        const next = [...filters];
+                        if (!hasAlbum) next.push({ type: "album", value: album });
+                        if (!hasArtist)
+                          next.push({ type: "artist", value: artist });
+                        setFilters(next);
+                      }
+                      setViewMode("tracks");
+                    }
+                  }}
+                >
+                  <div className="aspect-square bg-app-hover flex items-center justify-center relative overflow-hidden">
+                    {artworkUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- blob URL from IndexedDB artwork cache
+                      <img
+                        src={artworkUrl}
+                        alt=""
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                    ) : (
+                      <Music className="size-12 text-app-tertiary" />
+                    )}
+                  </div>
+                  <div className="p-2">
+                    <div className="text-app-primary font-semibold text-sm truncate">
+                      {album}
+                    </div>
+                    <div className="text-app-secondary text-xs truncate">
+                      {artist}
+                    </div>
+                    <div className="text-app-tertiary text-xs">
+                      {trackCount} tracks
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {artistNames.map((artistName) => {
+              const albums = groupedTracks[artistName];
+              const albumCnt = Object.keys(albums).length;
+              const trackCount = Object.values(albums).flat().length;
+              const firstAlbumKey = Object.keys(albums)[0];
+              const firstTrack =
+                firstAlbumKey && albums[firstAlbumKey]?.length > 0
+                  ? albums[firstAlbumKey][0].trackFileId
+                  : null;
+              const artistArtworkUrl =
+                firstTrack && libraryRootId
+                  ? artworkUrlMap.get(getCompositeId(firstTrack, libraryRootId))
+                  : null;
+              return (
+                <Card
+                  key={artistName}
+                  padding="none"
+                  className="overflow-hidden cursor-pointer hover:ring-1 hover:ring-accent-primary"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    if (
+                      !filters.some(
+                        (f) => f.type === "artist" && f.value === artistName
+                      )
+                    ) {
+                      setFilters([
+                        ...filters,
+                        { type: "artist", value: artistName },
+                      ]);
+                    }
+                    setViewMode("tracks");
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      if (
+                        !filters.some(
+                          (f) =>
+                            f.type === "artist" && f.value === artistName
+                        )
+                      ) {
+                        setFilters([
+                          ...filters,
+                          { type: "artist", value: artistName },
+                        ]);
+                      }
+                      setViewMode("tracks");
+                    }
+                  }}
+                >
+                  <div className="aspect-square bg-app-hover flex items-center justify-center relative rounded-t-sm overflow-hidden">
+                    {artistArtworkUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- blob URL from IndexedDB artwork cache
+                      <img
+                        src={artistArtworkUrl}
+                        alt=""
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="size-16 rounded-full bg-app-surface flex items-center justify-center text-app-primary font-semibold text-lg">
+                        {artistName.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-2">
+                    <div className="text-app-primary font-semibold text-sm truncate">
+                      {artistName}
+                    </div>
+                    <div className="text-app-tertiary text-xs">
+                      {albumCnt} albums • {trackCount} tracks
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>

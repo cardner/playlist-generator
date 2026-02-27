@@ -12892,6 +12892,7 @@
     try {
       const metadata = await parseBlob(file);
       const warnings = [];
+      const albumartist = metadata.common.albumartist;
       const tags = {
         title: normalizeTitle(metadata.common.title, file.name),
         artist: normalizeArtist(metadata.common.artist),
@@ -12899,7 +12900,8 @@
         genres: normalizeGenres(metadata.common.genre),
         year: normalizeYear(metadata.common.year),
         trackNo: normalizeTrackNo(metadata.common.track),
-        discNo: normalizeDiscNo(metadata.common.disk)
+        discNo: normalizeDiscNo(metadata.common.disk),
+        ...albumartist?.trim() ? { albumArtist: normalizeArtist(albumartist) } : {}
       };
       const tech = {
         durationSeconds: metadata.format.duration ? Math.round(metadata.format.duration) : void 0,

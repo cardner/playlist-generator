@@ -146,6 +146,7 @@ async function parseSingleFileMainThread(file: LibraryFile): Promise<MetadataRes
 
     const warnings: string[] = [];
 
+    const albumartist = (metadata.common as { albumartist?: string }).albumartist;
     const tags = {
       title: normalizeTitle(metadata.common.title, file.file.name),
       artist: normalizeArtist(metadata.common.artist),
@@ -154,6 +155,9 @@ async function parseSingleFileMainThread(file: LibraryFile): Promise<MetadataRes
       year: normalizeYear(metadata.common.year),
       trackNo: normalizeTrackNo(metadata.common.track),
       discNo: normalizeDiscNo(metadata.common.disk),
+      ...(albumartist?.trim()
+        ? { albumArtist: normalizeArtist(albumartist) }
+        : {}),
     };
 
     const tech: TechInfo = {

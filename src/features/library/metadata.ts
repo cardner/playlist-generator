@@ -46,6 +46,8 @@ import type { LibraryFile } from "@/lib/library-selection";
 export interface NormalizedTags {
   title: string;
   artist: string;
+  /** Album artist (TPE2 / aART); used for grouping. Falls back to artist when missing. */
+  albumArtist?: string;
   album: string;
   genres: string[];
   year?: number;
@@ -180,6 +182,15 @@ export function normalizeArtist(artist: string | undefined): string {
     return "Unknown Artist";
   }
   return artist.trim();
+}
+
+/**
+ * Album artist for grouping (e.g. Artists tab, album grouping).
+ * Uses albumArtist when set, otherwise artist.
+ */
+export function getAlbumArtist(tags: NormalizedTags): string {
+  const a = tags.albumArtist ?? tags.artist;
+  return a?.trim() || "Unknown Artist";
 }
 
 /**
