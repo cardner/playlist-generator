@@ -103,6 +103,12 @@ jobs:
       - name: Build
         run: yarn build
 
+      - name: Configure git for tagging
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
       - name: Create git tag
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
