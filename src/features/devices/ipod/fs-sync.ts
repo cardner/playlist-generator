@@ -357,6 +357,10 @@ export async function readIpodBuffersFromHandle(
 
 /**
  * Write iTunesDB and optional Artwork buffers to device (for pure TS backend).
+ * We only write iTunesDB (and ArtworkDB/ITHMB when artwork is enabled); we do not
+ * create or overwrite iTunesControl. We optionally touch existing iTunesPrefs and
+ * iTunesPrefs.plist (read then write same bytes) to update their modified time; we
+ * do not create or change their content.
  */
 export async function syncDbToIpodFromBuffers(
   ipodHandle: FileSystemDirectoryHandle,
@@ -372,7 +376,21 @@ export async function syncDbToIpodFromBuffers(
   let errorCount = 0;
   let syncedCount = 0;
 
+  let didBackup = false;
   try {
+    try {
+      const existingDb = await iTunes.getFileHandle("iTunesDB", { create: false });
+      const existingBlob = await (await existingDb.getFile()).arrayBuffer();
+      const backupWritable = await iTunes.getFileHandle("iTunesDB.bak", { create: true }).then((h) => h.createWritable());
+      await backupWritable.write(new Uint8Array(existingBlob));
+      await backupWritable.write({ type: "truncate" as const, size: existingBlob.byteLength });
+      await backupWritable.close();
+      didBackup = true;
+      logger.info("iTunesDB backed up to iTunesDB.bak");
+    } catch (e) {
+      // iTunesDB may not exist (fresh device) or backup failed; continue with write
+      logger.debug("No existing iTunesDB or backup skipped", e);
+    }
     logger.info("Opening iTunesDB on device for write...");
     const writable = await iTunes.getFileHandle("iTunesDB", { create: true }).then((h) => h.createWritable());
     logger.info("Writing iTunesDB buffer to device...");
@@ -383,6 +401,14 @@ export async function syncDbToIpodFromBuffers(
     logger.info("iTunesDB written to device");
     syncedCount += 1;
     options?.onProgress?.({ percent: 50, detail: "iTunesDB" });
+    if (didBackup) {
+      try {
+        await iTunes.removeEntry("iTunesDB.bak");
+        logger.info("iTunesDB.bak removed after successful write");
+      } catch (e) {
+        logger.warn("Could not remove iTunesDB.bak", e);
+      }
+    }
   } catch (error) {
     errorCount += 1;
     logger.warn("Failed to write iTunesDB", error);
@@ -429,6 +455,21 @@ export async function syncDbToIpodFromBuffers(
   if (hasArtwork) {
     logger.info("Artwork written to device");
   }
+
+  for (const prefsName of ["iTunesPrefs", "iTunesPrefs.plist"]) {
+    try {
+      const prefsHandle = await iTunes.getFileHandle(prefsName, { create: false });
+      const prefsFile = await prefsHandle.getFile();
+      const prefsBuffer = new Uint8Array(await prefsFile.arrayBuffer());
+      const writable = await iTunes.getFileHandle(prefsName, { create: true }).then((h) => h.createWritable());
+      await writable.write(prefsBuffer);
+      await writable.write({ type: "truncate" as const, size: prefsBuffer.length });
+      await writable.close();
+    } catch (err) {
+      logger.warn("Could not touch prefs file (optional)", { name: prefsName, err });
+    }
+  }
+
   options?.onProgress?.({ percent: 100, detail: "done" });
   return { ok: errorCount === 0, errorCount, syncedCount };
 }

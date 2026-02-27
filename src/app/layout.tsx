@@ -9,6 +9,7 @@ import { getHelpContent } from "@/lib/help-content";
 import { getChangelogContent } from "@/lib/changelog-content";
 import { BackgroundLibraryTasksProvider } from "@/components/BackgroundLibraryTasksProvider";
 import { BackgroundTaskOverlay } from "@/components/BackgroundTaskOverlay";
+import { Footer } from "@/components/Footer";
 
 export const metadata: Metadata = {
   title: "mixtape gen",
@@ -47,7 +48,7 @@ export default async function RootLayout({
           }}
         />
       </head>
-      <body>
+      <body className="flex min-h-screen flex-col">
         <ThemeProvider>
           <BackgroundLibraryTasksProvider>
             <PwaRegister />
@@ -55,11 +56,12 @@ export default async function RootLayout({
             <BackgroundTaskOverlay />
             <HelpPanel markdown={helpContent} />
             <WhatsNewPanel markdown={changelogContent} />
-            <main className="min-h-screen bg-app-bg">
-              <div className="container mx-auto px-4 py-8 md:py-12 max-w-6xl">
+            <main className="flex-1 bg-app-bg">
+              <div className="container mx-auto max-w-6xl px-4 py-8 md:py-12">
                 {children}
               </div>
             </main>
+            <Footer />
           </BackgroundLibraryTasksProvider>
         </ThemeProvider>
       </body>

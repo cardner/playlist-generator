@@ -4,6 +4,7 @@
  */
 
 import type { IpodDbModel, IpodTrack, IpodPlaylist } from "../db-types";
+import { normalizeToDbPath } from "../paths-db";
 import {
   readChunkHeader,
   readChunkType,
@@ -15,7 +16,7 @@ import {
   readUtf16LEStringNullTerminated,
 } from "./binary";
 
-/** mhit header size by dbversion (wikiPodLinux) */
+/** mhit header size by dbversion (wikiPodLinux); 0x75 = iTunes-compatible 5th/7th gen */
 const MHIT_HEADER_SIZE: Record<number, number> = {
   0x09: 0x9c,
   0x0a: 0x9c,
@@ -34,6 +35,7 @@ const MHIT_HEADER_SIZE: Record<number, number> = {
   0x17: 0x184,
   0x18: 0x184,
   0x19: 0x184,
+  0x75: 0x184,
 };
 
 function getMhitHeaderSize(dbversion: number): number {
@@ -154,7 +156,7 @@ function parseMhit(
     year: year || undefined,
     size: size || undefined,
     tracklen: lengthMs || undefined,
-    ipod_path: location || undefined,
+    ipod_path: location ? normalizeToDbPath(location) : undefined,
   };
   return { track, nextOffset: chunkEnd };
 }
@@ -295,6 +297,7 @@ export function parseITunesDB(data: Uint8Array): IpodDbModel {
 
   let tracks: IpodTrack[] = [];
   let playlists: IpodPlaylist[] = [];
+  const mhsdBlobs: Record<number, Uint8Array> = {};
 
   let pos = headerEnd;
   const fileEnd = readU32LE(data, 8);
@@ -326,6 +329,11 @@ export function parseITunesDB(data: Uint8Array): IpodDbModel {
           playlists.push(...result.playlists);
         }
       }
+    } else if (mhsdType === 4 || mhsdType === 5) {
+      const blobEnd = pos + mhsdTotalLength;
+      if (blobEnd <= data.length) {
+        mhsdBlobs[mhsdType] = data.slice(childStart, blobEnd);
+      }
     }
 
     pos += mhsdTotalLength;
@@ -335,5 +343,6 @@ export function parseITunesDB(data: Uint8Array): IpodDbModel {
     dbversion,
     tracks,
     playlists,
+    ...(Object.keys(mhsdBlobs).length > 0 ? { mhsdBlobs } : {}),
   };
 }

@@ -1,8 +1,8 @@
 /**
  * ArtworkDB and ITHMB write path.
  * ArtworkDB uses similar chunk structure to iTunesDB (mhbd, mhsd, mhii for image index).
- * ITHMB files (e.g. F0000_0.ithmb) contain thumbnail image blobs (JPEG).
- * Layout follows reverse-engineered formats from libgpod/gtkpod and device dumps.
+ * ITHMB files use working-device naming: F<index>_1.ithmb (e.g. F0000_1.ithmb, F1028_1.ithmb).
+ * One ITHMB file per track with artwork. Layout follows libgpod/device dumps.
  */
 
 import type { IpodDbModel, IpodTrackArtwork } from "../db-types";
@@ -18,27 +18,18 @@ const ARTWORK_MHSD_HEADER_SIZE = 0x18;
 const MHIA_CHUNK_SIZE = 36;
 const MHII_HEADER_SIZE = 12;
 
-/** Build ITHMB buffer: 8-byte magic "iThmb\0\0\0", uint32 count, then per image: uint32 length + JPEG data. Returns buffer and array of { offset, size } for each image (offset = start of JPEG data in file). */
-function buildITHMB(entries: IpodTrackArtwork[]): { buffer: Uint8Array; offsets: { offset: number; size: number }[] } {
+/** Build one ITHMB buffer for a single image: magic, count=1, length, JPEG. Returns buffer and { offset, size } of JPEG in file. */
+function buildSingleImageITHMB(entry: IpodTrackArtwork): { buffer: Uint8Array; offset: number; size: number } {
   const magic = new TextEncoder().encode("iThmb\0\0\0");
-  const offsets: { offset: number; size: number }[] = [];
-  let total = 8 + 4;
-  for (const e of entries) {
-    total += 4 + (e.jpegBytes?.length ?? 0);
-  }
+  const jpegLen = entry.jpegBytes?.length ?? 0;
+  const total = 8 + 4 + 4 + jpegLen;
   const buffer = new Uint8Array(total);
   buffer.set(magic, 0);
-  writeU32LE(buffer, 8, entries.length);
-  let pos = 12;
-  for (const e of entries) {
-    const len = e.jpegBytes?.length ?? 0;
-    writeU32LE(buffer, pos, len);
-    pos += 4;
-    offsets.push({ offset: pos, size: len });
-    if (e.jpegBytes && len > 0) buffer.set(e.jpegBytes, pos);
-    pos += len;
-  }
-  return { buffer, offsets };
+  writeU32LE(buffer, 8, 1);
+  writeU32LE(buffer, 12, jpegLen);
+  const offset = 16;
+  if (entry.jpegBytes && jpegLen > 0) buffer.set(entry.jpegBytes, offset);
+  return { buffer, offset, size: jpegLen };
 }
 
 /** Build ArtworkDB buffer: mhbd, mhsd, mhii (child count = N), then N × mhia (dbid, offset, size). */
@@ -91,8 +82,8 @@ function buildArtworkDB(
 
 /**
  * Serialize model's artwork state to ArtworkDB and ITHMB buffers.
+ * Uses F<index>_1.ithmb naming (e.g. F0000_1.ithmb, F1028_1.ithmb), one file per track with artwork.
  * When model.artwork is empty or not set, returns empty result.
- * Entries are written in trackIndex order; dbid is 1 + trackIndex if not set.
  */
 export function writeArtwork(model: IpodDbModel): WriteArtworkResult {
   const artwork = model.artwork;
@@ -100,8 +91,15 @@ export function writeArtwork(model: IpodDbModel): WriteArtworkResult {
     return {};
   }
   const entries = [...artwork].sort((a, b) => a.trackIndex - b.trackIndex);
-  const { buffer: ithmbBuffer, offsets } = buildITHMB(entries);
+  const offsets: { offset: number; size: number }[] = [];
+  const ITHMB = new Map<string, Uint8Array>();
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const { buffer, offset, size } = buildSingleImageITHMB(entry);
+    const name = `F${String(i).padStart(4, "0")}_1.ithmb`;
+    ITHMB.set(name, buffer);
+    offsets.push({ offset, size });
+  }
   const ArtworkDB = buildArtworkDB(entries, offsets);
-  const ITHMB = new Map<string, Uint8Array>([["F0000_0.ithmb", ithmbBuffer]]);
   return { ArtworkDB, ITHMB };
 }

@@ -12,8 +12,32 @@ import {
   type WriteArtworkResult,
 } from "./artwork/write-artwork";
 
-/** When true, use pure TS iPod DB implementation instead of WASM. */
-export const USE_IPOD_TS_BACKEND = true;
+/** localStorage key for testing toggle: use TS iPod backend when not "false". */
+export const IPOD_TS_BACKEND_STORAGE_KEY = "useIpodTsBackend";
+
+/** When true, use pure TS iPod DB implementation instead of WASM. Default false (WASM). */
+export const USE_IPOD_TS_BACKEND = false;
+
+/** Read runtime preference (default WASM). Used by sync to choose TS vs WASM path. */
+export function getUseIpodTsBackend(): boolean {
+  try {
+    if (typeof localStorage === "undefined") return USE_IPOD_TS_BACKEND;
+    const v = localStorage.getItem(IPOD_TS_BACKEND_STORAGE_KEY);
+    return v === "true";
+  } catch {
+    return USE_IPOD_TS_BACKEND;
+  }
+}
+
+/** Set runtime preference for testing (TS backend when true, WASM when false). */
+export function setUseIpodTsBackend(value: boolean): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(IPOD_TS_BACKEND_STORAGE_KEY, value ? "true" : "false");
+  } catch {
+    // ignore
+  }
+}
 
 let lastError: string | null = null;
 
@@ -278,6 +302,21 @@ export function finalizeLastTrackNoStat(
   t.ipod_path = ipodPathToDbFormat(destPath);
   t.size = sizeBytes;
   return 0;
+}
+
+/**
+ * Remove track at index from model (e.g. after failed file write).
+ * Also removes the track id from all playlist trackIds.
+ */
+export function removeTrackByIndex(model: IpodDbModel, trackIndex: number): void {
+  const tracks = model.tracks ?? [];
+  const t = tracks[trackIndex];
+  if (!t) return;
+  const id = t.id ?? 0;
+  model.tracks = tracks.filter((_, i) => i !== trackIndex);
+  for (const pl of model.playlists ?? []) {
+    pl.trackIds = pl.trackIds.filter((tid) => tid !== id);
+  }
 }
 
 export function writeITunesDB(model: IpodDbModel): Uint8Array | null {

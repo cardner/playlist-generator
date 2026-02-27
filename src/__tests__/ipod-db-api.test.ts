@@ -110,7 +110,7 @@ describe("ipod-db-api", () => {
     expect(result.ArtworkDB).toBeDefined();
     expect(result.ArtworkDB!.length).toBeGreaterThan(0);
     expect(result.ITHMB).toBeDefined();
-    expect(result.ITHMB!.has("F0000_0.ithmb")).toBe(true);
-    expect(result.ITHMB!.get("F0000_0.ithmb")!.length).toBeGreaterThan(0);
+    expect(result.ITHMB!.has("F0000_1.ithmb")).toBe(true);
+    expect(result.ITHMB!.get("F0000_1.ithmb")!.length).toBeGreaterThan(0);
   });
 });

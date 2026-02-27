@@ -38,3 +38,14 @@ export function dbPathToFsPath(ipodDbPath: string): string {
   }
   return normalize(s);
 }
+
+/**
+ * Normalize any path (slash or colon) to iPod DB format (colon-separated with leading colon).
+ * Use when writing the location mhod or when storing parsed location so the model is consistent.
+ */
+export function normalizeToDbPath(path: string): string {
+  const s = String(path ?? "").trim();
+  if (!s) return "";
+  if (s.includes(":")) return s.startsWith(":") ? s : ":" + s;
+  return ipodPathToDbFormat(dbPathToFsPath(s));
+}

@@ -20,9 +20,10 @@
 
 # misc
 .DS_Store
+public/ipod/*.bak
 *.pem
 .cursor/
-referenece-files/
+reference-files/*
 
 # debug
 npm-debug.log*

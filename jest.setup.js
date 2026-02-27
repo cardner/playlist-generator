@@ -1,6 +1,11 @@
 // Learn more: https://github.com/testing-library/jest-dom
 import '@testing-library/jest-dom'
 
+// Polyfill fetch for tests (Jest/Node does not provide it; DeviceSyncPanel and others call fetch)
+if (typeof globalThis.fetch === 'undefined') {
+  globalThis.fetch = jest.fn().mockResolvedValue({ ok: true })
+}
+
 // Polyfill TextEncoder/TextDecoder for tests
 if (typeof globalThis.TextEncoder === 'undefined') {
   const util = require('util');

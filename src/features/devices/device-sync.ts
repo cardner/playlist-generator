@@ -26,7 +26,7 @@ import {
   normalizeFilenameForMatch,
   pickBestDevicePath,
 } from "./path-matching";
-import { syncPlaylistsToIpod } from "./ipod";
+import { syncPlaylistsToIpod, type IpodSyncResult } from "./ipod";
 
 export type DevicePlaylistFormat = "m3u" | "pls" | "xspf";
 type FileSystemPermissionMode = "read" | "readwrite";
@@ -813,7 +813,7 @@ export async function syncPlaylistsToDevice(options: {
   overwriteExistingPlaylist?: boolean;
   /** Cumulative progress: current index, total items, optional title (tracks for iPod/copy, playlists for others) */
   onProgress?: (progress: { current: number; total: number; title?: string }) => void;
-}): Promise<{ playlistPath?: string; configHash?: string }> {
+}): Promise<{ playlistPath?: string; configHash?: string; failedTracks?: IpodSyncResult["failedTracks"] }> {
   const {
     deviceProfile,
     targets,
@@ -830,13 +830,13 @@ export async function syncPlaylistsToDevice(options: {
       ...t,
       onlyReferenceExistingTracks: t.onlyReferenceExistingTracks ?? onlyReferenceExistingTracks,
     }));
-    await syncPlaylistsToIpod({
+    const result = await syncPlaylistsToIpod({
       deviceProfile,
       targets: ipodTargets,
       overwriteExistingPlaylist,
       onProgress,
     });
-    return {};
+    return { failedTracks: result?.failedTracks };
   }
 
   let lastResult: { playlistPath: string; configHash: string } | null = null;

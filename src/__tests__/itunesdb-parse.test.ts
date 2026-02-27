@@ -4,7 +4,7 @@
 
 import { parseITunesDB } from "@/features/devices/ipod/itunesdb/parse";
 import { serializeITunesDB } from "@/features/devices/ipod/itunesdb/serialize";
-import { writeChunkType, writeU32LE } from "@/features/devices/ipod/itunesdb/binary";
+import { writeChunkType, writeU32LE, readU64LE } from "@/features/devices/ipod/itunesdb/binary";
 import { ipodPathToDbFormat, dbPathToFsPath } from "@/features/devices/ipod/paths-db";
 
 describe("itunesdb/parse", () => {
@@ -107,6 +107,41 @@ describe("itunesdb/parse", () => {
     expect(parsed.playlists[1].trackIds).toEqual([0]);
   });
 
+  it("serialize writes location in colon format when track has slash ipod_path", () => {
+    const model = {
+      dbversion: 0x0b,
+      tracks: [
+        {
+          id: 0,
+          title: "Slash Path",
+          artist: "Artist",
+          ipod_path: "iPod_Control/Music/F00/x.mp3",
+          size: 1000,
+          tracklen: 60000,
+        },
+      ],
+      playlists: [{ name: "Library", is_master: true, trackIds: [0] }],
+    };
+    const buf = serializeITunesDB(model);
+    const parsed = parseITunesDB(buf);
+    expect(parsed.tracks.length).toBe(1);
+    expect(parsed.tracks[0].ipod_path).toBe(":iPod_Control:Music:F00:x.mp3");
+  });
+
+  it("serialize uses colon fallback when track has no ipod_path", () => {
+    const model = {
+      dbversion: 0x0b,
+      tracks: [
+        { id: 0, title: "No Path", artist: "Artist", size: 1000, tracklen: 60000 },
+      ],
+      playlists: [{ name: "Library", is_master: true, trackIds: [0] }],
+    };
+    const buf = serializeITunesDB(model);
+    const parsed = parseITunesDB(buf);
+    expect(parsed.tracks.length).toBe(1);
+    expect(parsed.tracks[0].ipod_path).toBe(":iPod_Control:Music:F00:track_0.mp3");
+  });
+
   it("after round-trip first playlist is master and has all track IDs", () => {
     const model = {
       dbversion: 0x0b,
@@ -127,6 +162,85 @@ describe("itunesdb/parse", () => {
     expect(parsed.playlists[0].trackIds).toContain(0);
     expect(parsed.playlists[0].trackIds).toContain(1);
     expect(parsed.playlists[0].trackIds.length).toBe(parsed.tracks.length);
+  });
+
+  it("round-trips with dbversion 0x14 (6th/7th gen layout)", () => {
+    const model = {
+      dbversion: 0x14,
+      tracks: [
+        {
+          id: 0,
+          title: "Classic",
+          artist: "Artist",
+          ipod_path: ":iPod_Control:Music:F01:track.mp3",
+          size: 2000000,
+          tracklen: 240000,
+        },
+      ],
+      playlists: [
+        { name: "Library", is_master: true, trackIds: [0] },
+      ],
+    };
+    const buf = serializeITunesDB(model);
+    const parsed = parseITunesDB(buf);
+    expect(parsed.dbversion).toBe(0x14);
+    expect(parsed.tracks.length).toBe(1);
+    expect(parsed.tracks[0].title).toBe("Classic");
+    expect(parsed.playlists.length).toBe(1);
+  });
+
+  it("round-trips with dbversion 0x75 and 5 mhsd (iTunes-compatible 5th/7th gen)", () => {
+    const model = {
+      dbversion: 0x75,
+      tracks: [
+        {
+          id: 0,
+          title: "Video",
+          artist: "Artist",
+          ipod_path: ":iPod_Control:Music:F02:track.mp3",
+          size: 1000000,
+          tracklen: 120000,
+        },
+      ],
+      playlists: [
+        { name: "Library", is_master: true, trackIds: [0] },
+      ],
+    };
+    const buf = serializeITunesDB(model);
+    const parsed = parseITunesDB(buf);
+    expect(parsed.dbversion).toBe(0x75);
+    expect(parsed.tracks.length).toBe(1);
+    expect(parsed.tracks[0].title).toBe("Video");
+    expect(parsed.playlists.length).toBe(1);
+    expect(parsed.playlists[0].trackIds).toEqual([0]);
+  });
+
+  it("writes sync timestamp at mhbd offset 0x18 when options.syncTimestamp provided", () => {
+    const model = {
+      dbversion: 0x75,
+      tracks: [],
+      playlists: [{ name: "Library", is_master: true, trackIds: [] }],
+    };
+    const timestamp = 0x1234567890abcdefn;
+    const buf = serializeITunesDB(model, { syncTimestamp: timestamp });
+    expect(buf.length).toBeGreaterThanOrEqual(0x20);
+    expect(readU64LE(buf, 0x18)).toBe(timestamp);
+  });
+
+  it("round-trips mhsd 4 and 5 blobs when present on model", () => {
+    const blob4 = new Uint8Array([0x04, 0x05, 0x06]);
+    const blob5 = new Uint8Array([0x07, 0x08, 0x09, 0x0a]);
+    const model = {
+      dbversion: 0x0b,
+      tracks: [],
+      playlists: [{ name: "Library", is_master: true, trackIds: [] }],
+      mhsdBlobs: { 4: blob4, 5: blob5 } as Record<number, Uint8Array>,
+    };
+    const buf = serializeITunesDB(model);
+    const parsed = parseITunesDB(buf);
+    expect(parsed.mhsdBlobs).toBeDefined();
+    expect(parsed.mhsdBlobs![4]).toEqual(blob4);
+    expect(parsed.mhsdBlobs![5]).toEqual(blob5);
   });
 });
 

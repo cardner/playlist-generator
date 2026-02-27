@@ -14,6 +14,7 @@ export type IpodTrack = {
   year?: number;
   size?: number;
   tracklen?: number;
+  /** Path in iPod DB format (colon-separated with leading colon, e.g. :iPod_Control:Music:F00:file.mp3). Serializer normalizes if not. */
   ipod_path?: string;
 };
 
@@ -57,4 +58,6 @@ export type IpodDbModel = {
   playlists: IpodPlaylist[];
   /** Optional: artwork per track for write path */
   artwork?: IpodTrackArtwork[];
+  /** Optional: opaque mhsd section blobs (e.g. type 4, 5) preserved from parse and re-emitted by serialize */
+  mhsdBlobs?: Record<number, Uint8Array>;
 };

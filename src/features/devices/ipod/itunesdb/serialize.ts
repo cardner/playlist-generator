@@ -1,9 +1,14 @@
 /**
  * iTunesDB serializer: IpodDbModel -> binary buffer.
  * Emits mhbd, mhsd (type 1 track list, type 2 playlist list), mhlt, mhit+mhod, mhlp, mhyp+mhip.
+ *
+ * Chunk layout (wikiPodLinux): type (4), headerEnd (4), endOrChildCount (4). For mhit, the
+ * byte length of the chunk (including mhods) is at offset +8; offset +36 is track file size.
+ * Parsers must use +8 for advancing to the next mhit; using +36 causes "Illegal seek" errors.
  */
 
 import type { IpodDbModel, IpodTrack, IpodPlaylist } from "../db-types";
+import { normalizeToDbPath } from "../paths-db";
 import {
   writeChunkType,
   writeU8,
@@ -14,9 +19,14 @@ import {
 } from "./binary";
 
 const MHBD_HEADER_SIZE_LEGACY = 0x68;
+const MHBD_HEADER_SIZE_EXTENDED = 0xf4;
 const MHBD_HEADER_SIZE_NEW = 0xbc;
 
-function getMhbdHeaderSize(dbversion: number): number {
+/**
+ * Returns mhbd header size in bytes. Use 0xf4 for dbversion 0x75 (5th/7th gen iTunes-compatible).
+ */
+export function getMhbdHeaderSize(dbversion: number): number {
+  if (dbversion === 0x75) return MHBD_HEADER_SIZE_EXTENDED;
   return dbversion >= 0x17 ? MHBD_HEADER_SIZE_NEW : MHBD_HEADER_SIZE_LEGACY;
 }
 
@@ -38,6 +48,7 @@ const MHIT_HEADER_SIZE: Record<number, number> = {
   0x17: 0x184,
   0x18: 0x184,
   0x19: 0x184,
+  0x75: 0x184,
 };
 
 function getMhitHeaderSize(dbversion: number): number {
@@ -78,8 +89,9 @@ function writeMhod(
 
 function mhitSize(track: IpodTrack, dbversion: number, trackIndex: number): number {
   const headerSize = getMhitHeaderSize(dbversion);
-  const location =
-    track.ipod_path ?? `iPod_Control/Music/F00/track_${trackIndex}.mp3`;
+  const location = normalizeToDbPath(
+    track.ipod_path ?? `iPod_Control/Music/F00/track_${trackIndex}.mp3`
+  );
   // Use same defaults as writeMhit so allocated size matches written size
   let body = mhodSize(location);
   body += mhodSize(track.title ?? "");
@@ -104,7 +116,10 @@ function writeMhit(
   writeChunkType(data, pos, "mhit");
   writeU32LE(data, pos + 4, headerSize);
   const chunkEnd = offset + mhitSize(track, dbversion, trackIndex);
-  writeU32LE(data, pos + 8, chunkEnd - offset);
+  const mhitByteLength = chunkEnd - offset;
+  writeU32LE(data, pos + 8, mhitByteLength);
+  // Parsers must use offset +8 as the mhit chunk length (endOrChildCount). Offset +36 is
+  // track file size in bytes; using it as chunk length causes "Illegal seek" in some WASM parsers.
   writeU32LE(data, pos + 12, 6);
   writeU32LE(data, pos + 16, id);
   writeU32LE(data, pos + 20, 1);
@@ -120,7 +135,10 @@ function writeMhit(
   }
   pos = offset + headerSize;
 
-  const location = track.ipod_path ?? `iPod_Control/Music/F00/track_${trackIndex}.mp3`;
+  // Location mhod must be colon-separated (iPod format) for the device to resolve files.
+  const location = normalizeToDbPath(
+    track.ipod_path ?? `iPod_Control/Music/F00/track_${trackIndex}.mp3`
+  );
   pos = writeMhod(data, pos, MHOD_LOCATION, location);
   pos = writeMhod(data, pos, MHOD_TITLE, track.title ?? "");
   pos = writeMhod(data, pos, MHOD_ARTIST, track.artist ?? "Unknown Artist");
@@ -225,8 +243,15 @@ function writeMhlp(data: Uint8Array, offset: number, playlists: IpodPlaylist[]):
 
 const MHSD_HEADER_SIZE = 0x18;
 
-export function serializeITunesDB(model: IpodDbModel): Uint8Array {
+export function serializeITunesDB(
+  model: IpodDbModel,
+  options?: { syncTimestamp?: number | bigint }
+): Uint8Array {
   const dbversion = model.dbversion || 0x0b;
+  const syncTimestamp =
+    options?.syncTimestamp !== undefined
+      ? BigInt(options.syncTimestamp)
+      : BigInt(Math.floor(Date.now() / 1000));
   const tracks = model.tracks ?? [];
   let playlists = model.playlists ?? [];
   if (playlists.length === 0 && tracks.length > 0) {
@@ -262,7 +287,15 @@ export function serializeITunesDB(model: IpodDbModel): Uint8Array {
   const mhsd1Len = MHSD_HEADER_SIZE + mhltLen;
   const mhlpLen = mhlpSize(playlists);
   const mhsd2Len = MHSD_HEADER_SIZE + mhlpLen;
-  const fileLen = mhbdHeaderSize + mhsd1Len + mhsd2Len;
+  const mhsdBlobs = model.mhsdBlobs ?? {};
+  const mhsd3Len =
+    MHSD_HEADER_SIZE + (mhsdBlobs[3]?.length ?? 0);
+  const mhsd4Len =
+    MHSD_HEADER_SIZE + (mhsdBlobs[4]?.length ?? 0);
+  const mhsd5Len =
+    MHSD_HEADER_SIZE + (mhsdBlobs[5]?.length ?? 0);
+  const fileLen =
+    mhbdHeaderSize + mhsd1Len + mhsd2Len + mhsd3Len + mhsd4Len + mhsd5Len;
 
   const data = new Uint8Array(fileLen);
   let pos = 0;
@@ -272,7 +305,13 @@ export function serializeITunesDB(model: IpodDbModel): Uint8Array {
   writeU32LE(data, pos + 8, fileLen);
   writeU32LE(data, pos + 12, 1);
   writeU32LE(data, pos + 16, dbversion);
-  writeU32LE(data, pos + 20, 2);
+  writeU32LE(data, pos + 20, 5);
+  writeU64LE(data, 0x18, syncTimestamp);
+  if (fileLen !== data.length) {
+    throw new Error(
+      `iTunesDB length mismatch: computed fileLen ${fileLen} != buffer length ${data.length}`
+    );
+  }
   pos = mhbdHeaderSize;
 
   writeChunkType(data, pos, "mhsd");
@@ -288,6 +327,20 @@ export function serializeITunesDB(model: IpodDbModel): Uint8Array {
   writeU32LE(data, pos + 12, 2);
   pos += MHSD_HEADER_SIZE;
   pos = writeMhlp(data, pos, playlists);
+
+  for (let mhsdType = 3; mhsdType <= 5; mhsdType++) {
+    const blob = mhsdBlobs[mhsdType];
+    const mhsdLen = MHSD_HEADER_SIZE + (blob?.length ?? 0);
+    writeChunkType(data, pos, "mhsd");
+    writeU32LE(data, pos + 4, MHSD_HEADER_SIZE);
+    writeU32LE(data, pos + 8, mhsdLen);
+    writeU32LE(data, pos + 12, mhsdType);
+    pos += MHSD_HEADER_SIZE;
+    if (blob && blob.length > 0) {
+      data.set(blob, pos);
+      pos += blob.length;
+    }
+  }
 
   return data;
 }

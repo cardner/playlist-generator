@@ -663,6 +663,19 @@ export interface DeviceTrackMappingRecord {
 }
 
 /**
+ * Device scan metadata: one record per device for cache validation.
+ * Used to only reuse deviceFileIndex cache when scan roots match.
+ */
+export interface DeviceScanMetaRecord {
+  /** Device profile ID (primary key) */
+  deviceId: string;
+  /** Scan roots string at time of scan (e.g. "MUSIC" or "MUSIC,MP3") */
+  scanRoots: string;
+  /** Timestamp when scan completed (Unix epoch ms) */
+  scannedAt: number;
+}
+
+/**
  * Saved playlist record stored in database
  * 
  * Represents a generated playlist that has been saved by the user. Contains
@@ -824,6 +837,8 @@ export class AppDatabase extends Dexie {
   deviceSyncManifests!: Table<DeviceSyncManifestRecord, string>;
   /** Device file index cache (path mapping) */
   deviceFileIndex!: Table<DeviceFileIndexRecord, string>;
+  /** Device scan metadata (scan roots + scannedAt per device for cache validation) */
+  deviceScanMeta!: Table<DeviceScanMetaRecord, string>;
   /** Device track mappings (library -> iPod track for sync dedupe) */
   deviceTrackMappings!: Table<DeviceTrackMappingRecord, string>;
   /** Artwork cache (track thumbnail blobs for UI and iPod sync) */
@@ -1188,6 +1203,27 @@ export class AppDatabase extends Dexie {
       deviceProfiles: "id, createdAt, updatedAt",
       deviceSyncManifests: "id, deviceId, playlistId, lastSyncedAt",
       deviceFileIndex: "id, deviceId, matchKey, contentHash, fullContentHash, updatedAt",
+      deviceTrackMappings: "id, deviceId, libraryTrackId",
+      artworkCache: "id",
+    });
+
+    // Version 17: Device scan meta (scan roots + scannedAt per device for cache validation)
+    this.version(17).stores({
+      libraryRoots: "id, createdAt",
+      fileIndex: "id, trackFileId, libraryRootId, name, extension, fullContentHash, contentHash, updatedAt",
+      tracks: "id, trackFileId, libraryRootId, globalTrackId, isrc, updatedAt, addedAt",
+      scanRuns: "id, libraryRootId, startedAt",
+      settings: "key",
+      directoryHandles: "id",
+      savedPlaylists: "id, libraryRootId, createdAt, updatedAt",
+      scanCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+      processingCheckpoints: "id, scanRunId, libraryRootId, checkpointAt",
+      trackWritebacks: "id, libraryRootId, pending, updatedAt",
+      writebackCheckpoints: "id, writebackRunId, libraryRootId, checkpointAt",
+      deviceProfiles: "id, createdAt, updatedAt",
+      deviceSyncManifests: "id, deviceId, playlistId, lastSyncedAt",
+      deviceFileIndex: "id, deviceId, matchKey, contentHash, fullContentHash, updatedAt",
+      deviceScanMeta: "deviceId",
       deviceTrackMappings: "id, deviceId, libraryTrackId",
       artworkCache: "id",
     });

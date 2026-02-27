@@ -10,5 +10,6 @@ export {
   writeSysInfoSetup,
 } from "./firewire-setup";
 export { startIpodConnectionMonitor } from "./connection-monitor";
-export { loadIpodDeviceInfo, loadIpodTracks, syncPlaylistsToIpod } from "./sync";
+export { loadIpodDeviceInfo, loadIpodTracks, syncPlaylistsToIpod, type IpodSyncResult } from "./sync";
+export { getUseIpodTsBackend, setUseIpodTsBackend } from "./ipod-db-api";
 export { createTranscodePool } from "./transcode";

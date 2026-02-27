@@ -78,6 +78,9 @@ jest.mock("@/features/devices/device-storage", () => ({
     deviceType: "walkman",
     handleRef: "handle-1",
   })),
+  getDeviceScanMeta: jest.fn(async () => undefined),
+  saveDeviceScanMeta: jest.fn(async () => ({})),
+  clearDeviceFileIndex: jest.fn(async () => undefined),
 }));
 
 jest.mock("@/features/devices/device-sync", () => ({
@@ -96,11 +99,13 @@ jest.mock("@/features/devices/device-scan", () => ({
 jest.mock("@/features/devices/ipod", () => ({
   getDeviceViaWebUSB: jest.fn(async () => null),
   getModelInfo: jest.fn(() => null),
+  getUseIpodTsBackend: jest.fn(() => true),
   isSysInfoSetup: jest.fn(async () => true),
   listKnownIpodDevices: jest.fn(async () => []),
   loadIpodDeviceInfo: jest.fn(async () => null),
   loadIpodTracks: jest.fn(async () => []),
   requiresEncryption: jest.fn(() => false),
+  setUseIpodTsBackend: jest.fn(),
   startIpodConnectionMonitor: jest.fn(() => ({
     suspend: jest.fn(),
     resume: jest.fn(),

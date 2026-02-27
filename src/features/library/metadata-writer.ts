@@ -8,6 +8,7 @@ import { writeSidecarMetadata } from "./metadata-sidecar";
 import { logger } from "@/lib/logger";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
+import { resolveFfmpegAssetUrls } from "@/lib/ffmpeg-asset-urls";
 
 export interface WritebackResult {
   success: boolean;
@@ -27,7 +28,8 @@ async function getFFmpeg(): Promise<FFmpeg> {
   if (!ffmpegLoading) {
     ffmpegLoading = (async () => {
       const instance = new FFmpeg();
-      await instance.load();
+      const { coreURL, wasmURL } = await resolveFfmpegAssetUrls();
+      await instance.load({ coreURL, wasmURL });
       ffmpegInstance = instance;
       return instance;
     })();

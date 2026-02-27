@@ -8,6 +8,7 @@ import type {
   DeviceSyncManifestRecord,
   DeviceFileIndexRecord,
   DeviceTrackMappingRecord,
+  DeviceScanMetaRecord,
 } from "@/db/schema";
 
 export type DeviceProfileInput = Omit<
@@ -87,11 +88,23 @@ export async function deleteDeviceProfile(id: string): Promise<void> {
 }
 
 export async function deleteDeviceProfileWithManifests(id: string): Promise<void> {
-  await db.transaction("rw", [db.deviceProfiles, db.deviceSyncManifests, db.deviceTrackMappings], async () => {
-    await db.deviceSyncManifests.where("deviceId").equals(id).delete();
-    await db.deviceTrackMappings.where("deviceId").equals(id).delete();
-    await db.deviceProfiles.delete(id);
-  });
+  await db.transaction(
+    "rw",
+    [
+      db.deviceProfiles,
+      db.deviceSyncManifests,
+      db.deviceTrackMappings,
+      db.deviceFileIndex,
+      db.deviceScanMeta,
+    ],
+    async () => {
+      await db.deviceSyncManifests.where("deviceId").equals(id).delete();
+      await db.deviceTrackMappings.where("deviceId").equals(id).delete();
+      await db.deviceFileIndex.where("deviceId").equals(id).delete();
+      await db.deviceScanMeta.where("deviceId").equals(id).delete();
+      await db.deviceProfiles.delete(id);
+    }
+  );
 }
 
 export async function saveDeviceSyncManifest(
@@ -127,6 +140,31 @@ export async function getDeviceFileIndexMap(
 
 export async function clearDeviceFileIndex(deviceId: string): Promise<void> {
   await db.deviceFileIndex.where("deviceId").equals(deviceId).delete();
+}
+
+export type DeviceScanMetaInput = { scanRoots: string; scannedAt: number };
+
+export async function saveDeviceScanMeta(
+  deviceId: string,
+  input: DeviceScanMetaInput
+): Promise<DeviceScanMetaRecord> {
+  const record: DeviceScanMetaRecord = {
+    deviceId,
+    scanRoots: input.scanRoots,
+    scannedAt: input.scannedAt,
+  };
+  await db.deviceScanMeta.put(record);
+  return record;
+}
+
+export async function getDeviceScanMeta(
+  deviceId: string
+): Promise<DeviceScanMetaRecord | undefined> {
+  return db.deviceScanMeta.get(deviceId);
+}
+
+export async function clearDeviceScanMeta(deviceId: string): Promise<void> {
+  await db.deviceScanMeta.where("deviceId").equals(deviceId).delete();
 }
 
 export async function getDeviceSyncManifest(

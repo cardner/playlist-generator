@@ -64,6 +64,9 @@ export async function initIpodWasm(options?: { scriptUrl?: string }): Promise<bo
       if (typeof (wasmModule as any)._ipod_set_track_artwork !== "function") {
         (wasmModule as any)._ipod_set_track_artwork = (_trackIndex: number, _dataPtr: number, _dataLen: number) => -1;
       }
+      if (typeof (wasmModule as any)._ipod_track_set_artwork_from_data !== "function") {
+        (wasmModule as any)._ipod_track_set_artwork_from_data = (_trackIndex: number, _dataPtr: number, _dataLen: number) => -1;
+      }
       wasmReady = true;
       return true;
     } catch (error) {
@@ -259,11 +262,12 @@ export function wasmUpdateTrack(input: {
 }
 
 /**
- * Set JPEG thumbnail for a track (ArtworkDB/ITHMB). Requires the WASM build to expose
- * ipod_set_track_artwork(trackIndex, dataPtr, dataLen). If the export is missing, returns -1.
+ * Set JPEG/PNG thumbnail for a track (ArtworkDB/ITHMB). Uses
+ * ipod_track_set_artwork_from_data when present (libgpod-wasm/tunesreloaded), else
+ * ipod_set_track_artwork for older builds. If neither is available, returns -1.
  *
  * @param trackIndex - 0-based track index in the current iTunesDB
- * @param jpegBytes - JPEG thumbnail bytes (e.g. from resizeToIpodThumbnail)
+ * @param jpegBytes - JPEG (or PNG) thumbnail bytes (e.g. from resizeToIpodThumbnail)
  * @returns 0 on success, non-zero on failure or if artwork API is not available
  */
 export function wasmSetTrackArtwork(trackIndex: number, jpegBytes: Uint8Array): number {
@@ -273,10 +277,10 @@ export function wasmSetTrackArtwork(trackIndex: number, jpegBytes: Uint8Array): 
   const heap = wasmModule.HEAPU8;
   if (!malloc || !free || !heap) return -1;
 
-  const func = (wasmModule as any)._ipod_set_track_artwork;
-  if (typeof func !== "function") {
-    return -1;
-  }
+  const setFromData = (wasmModule as any)._ipod_track_set_artwork_from_data;
+  const setLegacy = (wasmModule as any)._ipod_set_track_artwork;
+  const func = typeof setFromData === "function" ? setFromData : setLegacy;
+  if (typeof func !== "function") return -1;
 
   const len = jpegBytes.length;
   if (len <= 0) return -1;
@@ -290,5 +294,24 @@ export function wasmSetTrackArtwork(trackIndex: number, jpegBytes: Uint8Array): 
     return typeof result === "number" ? result : -1;
   } finally {
     free(ptr);
+  }
+}
+
+/**
+ * Returns true if the parsed iPod device supports artwork (ArtworkDB/ITHMB).
+ * Must be called after ipod_parse_db(). Uses libgpod's device check when the
+ * WASM exports ipod_device_supports_artwork (e.g. tunesreloaded build).
+ *
+ * @returns true if device supports artwork, false otherwise or if export is missing
+ */
+export function wasmDeviceSupportsArtwork(): boolean {
+  if (!wasmModule || !wasmReady) return false;
+  const func = (wasmModule as any)._ipod_device_supports_artwork;
+  if (typeof func !== "function") return false;
+  try {
+    const result = func();
+    return result === 1;
+  } catch {
+    return false;
   }
 }
