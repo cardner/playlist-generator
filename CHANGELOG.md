@@ -58,6 +58,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.15.3] - 2026-02-27
+
+### Fixed
+
+- update deployment script to have git creds
+
+### Documentation
+
+- add screenshots to README for home, library, playlists, device sync
+
+### Other Changes
+
+- Merge pull request #71 from cardner/fix-deployment-script
+- Change Dependabot update interval from weekly to monthly
+- Merge pull request #70 from cardner/automate-changelog
+
 ## [1.15.2] - 2026-02-27
 
 ### Documentation
