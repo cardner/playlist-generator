@@ -21,6 +21,8 @@ export type CollectionTrackWithStatus = {
   trackFileId: string;
   title: string;
   artist?: string;
+  /** Album artist for grouping; falls back to artist when missing. */
+  albumArtist?: string;
   album?: string;
   addedAt?: number;
   fileName?: string;
@@ -115,7 +117,7 @@ export function CollectionSyncBrowser({
   const groupedTracks = useMemo(() => {
     const acc: Record<string, Record<string, CollectionTrackWithStatus[]>> = {};
     for (const track of tracks) {
-      const artist = track.artist || "Unknown Artist";
+      const artist = (track.albumArtist ?? track.artist) || "Unknown Artist";
       const album = track.album || "Unknown Album";
       if (!acc[artist]) acc[artist] = {};
       if (!acc[artist][album]) acc[artist][album] = [];
@@ -284,6 +286,27 @@ export function CollectionSyncBrowser({
     [setPageSize]
   );
 
+  const setSelectionForTrackIds = useCallback(
+    (trackIds: string[], checked: boolean) => {
+      const next = new Set(selectedTrackIds);
+      if (checked) {
+        trackIds.forEach((id) => next.add(id));
+      } else {
+        trackIds.forEach((id) => next.delete(id));
+      }
+      onSelectedTrackIdsChange(next);
+    },
+    [selectedTrackIds, onSelectedTrackIdsChange]
+  );
+
+  const toggleSelectionForTrackIds = useCallback(
+    (trackIds: string[]) => {
+      const shouldSelect = trackIds.some((id) => !selectedTrackIds.has(id));
+      setSelectionForTrackIds(trackIds, shouldSelect);
+    },
+    [selectedTrackIds, setSelectionForTrackIds]
+  );
+
   return (
     <div className="md:col-span-2 space-y-4">
       <div>
@@ -349,7 +372,17 @@ export function CollectionSyncBrowser({
                       someSelected || allSelected
                         ? "border-accent-primary ring-1 ring-accent-primary"
                         : ""
-                    }`}
+                    } cursor-pointer`}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={allSelected}
+                    onClick={() => toggleSelectionForTrackIds(trackIds)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        toggleSelectionForTrackIds(trackIds);
+                      }
+                    }}
                   >
                     <div className="aspect-square bg-app-hover flex items-center justify-center relative overflow-hidden">
                       {trackIds[0] &&
@@ -367,18 +400,16 @@ export function CollectionSyncBrowser({
                       ) : (
                         <Music className="size-12 text-app-tertiary" />
                       )}
-                      <label className="absolute top-2 right-2 z-10">
+                      <label
+                        className="absolute top-2 right-2 z-10"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <input
                           type="checkbox"
                           checked={allSelected}
+                          onClick={(e) => e.stopPropagation()}
                           onChange={(e) => {
-                            const next = new Set(selectedTrackIds);
-                            if (e.target.checked) {
-                              trackIds.forEach((id) => next.add(id));
-                            } else {
-                              trackIds.forEach((id) => next.delete(id));
-                            }
-                            onSelectedTrackIdsChange(next);
+                            setSelectionForTrackIds(trackIds, e.target.checked);
                           }}
                           className="rounded border-app-border"
                         />
@@ -420,7 +451,17 @@ export function CollectionSyncBrowser({
                     padding="none"
                     className={`overflow-hidden ${
                       allSelected ? "border-accent-primary ring-1 ring-accent-primary" : ""
-                    }`}
+                    } cursor-pointer`}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={allSelected}
+                    onClick={() => toggleSelectionForTrackIds(trackIds)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        toggleSelectionForTrackIds(trackIds);
+                      }
+                    }}
                   >
                     <div className="aspect-square bg-app-hover flex items-center justify-center relative rounded-t-sm overflow-hidden">
                       {artistArtworkUrl ? (
@@ -435,18 +476,16 @@ export function CollectionSyncBrowser({
                           {artist.charAt(0).toUpperCase()}
                         </div>
                       )}
-                      <label className="absolute top-2 right-2 z-10">
+                      <label
+                        className="absolute top-2 right-2 z-10"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <input
                           type="checkbox"
                           checked={allSelected}
+                          onClick={(e) => e.stopPropagation()}
                           onChange={(e) => {
-                            const next = new Set(selectedTrackIds);
-                            if (e.target.checked) {
-                              trackIds.forEach((id) => next.add(id));
-                            } else {
-                              trackIds.forEach((id) => next.delete(id));
-                            }
-                            onSelectedTrackIdsChange(next);
+                            setSelectionForTrackIds(trackIds, e.target.checked);
                           }}
                           className="rounded border-app-border"
                         />

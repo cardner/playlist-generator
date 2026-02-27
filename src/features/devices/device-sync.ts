@@ -16,6 +16,7 @@ import { getDirectoryHandle, storeDirectoryHandle } from "@/lib/library-selectio
 import { logger } from "@/lib/logger";
 import { formatPlaylistFilenameStem } from "@/lib/playlist-filename";
 import type { DeviceProfileRecord } from "@/db/schema";
+import { getLibraryRoot } from "@/db/storage";
 import { saveDeviceProfile, saveDeviceSyncManifest } from "./device-storage";
 import type { DeviceScanEntry } from "./device-scan";
 import { buildDeviceMatchCandidates } from "./device-scan";
@@ -25,7 +26,7 @@ import {
   normalizeFilenameForMatch,
   pickBestDevicePath,
 } from "./path-matching";
-import { syncPlaylistsToIpod } from "./ipod";
+import { syncPlaylistsToIpod, type IpodSyncResult } from "./ipod";
 
 export type DevicePlaylistFormat = "m3u" | "pls" | "xspf";
 type FileSystemPermissionMode = "read" | "readwrite";
@@ -457,9 +458,16 @@ export async function pickDeviceRootHandle(): Promise<{ handleId: string; name: 
     throw new Error("File System Access API not supported");
   }
 
-  const handle = await window.showDirectoryPicker({ mode: "readwrite" });
-  const handleId = await storeDirectoryHandle(handle);
-  return { handleId, name: handle.name };
+  try {
+    const handle = await window.showDirectoryPicker({ mode: "readwrite" });
+    const handleId = await storeDirectoryHandle(handle);
+    return { handleId, name: handle.name };
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Folder selection was cancelled");
+    }
+    throw err;
+  }
 }
 
 export async function checkDeviceWriteAccess(handleRef: string): Promise<boolean> {
@@ -517,6 +525,47 @@ async function getOrCreateDirectory(
   return current;
 }
 
+async function getFileFromLibrary(
+  libraryRootId: string,
+  lookup: TrackLookup
+): Promise<File | null> {
+  if (!lookup.fileIndex?.relativePath) return null;
+  const root = await getLibraryRoot(libraryRootId);
+  if (!root?.handleRef) return null;
+  const rootHandle = await getDirectoryHandle(root.handleRef);
+  if (!rootHandle) return null;
+  const relativePath = lookup.fileIndex.relativePath.replace(/^\/+/, "");
+  const parts = relativePath.split("/").filter(Boolean);
+  if (parts.length === 0) return null;
+  let current = rootHandle;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    current = await current.getDirectoryHandle(parts[i], { create: false });
+  }
+  const fileHandle = await current.getFileHandle(parts[parts.length - 1], { create: false });
+  return await fileHandle.getFile();
+}
+
+function sanitizeDeviceFilename(name: string): string {
+  return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim() || "track";
+}
+
+/** Sanitize artist/album for use as directory name. Returns fallback if empty after sanitization. */
+function sanitizeDeviceDirName(value: string | undefined, fallback: string): string {
+  if (!value || typeof value !== "string") return fallback;
+  const sanitized = value.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim();
+  return sanitized || fallback;
+}
+
+/** Build Artist/Album subpath for device sync. Exported for testing. */
+export function buildDeviceTrackSubPath(
+  artist: string | undefined,
+  album: string | undefined
+): string {
+  const a = sanitizeDeviceDirName(artist, "Unknown Artist");
+  const b = sanitizeDeviceDirName(album, "Unknown Album");
+  return `${a}/${b}`.replace(/\/+/g, "/");
+}
+
 async function writeTextFile(
   dir: FileSystemDirectoryHandle,
   filename: string,
@@ -535,6 +584,12 @@ export async function syncPlaylistToDevice(options: {
   devicePathMap?: DevicePathMap;
   deviceEntries?: DeviceScanEntry[];
   onlyIncludeMatchedPaths?: boolean;
+  /** When set with deviceMusicFolder, copy tracks not on device from library to device. */
+  libraryRootId?: string;
+  /** Folder on device for copied tracks (e.g. MUSIC). Used when libraryRootId is set. */
+  deviceMusicFolder?: string;
+  /** Progress during copy phase: current index, total tracks, optional track title. */
+  onProgress?: (progress: { current: number; total: number; title?: string }) => void;
 }): Promise<{ playlistPath: string; configHash: string }> {
   const {
     playlist,
@@ -543,6 +598,9 @@ export async function syncPlaylistToDevice(options: {
     devicePathMap,
     deviceEntries,
     onlyIncludeMatchedPaths,
+    libraryRootId,
+    deviceMusicFolder,
+    onProgress,
   } = options;
   if (!deviceProfile.handleRef) {
     throw new Error("Device folder handle not found");
@@ -589,16 +647,81 @@ export async function syncPlaylistToDevice(options: {
       ? buildUniqueDevicePaths(deviceEntries)
       : undefined;
 
-  const effectiveTrackLookups =
-    onlyIncludeMatchedPaths && devicePathMap
-      ? mappedTrackLookups.filter((lookup) => {
-          const matchedPath = resolveDevicePathMatch(lookup, devicePathMap, {
-            normalizedFilenameToPaths,
-            metadataCandidatePaths,
+  const copyToDevice =
+    Boolean(libraryRootId && deviceMusicFolder);
+  const totalTracks = trackLookups.length;
+
+  let effectiveTrackLookups: TrackLookup[];
+  if (copyToDevice) {
+    const usedPaths = new Set<string>();
+    effectiveTrackLookups = [];
+    let processed = 0;
+    for (const trackFileId of playlist.trackFileIds) {
+      const lookup = mappedTrackLookups.find((t) => t.track.trackFileId === trackFileId);
+      if (!lookup) continue;
+      const matchedPath = resolveDevicePathMatch(lookup, devicePathMap ?? new Map(), {
+        normalizedFilenameToPaths,
+        metadataCandidatePaths,
+      });
+      if (matchedPath) {
+        effectiveTrackLookups.push(lookup);
+      } else {
+        const file = await getFileFromLibrary(libraryRootId!, lookup);
+        if (!file) {
+          logger.warn("Skip track (file not found in library)", {
+            trackFileId,
+            relativePath: lookup.fileIndex?.relativePath,
           });
-          return Boolean(matchedPath);
-        })
-      : mappedTrackLookups;
+          processed += 1;
+          onProgress?.({ current: processed, total: totalTracks, title: lookup.track.tags?.title });
+          continue;
+        }
+        const subPath = buildDeviceTrackSubPath(
+          lookup.track.tags?.artist,
+          lookup.track.tags?.album
+        );
+        const trackDir = await getOrCreateDirectory(
+          handle,
+          `${deviceMusicFolder}/${subPath}`.replace(/\/+/g, "/")
+        );
+        const baseName = lookup.fileIndex?.name ?? `${lookup.track.trackFileId}.mp3`;
+        let deviceName = sanitizeDeviceFilename(baseName);
+        let deviceRelativePath = `${deviceMusicFolder}/${subPath}/${deviceName}`.replace(/\/+/g, "/");
+        let n = 0;
+        while (usedPaths.has(deviceRelativePath.toLowerCase())) {
+          n += 1;
+          const ext = deviceName.includes(".") ? deviceName.slice(deviceName.lastIndexOf(".")) : "";
+          const stem = deviceName.includes(".") ? deviceName.slice(0, deviceName.lastIndexOf(".")) : deviceName;
+          deviceName = `${stem} (${n})${ext}`;
+          deviceRelativePath = `${deviceMusicFolder}/${subPath}/${deviceName}`.replace(/\/+/g, "/");
+        }
+        usedPaths.add(deviceRelativePath.toLowerCase());
+        const fileHandle = await trackDir.getFileHandle(deviceName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(await file.arrayBuffer());
+        await writable.close();
+        effectiveTrackLookups.push({
+          ...lookup,
+          fileIndex: lookup.fileIndex
+            ? { ...lookup.fileIndex, relativePath: deviceRelativePath }
+            : undefined,
+        });
+      }
+      processed += 1;
+      onProgress?.({ current: processed, total: totalTracks, title: lookup.track.tags?.title });
+    }
+  } else {
+    effectiveTrackLookups =
+      onlyIncludeMatchedPaths && devicePathMap
+        ? mappedTrackLookups.filter((lookup) => {
+            const matchedPath = resolveDevicePathMatch(lookup, devicePathMap, {
+              normalizedFilenameToPaths,
+              metadataCandidatePaths,
+            });
+            return Boolean(matchedPath);
+          })
+        : mappedTrackLookups;
+  }
 
   const contentResult = (() => {
     switch (deviceProfile.playlistFormat) {
@@ -677,39 +800,55 @@ export async function syncPlaylistsToDevice(options: {
     mirrorMode?: boolean;
     mirrorDeleteFromDevice?: boolean;
     onlyReferenceExistingTracks?: boolean;
+    libraryOnly?: boolean;
   }>;
   devicePathMap?: DevicePathMap;
   deviceEntries?: DeviceScanEntry[];
   onlyIncludeMatchedPaths?: boolean;
+  /** Folder on device for copying tracks not on device (e.g. MUSIC). Used when target.libraryRootId is set. */
+  deviceMusicFolder?: string;
   /** When true, only add playlist entries for tracks already on device (iPod); skip copying missing */
   onlyReferenceExistingTracks?: boolean;
   /** When true, replace existing iPod playlist with same name (clear then add synced tracks) */
   overwriteExistingPlaylist?: boolean;
-}): Promise<{ playlistPath?: string; configHash?: string }> {
+  /** Cumulative progress: current index, total items, optional title (tracks for iPod/copy, playlists for others) */
+  onProgress?: (progress: { current: number; total: number; title?: string }) => void;
+}): Promise<{ playlistPath?: string; configHash?: string; failedTracks?: IpodSyncResult["failedTracks"] }> {
   const {
     deviceProfile,
     targets,
     devicePathMap,
     deviceEntries,
     onlyIncludeMatchedPaths,
+    deviceMusicFolder,
     onlyReferenceExistingTracks,
     overwriteExistingPlaylist,
+    onProgress,
   } = options;
   if (deviceProfile.deviceType === "ipod") {
     const ipodTargets = targets.map((t) => ({
       ...t,
       onlyReferenceExistingTracks: t.onlyReferenceExistingTracks ?? onlyReferenceExistingTracks,
     }));
-    await syncPlaylistsToIpod({
+    const result = await syncPlaylistsToIpod({
       deviceProfile,
       targets: ipodTargets,
       overwriteExistingPlaylist,
+      onProgress,
     });
-    return {};
+    return { failedTracks: result?.failedTracks };
   }
 
   let lastResult: { playlistPath: string; configHash: string } | null = null;
-  for (const target of targets) {
+  for (let index = 0; index < targets.length; index += 1) {
+    const target = targets[index];
+    if (targets.length > 1) {
+      onProgress?.({
+        current: index + 1,
+        total: targets.length,
+        title: target.playlist.title,
+      });
+    }
     lastResult = await syncPlaylistToDevice({
       playlist: target.playlist,
       trackLookups: target.trackLookups,
@@ -717,6 +856,9 @@ export async function syncPlaylistsToDevice(options: {
       devicePathMap,
       deviceEntries,
       onlyIncludeMatchedPaths,
+      libraryRootId: target.libraryRootId,
+      deviceMusicFolder,
+      onProgress: targets.length === 1 ? onProgress : undefined,
     });
   }
   return lastResult ?? {};

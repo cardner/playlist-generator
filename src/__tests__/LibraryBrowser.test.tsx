@@ -43,6 +43,18 @@ const mockGenresWithStats: GenreWithStats[] = [
   { normalized: "Rock", trackCount: 150, originalVariants: ["Rock"] },
 ];
 
+jest.mock("@/db/schema", () => {
+  const actual = jest.requireActual("@/db/schema");
+  return {
+    ...actual,
+    db: {
+      artworkCache: {
+        bulkGet: jest.fn(async () => []),
+      },
+    },
+  };
+});
+
 jest.mock("@/db/storage", () => ({
   getCurrentLibraryRoot: jest.fn(async () => ({
     id: "root-1",
@@ -353,6 +365,106 @@ describe("LibraryBrowser", () => {
       fireEvent.click(removeButton);
 
       expect(onFiltersChange).toHaveBeenCalledWith([]);
+    });
+  });
+
+  describe("tracks / albums / artists tabs", () => {
+    it("shows Tracks, Albums, and Artists tabs with counts", async () => {
+      render(<LibraryBrowser />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Track 1")).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole("tab", { name: /150 tracks/i })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /150 albums/i })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /150 artists/i })).toBeInTheDocument();
+    });
+
+    it("shows Albums grid when initialViewMode is albums", async () => {
+      render(<LibraryBrowser initialViewMode="albums" />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Album 1")).toBeInTheDocument();
+      });
+
+      expect(screen.getByText("Artist 1")).toBeInTheDocument();
+      expect(screen.getAllByText("1 tracks").length).toBeGreaterThan(0);
+    });
+
+    it("shows Artists grid when initialViewMode is artists", async () => {
+      render(<LibraryBrowser initialViewMode="artists" />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Artist 1")).toBeInTheDocument();
+      });
+
+      expect(screen.getAllByText(/1 albums • 1 tracks/).length).toBeGreaterThan(0);
+    });
+
+    it("adds artist filter and switches to Tracks when artist card clicked", async () => {
+      const onFiltersChange = jest.fn();
+      const threeTracks = [
+        createTrack(1, { tags: { ...createTrack(1).tags, artist: "Wilco", album: "YHF" } }),
+        createTrack(2, { tags: { ...createTrack(2).tags, artist: "Wilco", album: "AGIB" } }),
+        createTrack(3, { tags: { ...createTrack(3).tags, artist: "Sleater-Kinney", album: "DD" } }),
+      ];
+      const { getTracks } = jest.requireMock("@/db/storage");
+      getTracks.mockResolvedValue(threeTracks);
+
+      render(
+        <LibraryBrowser
+          filters={[]}
+          onFiltersChange={onFiltersChange}
+          initialViewMode="artists"
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText("Wilco")).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByText("Wilco"));
+
+      expect(onFiltersChange).toHaveBeenCalledWith([
+        { type: "artist", value: "Wilco" },
+      ]);
+      await waitFor(() => {
+        expect(screen.getByText("Tracks")).toBeInTheDocument();
+      });
+    });
+
+    it("adds album and artist filters and switches to Tracks when album card clicked", async () => {
+      const onFiltersChange = jest.fn();
+      const threeTracks = [
+        createTrack(1, { tags: { ...createTrack(1).tags, artist: "Wilco", album: "YHF" } }),
+        createTrack(2, { tags: { ...createTrack(2).tags, artist: "Wilco", album: "AGIB" } }),
+        createTrack(3, { tags: { ...createTrack(3).tags, artist: "Sleater-Kinney", album: "DD" } }),
+      ];
+      const { getTracks } = jest.requireMock("@/db/storage");
+      getTracks.mockResolvedValue(threeTracks);
+
+      render(
+        <LibraryBrowser
+          filters={[]}
+          onFiltersChange={onFiltersChange}
+          initialViewMode="albums"
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText("YHF")).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByText("YHF"));
+
+      expect(onFiltersChange).toHaveBeenCalledWith([
+        { type: "album", value: "YHF" },
+        { type: "artist", value: "Wilco" },
+      ]);
+      await waitFor(() => {
+        expect(screen.getByText("Tracks")).toBeInTheDocument();
+      });
     });
   });
 });

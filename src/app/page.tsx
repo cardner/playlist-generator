@@ -1,10 +1,8 @@
 "use client";
 
-import { LibrarySelector } from "@/components/LibrarySelector";
+import { HomePage } from "@/components/HomePage";
 
-export default function HomePage() {
-  return (
-    <LibrarySelector />
-  );
+export default function Page() {
+  return <HomePage />;
 }
 

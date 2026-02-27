@@ -35,13 +35,18 @@ import {
   getDeviceProfiles,
   getDeviceFileIndexMap,
   getDeviceTrackMappings,
+  releaseDeviceHandle,
   saveDeviceFileIndexEntries,
   saveDeviceProfile,
+  clearDeviceFileIndex,
+  saveDeviceScanMeta,
+  getDeviceScanMeta,
 } from "@/features/devices/device-storage";
 import {
   buildSyntheticPlaylist,
   getPresetCapabilities,
   getSyncTargetsFromPlaylists,
+  type SyncTarget,
 } from "@/features/devices/sync-targets";
 import {
   applyDevicePathMap,
@@ -71,6 +76,8 @@ import {
   startIpodConnectionMonitor,
   verifyIpodStructure,
   writeSysInfoSetup,
+  getUseIpodTsBackend,
+  setUseIpodTsBackend,
 } from "@/features/devices/ipod";
 import {
   getDirectoryHandle,
@@ -102,6 +109,7 @@ import {
   Smartphone,
   X,
   Edit,
+  Unplug,
 } from "lucide-react";
 import { scanLibraryWithPersistence } from "@/features/library/scanning-persist";
 import { findFileIndexByGlobalTrackId } from "@/features/library/track-identity";
@@ -164,6 +172,9 @@ export function DeviceSyncPanel({
   const [syncPhase, setSyncPhase] = useState<"idle" | "preparing" | "writing">("idle");
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncSuccess, setSyncSuccess] = useState<string | null>(null);
+  const [syncFailedTracks, setSyncFailedTracks] = useState<
+    Array<{ title?: string; artist?: string; error: string }> | null
+  >(null);
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
   const [devicePathDetectionEnabled, setDevicePathDetectionEnabled] = useState(true);
   const [onlyIncludeMatchedPaths, setOnlyIncludeMatchedPaths] = useState(false);
@@ -193,6 +204,9 @@ export function DeviceSyncPanel({
     capacity_gb?: number;
   } | null>(null);
   const [ipodSetupSkipped, setIpodSetupSkipped] = useState(false);
+  const [useIpodTsBackendState, setUseIpodTsBackendState] = useState(() =>
+    getUseIpodTsBackend()
+  );
   const [ipodMonitor, setIpodMonitor] = useState<{
     suspend: () => void;
     resume: () => void;
@@ -264,6 +278,7 @@ export function DeviceSyncPanel({
       trackFileId: string;
       title: string;
       artist?: string;
+      albumArtist?: string;
       album?: string;
       addedAt?: number;
       fileName?: string;
@@ -286,6 +301,7 @@ export function DeviceSyncPanel({
   const [collectionTracksPageSize, setCollectionTracksPageSize] = useState(50);
   const [mirrorDeleteFromDevice, setMirrorDeleteFromDevice] = useState(false);
   const [overwriteExistingPlaylistOnIpod, setOverwriteExistingPlaylistOnIpod] = useState(false);
+  const [syncLibraryOnlyFromCollection, setSyncLibraryOnlyFromCollection] = useState(true);
   const [collectionContentTab, setCollectionContentTab] = useState<
     "tracks" | "albums" | "artists"
   >("tracks");
@@ -300,6 +316,7 @@ export function DeviceSyncPanel({
     tagOnly: Set<string>;
     usedBytes?: number;
   }>({ tagSize: new Set(), tagOnly: new Set() });
+  const [ipodTracksRefreshTrigger, setIpodTracksRefreshTrigger] = useState(0);
   const [showMissingTracksDialog, setShowMissingTracksDialog] = useState(false);
   const [missingTrackCount, setMissingTrackCount] = useState(0);
   const [pendingIpodSync, setPendingIpodSync] = useState<{
@@ -309,7 +326,10 @@ export function DeviceSyncPanel({
       trackLookups: TrackLookup[];
       libraryRootId?: string;
     }>;
+    isSelectedTracksOnly?: boolean;
   } | null>(null);
+  /** When true, missing-tracks modal for selected-tracks shows "Proceed with sync" after rescan. */
+  const [missingTracksDialogAfterRescan, setMissingTracksDialogAfterRescan] = useState(false);
 
   const isIpodPreset = devicePreset === "ipod";
   const isJellyfinPreset = devicePreset === "jellyfin";
@@ -398,6 +418,7 @@ export function DeviceSyncPanel({
     if (!pending) return;
     if (choice === "cancel") {
       setPendingIpodSync(null);
+      setMissingTracksDialogAfterRescan(false);
       return;
     }
     const onlyRef = choice === "playlist-only";
@@ -405,12 +426,28 @@ export function DeviceSyncPanel({
     setSyncPhase("writing");
     setSyncError(null);
     setSyncSuccess(null);
+    setSyncFailedTracks(null);
     try {
+      const totalTracks = pending.scanTargets.reduce(
+        (sum, t) => sum + t.trackLookups.length,
+        0
+      );
+      setSyncQueueStatus({
+        currentIndex: 0,
+        total: totalTracks,
+        currentTitle: undefined,
+      });
       await syncPlaylistsToDevice({
         deviceProfile: pending.profile,
         targets: pending.scanTargets,
         onlyReferenceExistingTracks: onlyRef,
         overwriteExistingPlaylist: overwriteExistingPlaylistOnIpod,
+        onProgress: (p) =>
+          setSyncQueueStatus({
+            currentIndex: p.current,
+            total: p.total,
+            currentTitle: p.title,
+          }),
       });
       await refreshDeviceProfiles();
       setSelectedDeviceId(pending.profile.id);
@@ -419,6 +456,7 @@ export function DeviceSyncPanel({
           ? "Playlist updated with existing tracks only."
           : "Synced playlist successfully."
       );
+      setIpodTracksRefreshTrigger((t) => t + 1);
       onDeviceProfileUpdated?.(pending.profile);
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : "Sync failed");
@@ -426,6 +464,7 @@ export function DeviceSyncPanel({
       setIsSyncing(false);
       setSyncPhase("idle");
       setPendingIpodSync(null);
+      setMissingTracksDialogAfterRescan(false);
     }
   }
 
@@ -493,6 +532,7 @@ export function DeviceSyncPanel({
       setJellyfinExportMode(deviceProfileOverride.jellyfinExportMode || "download");
       setDevicePathDetectionEnabled(preset !== "ipod" && preset !== "jellyfin");
       setDevicePathMap(new Map());
+      setDeviceEntries([]);
       setDeviceScanStatus("idle");
       setDeviceScanProgress({ scanned: 0, matched: 0, hashed: 0 });
       return;
@@ -503,6 +543,7 @@ export function DeviceSyncPanel({
       setIsDeviceConnected(false);
       setUseCompanionApp(false);
       setDevicePathMap(new Map());
+      setDeviceEntries([]);
       setDeviceScanStatus("idle");
       setDeviceScanProgress({ scanned: 0, matched: 0, hashed: 0 });
       return;
@@ -529,6 +570,7 @@ export function DeviceSyncPanel({
       setJellyfinExportMode(selected.jellyfinExportMode || "download");
       setDevicePathDetectionEnabled(preset !== "ipod" && preset !== "jellyfin");
       setDevicePathMap(new Map());
+      setDeviceEntries([]);
       setDeviceScanStatus("idle");
       setDeviceScanProgress({ scanned: 0, matched: 0, hashed: 0 });
       if (preset === "walkman" || preset === "generic") {
@@ -588,14 +630,38 @@ export function DeviceSyncPanel({
     let cancelled = false;
     async function loadDeviceCache() {
       try {
+        const meta = await getDeviceScanMeta(selectedDeviceId);
+        if (cancelled) return;
+        const normalizeScanRoots = (s: string) =>
+          s
+            .split(",")
+            .map((p) => p.trim())
+            .filter(Boolean)
+            .sort()
+            .join(",");
+        const currentRoots = normalizeScanRoots(deviceScanRoots);
+        if (!meta || normalizeScanRoots(meta.scanRoots) !== currentRoots) {
+          return;
+        }
         const cached = await getDeviceFileIndexMap(selectedDeviceId);
         if (cancelled) return;
         const map = new Map<string, string>();
+        const entries: DeviceScanEntry[] = [];
         for (const entry of cached.values()) {
           map.set(entry.matchKey, entry.relativePath);
+          entries.push({
+            matchKey: entry.matchKey,
+            relativePath: entry.relativePath,
+            contentHash: entry.contentHash,
+            fullContentHash: entry.fullContentHash,
+            name: entry.name,
+            size: entry.size,
+            mtime: entry.mtime,
+          });
         }
         if (map.size > 0) {
           setDevicePathMap(map);
+          setDeviceEntries(entries);
           setDeviceScanStatus("done");
         }
       } catch (error) {
@@ -606,7 +672,7 @@ export function DeviceSyncPanel({
     return () => {
       cancelled = true;
     };
-  }, [selectedDeviceId, devicePreset]);
+  }, [selectedDeviceId, devicePreset, deviceScanRoots]);
 
   useEffect(() => {
     if (!deviceHandleRef) return;
@@ -669,7 +735,7 @@ export function DeviceSyncPanel({
     return () => {
       cancelled = true;
     };
-  }, [isIpodPreset, deviceHandleRef, selectionIsFromUserAction, buildTagKey, buildTagSizeKey]);
+  }, [isIpodPreset, deviceHandleRef, selectionIsFromUserAction, buildTagKey, buildTagSizeKey, ipodTracksRefreshTrigger]);
 
   useEffect(() => {
     if (devicePreset !== "jellyfin") return;
@@ -770,6 +836,7 @@ export function DeviceSyncPanel({
               trackFileId: track.trackFileId,
               title: track.tags?.title || fallbackTitle,
               artist: track.tags?.artist,
+              albumArtist: track.tags?.albumArtist ?? track.tags?.artist,
               album: track.tags?.album,
               trackNo: track.tags?.trackNo,
               addedAt: fileIndex?.updatedAt ?? track.updatedAt,
@@ -816,7 +883,7 @@ export function DeviceSyncPanel({
       : collectionTracks;
     const grouped: Record<string, Record<string, typeof filtered>> = {};
     for (const track of filtered) {
-      const artist = track.artist || "Unknown Artist";
+      const artist = (track.albumArtist ?? track.artist) || "Unknown Artist";
       const album = track.album || "Unknown Album";
       if (!grouped[artist]) grouped[artist] = {};
       if (!grouped[artist][album]) grouped[artist][album] = [];
@@ -1215,7 +1282,7 @@ export function DeviceSyncPanel({
 
   const groupedTracks = visibleCollectionTracks.reduce(
     (acc, track) => {
-      const artist = track.artist || "Unknown Artist";
+      const artist = (track.albumArtist ?? track.artist) || "Unknown Artist";
       const album = track.album || "Unknown Album";
       if (!acc[artist]) {
         acc[artist] = {};
@@ -1433,6 +1500,7 @@ export function DeviceSyncPanel({
     if (useCompanionApp) return;
     setSyncError(null);
     setSyncSuccess(null);
+    setSyncFailedTracks(null);
     try {
       const result = await pickDeviceRootHandle();
       setDeviceHandleRef(result.handleId);
@@ -1474,6 +1542,7 @@ export function DeviceSyncPanel({
     setSyncPhase("preparing");
     setSyncError(null);
     setSyncSuccess(null);
+    setSyncFailedTracks(null);
     setSyncWarning(null);
     setMissingMetadataCount(0);
     setPathValidationStatus("idle");
@@ -1492,9 +1561,35 @@ export function DeviceSyncPanel({
       if (!deviceHandleRef && !useCompanionApp) {
         throw new Error("Select a device folder to sync");
       }
-      const targets = getSyncTargets();
+      let targets: Array<PlaylistItem | SyncTarget> = getSyncTargets();
+      let syncIsSelectedTracksOnly = false;
+      if (hasCollectionSync && selectedCollectionId && selectedCollectionTrackIds.size > 0) {
+        await ensureAllLibraryRootAccess([selectedCollectionId]);
+        const selectedIds = Array.from(selectedCollectionTrackIds);
+        const trackLookups = await buildTrackLookupsFromTrackIds(
+          selectedIds,
+          selectedCollectionId,
+          { tryLazyFileIndex: true }
+        );
+        const { filtered } = filterTrackLookups(trackLookups);
+        const collectionName =
+          collections.find((c) => c.id === selectedCollectionId)?.name ?? "Selected Tracks";
+        const syntheticPlaylist = buildSyntheticPlaylist("Recently Added", selectedIds);
+        const collectionTarget: SyncTarget = {
+          playlist: syntheticPlaylist,
+          trackLookups: filtered,
+          libraryRootId: selectedCollectionId,
+          libraryOnly: isIpodPreset ? syncLibraryOnlyFromCollection : undefined,
+        };
+        if (targets.length === 0) {
+          targets = [collectionTarget];
+          syncIsSelectedTracksOnly = true;
+        } else {
+          targets = [...targets, collectionTarget];
+        }
+      }
       if (targets.length === 0) {
-        throw new Error("Select at least one playlist to sync");
+        throw new Error("Select at least one playlist or select tracks, albums, or artists to sync.");
       }
       if (
         isIpodPreset &&
@@ -1552,12 +1647,18 @@ export function DeviceSyncPanel({
           : undefined,
       });
       const targetsWithLookups = await Promise.all(
-        targets.map(async (target) => ({
-          ...target,
-          trackLookups: await buildTrackLookups(target.playlist, target.libraryRootId, {
-            tryLazyFileIndex: true,
-          }),
-        }))
+        targets.map(async (target) => {
+          const hasLookups = "trackLookups" in target && Array.isArray(target.trackLookups);
+          if (hasLookups && target.trackLookups.length > 0) {
+            return { ...target, trackLookups: target.trackLookups };
+          }
+          return {
+            ...target,
+            trackLookups: await buildTrackLookups(target.playlist, target.libraryRootId, {
+              tryLazyFileIndex: true,
+            }),
+          };
+        })
       );
       let totalMissingMetadata = 0;
       const allMissingRootIds: string[] = [];
@@ -1606,49 +1707,18 @@ export function DeviceSyncPanel({
           );
           activeDevicePathMap = new Map();
           activeDeviceEntries = [];
-        } else {
-          try {
-            const scanResult = await scanDevicePaths({
-              preview: false,
-              targetKeyMap,
-              targetTrackCount,
-              computeFullContentHash: hasFullHash,
-            });
-            activeDevicePathMap = scanResult.map;
-            activeDeviceEntries = scanResult.entries;
-          } catch (err) {
-            const message = err instanceof Error ? err.message : "Device scan failed";
-            throw new Error(`Walkman scan failed (${message}).`);
-          }
         }
+        // When cache is valid we use it. When cache is empty we do not run a blocking scan.
       } else if (!useCompanionApp && devicePathDetectionEnabled && !isIpodPreset) {
-        if (devicePathMap.size === 0 || deviceScanStatus !== "done") {
-          if (targetTrackCount === 0) {
-            setSyncWarning(
-              "No track metadata available for playlist scan. Continuing without path detection."
-            );
-            activeDevicePathMap = new Map();
-            activeDeviceEntries = [];
-          } else {
-            try {
-              const scanResult = await scanDevicePaths({
-                preview: false,
-                targetKeyMap,
-                targetTrackCount,
-                computeFullContentHash: hasFullHash,
-              });
-              activeDevicePathMap = scanResult.map;
-              activeDeviceEntries = scanResult.entries;
-            } catch (err) {
-              const message = err instanceof Error ? err.message : "Device scan failed";
-              setSyncWarning(
-                `Device scan failed (${message}). Continuing without path detection.`
-              );
-              activeDevicePathMap = new Map();
-              activeDeviceEntries = [];
-            }
-          }
+        if (targetTrackCount === 0) {
+          setSyncWarning(
+            "No track metadata available for playlist scan. Continuing without path detection."
+          );
+          activeDevicePathMap = new Map();
+          activeDeviceEntries = [];
         }
+        // When cache is valid we use it (activeDevicePathMap/activeDeviceEntries already set).
+        // When cache is empty we do not run a blocking scan; transfer will use copy-all path.
       }
 
       if (isWalkmanPreset && devicePathDetectionEnabled && devicePathMap.size === 0) {
@@ -1682,7 +1752,7 @@ export function DeviceSyncPanel({
         }
         if (missingCount > 0) {
           setMissingTrackCount(missingCount);
-          setPendingIpodSync({ profile, scanTargets });
+          setPendingIpodSync({ profile, scanTargets, isSelectedTracksOnly: syncIsSelectedTracksOnly });
           setShowMissingTracksDialog(true);
           setIsSyncing(false);
           setSyncPhase("idle");
@@ -1694,20 +1764,40 @@ export function DeviceSyncPanel({
       setSyncPhase("writing");
       let syncedCount = 0;
       const companionJobs: string[] = [];
+      let ipodFailedTracks: Array<{ title?: string; artist?: string; error: string }> = [];
 
       if (isIpodPreset) {
+        const totalTracks = scanTargets.reduce(
+          (sum, t) => sum + t.trackLookups.length,
+          0
+        );
         setSyncQueueStatus({
-          currentIndex: 1,
-          total: scanTargets.length,
-          currentTitle: scanTargets[0]?.playlist.title,
+          currentIndex: 0,
+          total: totalTracks,
+          currentTitle: undefined,
         });
-        await syncPlaylistsToDevice({
+        const syncResult = await syncPlaylistsToDevice({
           deviceProfile: profile,
           targets: scanTargets,
           overwriteExistingPlaylist: overwriteExistingPlaylistOnIpod,
+          onProgress: (p) =>
+            setSyncQueueStatus({
+              currentIndex: p.current,
+              total: p.total,
+              currentTitle: p.title,
+            }),
         });
+        ipodFailedTracks = syncResult.failedTracks ?? [];
+        if (ipodFailedTracks.length > 0) {
+          setSyncFailedTracks(ipodFailedTracks);
+        }
         syncedCount = scanTargets.length;
       } else {
+        setSyncQueueStatus({
+          currentIndex: 0,
+          total: scanTargets.length,
+          currentTitle: undefined,
+        });
         for (let index = 0; index < scanTargets.length; index += 1) {
           const target = scanTargets[index];
           setSyncQueueStatus({
@@ -1741,6 +1831,14 @@ export function DeviceSyncPanel({
               devicePathMap: devicePathDetectionEnabled ? activeDevicePathMap : undefined,
               deviceEntries: devicePathDetectionEnabled ? activeDeviceEntries : undefined,
               onlyIncludeMatchedPaths: devicePathDetectionEnabled && effectiveOnlyIncludeMatchedPaths,
+              deviceMusicFolder:
+                (isWalkmanPreset || isGenericPreset) ? "MUSIC" : undefined,
+              onProgress: (p) =>
+                setSyncQueueStatus({
+                  currentIndex: p.current,
+                  total: p.total,
+                  currentTitle: p.title,
+                }),
             });
             if (profile.handleRef && syncResult.playlistPath) {
               setPathValidationStatus("validating");
@@ -1781,9 +1879,25 @@ export function DeviceSyncPanel({
             : `Sent ${syncedCount} playlists to companion app${suffix}`
         );
       } else if (isIpodPreset) {
-        setSyncSuccess(
-          syncedCount === 1 ? "Synced iPod playlist" : `Synced ${syncedCount} iPod playlists`
-        );
+        setIpodTracksRefreshTrigger((t) => t + 1);
+        const allLibraryOnly =
+          scanTargets.length > 0 &&
+          scanTargets.every((t) => "libraryOnly" in t && t.libraryOnly === true);
+        const failedCount = ipodFailedTracks?.length ?? 0;
+        if (allLibraryOnly) {
+          const trackCount = scanTargets.reduce((n, t) => n + t.trackLookups.length, 0);
+          setSyncSuccess(
+            trackCount === 1
+              ? "Synced 1 track to iPod"
+              : `Synced ${trackCount} tracks to iPod${failedCount > 0 ? ` (${failedCount} failed to copy)` : ""}`
+          );
+        } else {
+          setSyncSuccess(
+            syncedCount === 1
+              ? `Synced iPod playlist${failedCount > 0 ? ` (${failedCount} track(s) failed to copy)` : ""}`
+              : `Synced ${syncedCount} iPod playlists${failedCount > 0 ? ` (${failedCount} track(s) failed to copy)` : ""}`
+          );
+        }
       } else {
         setSyncSuccess(
           syncedCount === 1
@@ -1887,6 +2001,7 @@ export function DeviceSyncPanel({
     setSyncPhase("preparing");
     setSyncError(null);
     setSyncSuccess(null);
+    setSyncFailedTracks(null);
     setSyncWarning(null);
     try {
       ipodMonitor?.suspend();
@@ -1913,7 +2028,7 @@ export function DeviceSyncPanel({
       const collectionName =
         collections.find((collection) => collection.id === selectedCollectionId)?.name ||
         "Selected Tracks";
-      const playlistTitle = `Selected Tracks - ${collectionName}`;
+      const playlistTitle = "Recently Added";
       const syntheticPlaylist = buildSyntheticPlaylist(playlistTitle, selectedIds);
       const target = {
         playlist: syntheticPlaylist,
@@ -1927,43 +2042,20 @@ export function DeviceSyncPanel({
         const normalizedTargets = [{ ...target }];
         const { keyMap: targetKeyMap, trackCount: targetTrackCount, hasFullHash } =
           buildTargetKeyMap(normalizedTargets);
-        if (targetTrackCount > 0) {
-          try {
-            const scanResult = await scanDevicePaths({
-              preview: false,
-              targetKeyMap,
-              targetTrackCount,
-              computeFullContentHash: hasFullHash,
-            });
-            activeDevicePathMap = scanResult.map;
-            activeDeviceEntries = scanResult.entries;
-          } catch (err) {
-            const message = err instanceof Error ? err.message : "Device scan failed";
-            throw new Error(`Walkman scan failed (${message}).`);
-          }
+        if (targetTrackCount === 0) {
+          activeDevicePathMap = new Map();
+          activeDeviceEntries = [];
         }
+        // When cache is valid we use it. When cache is empty we do not run a blocking scan.
       } else if (!useCompanionApp && devicePathDetectionEnabled && isWalkmanPreset === false) {
         const normalizedTargets = [{ ...target }];
         const { keyMap: targetKeyMap, trackCount: targetTrackCount, hasFullHash } =
           buildTargetKeyMap(normalizedTargets);
-        if (
-          targetTrackCount > 0 &&
-          (devicePathMap.size === 0 || deviceScanStatus !== "done")
-        ) {
-          try {
-            const scanResult = await scanDevicePaths({
-              preview: false,
-              targetKeyMap,
-              targetTrackCount,
-              computeFullContentHash: hasFullHash,
-            });
-            activeDevicePathMap = scanResult.map;
-            activeDeviceEntries = scanResult.entries;
-          } catch {
-            activeDevicePathMap = new Map();
-            activeDeviceEntries = [];
-          }
+        if (targetTrackCount === 0) {
+          activeDevicePathMap = new Map();
+          activeDeviceEntries = [];
         }
+        // When cache is valid we use it. When cache is empty we do not run a blocking scan.
       }
 
       setSyncPhase("writing");
@@ -1989,14 +2081,26 @@ export function DeviceSyncPanel({
         await sendCompanionSync(payload);
         setSyncSuccess(`Sent ${selectedIds.length} track(s) to companion app.`);
       } else {
+        const totalTracks = filtered.length;
+        setSyncQueueStatus({
+          currentIndex: 0,
+          total: totalTracks,
+          currentTitle: playlistTitle,
+        });
         await syncPlaylistsToDevice({
           deviceProfile: profile,
           targets: [target],
           devicePathMap: devicePathDetectionEnabled ? activeDevicePathMap : undefined,
           deviceEntries: devicePathDetectionEnabled ? activeDeviceEntries : undefined,
-          onlyIncludeMatchedPaths:
-            devicePathDetectionEnabled &&
-            (isWalkmanPreset || onlyIncludeMatchedPaths),
+          onlyIncludeMatchedPaths: false,
+          deviceMusicFolder:
+            isWalkmanPreset || isGenericPreset ? "MUSIC" : undefined,
+          onProgress: (p) =>
+            setSyncQueueStatus({
+              currentIndex: p.current,
+              total: p.total,
+              currentTitle: p.title,
+            }),
         });
         const deviceName = isIpodPreset
           ? "iPod"
@@ -2005,7 +2109,11 @@ export function DeviceSyncPanel({
             : isZunePreset
               ? "Zune"
               : "device";
-        setSyncSuccess(`Synced ${selectedIds.length} track(s) to ${deviceName}.`);
+        if (isIpodPreset) {
+          setSyncSuccess(`Synced ${selectedIds.length} track(s) to iPod.`);
+        } else {
+          setSyncSuccess(`Synced ${selectedIds.length} track(s) to ${deviceName}.`);
+        }
       }
       await refreshDeviceProfiles();
       setSelectedDeviceId(profile.id);
@@ -2016,6 +2124,7 @@ export function DeviceSyncPanel({
     } finally {
       setIsSyncing(false);
       setSyncPhase("idle");
+      setSyncQueueStatus({ currentIndex: 0, total: 0 });
       ipodMonitor?.resume();
     }
   }
@@ -2025,6 +2134,7 @@ export function DeviceSyncPanel({
     setSyncPhase("preparing");
     setSyncError(null);
     setSyncSuccess(null);
+    setSyncFailedTracks(null);
     setSyncWarning(null);
     try {
       ipodMonitor?.suspend();
@@ -2051,7 +2161,7 @@ export function DeviceSyncPanel({
       const collectionName =
         collections.find((collection) => collection.id === selectedCollectionId)?.name ||
         "Collection";
-      const playlistTitle = `Collection - ${collectionName}`;
+      const playlistTitle = "Recently Added";
       const syntheticPlaylist = buildSyntheticPlaylist(playlistTitle, allTrackIds);
       const target = {
         playlist: syntheticPlaylist,
@@ -2066,43 +2176,20 @@ export function DeviceSyncPanel({
         const normalizedTargets = [{ ...target }];
         const { keyMap: targetKeyMap, trackCount: targetTrackCount, hasFullHash } =
           buildTargetKeyMap(normalizedTargets);
-        if (targetTrackCount > 0) {
-          try {
-            const scanResult = await scanDevicePaths({
-              preview: false,
-              targetKeyMap,
-              targetTrackCount,
-              computeFullContentHash: hasFullHash,
-            });
-            activeDevicePathMap = scanResult.map;
-            activeDeviceEntries = scanResult.entries;
-          } catch (err) {
-            const message = err instanceof Error ? err.message : "Device scan failed";
-            throw new Error(`Walkman scan failed (${message}).`);
-          }
+        if (targetTrackCount === 0) {
+          activeDevicePathMap = new Map();
+          activeDeviceEntries = [];
         }
+        // When cache is valid we use it. When cache is empty we do not run a blocking scan.
       } else if (!useCompanionApp && devicePathDetectionEnabled && !isIpodPreset) {
         const normalizedTargets = [{ ...target }];
         const { keyMap: targetKeyMap, trackCount: targetTrackCount, hasFullHash } =
           buildTargetKeyMap(normalizedTargets);
-        if (
-          targetTrackCount > 0 &&
-          (devicePathMap.size === 0 || deviceScanStatus !== "done")
-        ) {
-          try {
-            const scanResult = await scanDevicePaths({
-              preview: false,
-              targetKeyMap,
-              targetTrackCount,
-              computeFullContentHash: hasFullHash,
-            });
-            activeDevicePathMap = scanResult.map;
-            activeDeviceEntries = scanResult.entries;
-          } catch {
-            activeDevicePathMap = new Map();
-            activeDeviceEntries = [];
-          }
+        if (targetTrackCount === 0) {
+          activeDevicePathMap = new Map();
+          activeDeviceEntries = [];
         }
+        // When cache is valid we use it. When cache is empty we do not run a blocking scan.
       }
 
       setSyncPhase("writing");
@@ -2128,14 +2215,26 @@ export function DeviceSyncPanel({
         await sendCompanionSync(payload);
         setSyncSuccess(`Sent full collection to companion app.`);
       } else {
+        const totalTracks = filtered.length;
+        setSyncQueueStatus({
+          currentIndex: 0,
+          total: totalTracks,
+          currentTitle: collectionName,
+        });
         await syncPlaylistsToDevice({
           deviceProfile: profile,
           targets: [target],
           devicePathMap: devicePathDetectionEnabled ? activeDevicePathMap : undefined,
           deviceEntries: devicePathDetectionEnabled ? activeDeviceEntries : undefined,
-          onlyIncludeMatchedPaths:
-            devicePathDetectionEnabled &&
-            (isWalkmanPreset || onlyIncludeMatchedPaths),
+          onlyIncludeMatchedPaths: false,
+          deviceMusicFolder:
+            isWalkmanPreset || isGenericPreset ? "MUSIC" : undefined,
+          onProgress: (p) =>
+            setSyncQueueStatus({
+              currentIndex: p.current,
+              total: p.total,
+              currentTitle: p.title,
+            }),
         });
         const deviceName = isIpodPreset
           ? "iPod"
@@ -2144,11 +2243,11 @@ export function DeviceSyncPanel({
             : isZunePreset
               ? "Zune"
               : "device";
-        setSyncSuccess(
-          isIpodPreset
-            ? `Mirrored ${collectionName} to iPod.`
-            : `Synced full collection (${collectionName}) to ${deviceName}.`
-        );
+        if (isIpodPreset) {
+          setSyncSuccess(`Mirrored ${collectionName} to iPod.`);
+        } else {
+          setSyncSuccess(`Synced full collection (${collectionName}) to ${deviceName}.`);
+        }
       }
       await refreshDeviceProfiles();
       setSelectedDeviceId(profile.id);
@@ -2159,6 +2258,7 @@ export function DeviceSyncPanel({
     } finally {
       setIsSyncing(false);
       setSyncPhase("idle");
+      setSyncQueueStatus({ currentIndex: 0, total: 0 });
       ipodMonitor?.resume();
     }
   }
@@ -2199,21 +2299,33 @@ export function DeviceSyncPanel({
     setDevicePathMap(map);
     setDeviceEntries(result.entries);
     setDeviceScanStatus("done");
-    if (selectedDeviceId !== "new" && result.entries.length > 0) {
-      const now = Date.now();
-      const entries = result.entries.map((entry) => ({
-        id: `${selectedDeviceId}-${entry.matchKey}`,
-        deviceId: selectedDeviceId,
-        matchKey: entry.matchKey,
-        relativePath: entry.relativePath,
-        contentHash: entry.contentHash,
-        fullContentHash: entry.fullContentHash,
-        name: entry.name,
-        size: entry.size,
-        mtime: entry.mtime,
-        updatedAt: now,
-      }));
-      await saveDeviceFileIndexEntries(entries);
+    if (selectedDeviceId !== "new") {
+      await clearDeviceFileIndex(selectedDeviceId);
+      if (result.entries.length > 0) {
+        const now = Date.now();
+        const entries = result.entries.map((entry) => ({
+          id: `${selectedDeviceId}-${entry.matchKey}`,
+          deviceId: selectedDeviceId,
+          matchKey: entry.matchKey,
+          relativePath: entry.relativePath,
+          contentHash: entry.contentHash,
+          fullContentHash: entry.fullContentHash,
+          name: entry.name,
+          size: entry.size,
+          mtime: entry.mtime,
+          updatedAt: now,
+        }));
+        await saveDeviceFileIndexEntries(entries);
+        await saveDeviceScanMeta(selectedDeviceId, {
+          scanRoots: deviceScanRoots,
+          scannedAt: now,
+        });
+      } else {
+        await saveDeviceScanMeta(selectedDeviceId, {
+          scanRoots: deviceScanRoots,
+          scannedAt: Date.now(),
+        });
+      }
     }
     if (options.preview) {
       const targets = getSyncTargets();
@@ -2359,6 +2471,16 @@ export function DeviceSyncPanel({
   async function handleScanDevicePaths() {
     setSyncError(null);
     setSyncSuccess(null);
+    setSyncFailedTracks(null);
+    setSyncWarning(null);
+    if (isIpodPreset) {
+      setDeviceScanStatus("idle");
+      setDeviceScanProgress({ scanned: 0, matched: 0, hashed: 0 });
+      setSyncWarning(
+        "iPod matching uses the iTunesDB track index, so manual folder scanning is not used."
+      );
+      return;
+    }
     setDeviceScanStatus("scanning");
     setDeviceScanProgress({ scanned: 0, matched: 0, hashed: 0 });
     setMissingMetadataCount(0);
@@ -2386,6 +2508,7 @@ export function DeviceSyncPanel({
         };
       });
       setMissingMetadataCount(totalMissingMetadata);
+      let warningMessage: string | null = null;
       if (totalMissingMetadata > 0) {
         const rootIds = Array.from(
           new Set(targets.map((t) => t.libraryRootId).filter(Boolean))
@@ -2396,47 +2519,52 @@ export function DeviceSyncPanel({
           allMissingRootIds.length > 0 &&
           allMissingRootIds.filter((id) => id !== primaryRootId).length >=
             Math.ceil(allMissingRootIds.length / 2);
-        setSyncWarning(
-          missingInOtherRoot
-            ? `${totalMissingMetadata} track(s) may be in a different collection. Try switching collection or rescanning your library.`
-            : `${totalMissingMetadata} track(s) are missing local file metadata. ` +
-                "Rescan your library to improve device path detection."
-        );
+        warningMessage = missingInOtherRoot
+          ? `${totalMissingMetadata} track(s) may be in a different collection. Try switching collection or rescanning your library.`
+          : `${totalMissingMetadata} track(s) are missing local file metadata. ` +
+              "Rescan your library to improve device path detection.";
       }
       const { keyMap: targetKeyMap, trackCount: targetTrackCount, hasFullHash } =
         buildTargetKeyMap(normalizedTargets);
-      if (targetTrackCount === 0) {
-        setSyncWarning(
-          "No track metadata available for scan targets. Try rescanning your library first."
-        );
-        setDeviceScanStatus("done");
-        setDeviceScanProgress({ scanned: 0, matched: 0, hashed: 0 });
-        const totalTracks = targetsWithLookups.flatMap((t) => t.trackLookups).length;
-        setKeyCoverageLog({
-          tracksWithMetadata: 0,
-          totalTracks,
-          keyMapSize: 0,
-          sampleLibraryKeys: [],
-          scanMapSize: 0,
-          scanEntriesCount: 0,
-          scanned: 0,
-          matched: 0,
-          hashed: 0,
-          sampleDevicePaths: [],
-        });
-        return;
+      const noLibraryKeys = targetTrackCount === 0;
+      if (noLibraryKeys) {
+        const noMetadataMessage =
+          "No track metadata available for scan targets. Device files were still scanned, but mapping quality will be limited until you rescan your library.";
+        warningMessage = warningMessage
+          ? `${warningMessage} ${noMetadataMessage}`
+          : noMetadataMessage;
       }
-      const scanResult = await scanDevicePaths({
-        preview: true,
-        targetKeyMap,
-        targetTrackCount,
-        computeFullContentHash: hasFullHash,
-      });
+      const scanResult = await scanDevicePaths(
+        noLibraryKeys
+          ? {
+              preview: true,
+            }
+          : {
+              preview: true,
+              targetKeyMap,
+              targetTrackCount,
+              computeFullContentHash: hasFullHash,
+            }
+      );
       const totalTracks = targetsWithLookups.flatMap((t) => t.trackLookups).length;
       const tracksWithMetadata = normalizedTargets.flatMap((t) => t.trackLookups).length;
       const sampleLibraryKeys = Array.from(targetKeyMap.keys()).slice(0, 8);
       const pathValues = Array.from(scanResult.map.values());
       const uniquePaths = Array.from(new Set(pathValues));
+      const scanRootsValue = deviceScanRoots.trim();
+      if (
+        (scanResult.finalProgress?.scanned ?? 0) > 0 &&
+        uniquePaths.length === 0 &&
+        scanRootsValue.length > 0
+      ) {
+        const rootsHint = `Scan roots may be too restrictive (${scanRootsValue}). Try clearing scan roots to scan the entire device.`;
+        warningMessage = warningMessage ? `${warningMessage} ${rootsHint}` : rootsHint;
+      }
+      if (selectedDeviceId === "new") {
+        const unsavedHint =
+          "This device profile is unsaved; scan index is available for this session only until you save device settings.";
+        warningMessage = warningMessage ? `${warningMessage} ${unsavedHint}` : unsavedHint;
+      }
       setKeyCoverageLog({
         tracksWithMetadata,
         totalTracks,
@@ -2449,6 +2577,9 @@ export function DeviceSyncPanel({
         hashed: scanResult.finalProgress?.hashed ?? 0,
         sampleDevicePaths: uniquePaths.slice(0, 8),
       });
+      if (warningMessage) {
+        setSyncWarning(warningMessage);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to scan device paths";
       setDeviceScanStatus("error");
@@ -2508,6 +2639,10 @@ export function DeviceSyncPanel({
       }
       setRescanStatus("done");
       setSyncWarning("Library rescan complete. Re-scan the device to refresh path mapping.");
+      if (pendingIpodSync?.isSelectedTracksOnly && missingTracksDialogAfterRescan) {
+        setShowRescanPrompt(false);
+        setShowMissingTracksDialog(true);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Library rescan failed.";
       setRescanError(message);
@@ -2518,6 +2653,7 @@ export function DeviceSyncPanel({
   async function handleExportForIpodCompanion() {
     setSyncError(null);
     setSyncSuccess(null);
+    setSyncFailedTracks(null);
     try {
       if (playlists && playlists.length > 0) {
         throw new Error("Select a single playlist for iPod export");
@@ -2718,6 +2854,7 @@ export function DeviceSyncPanel({
     setSyncPhase("preparing");
     setSyncError(null);
     setSyncSuccess(null);
+    setSyncFailedTracks(null);
     setSyncWarning(null);
     try {
       if (!selectedCollectionId) {
@@ -2737,7 +2874,7 @@ export function DeviceSyncPanel({
       const collectionName =
         collections.find((collection) => collection.id === selectedCollectionId)?.name ||
         "Selected Tracks";
-      const playlistTitle = `Selected Tracks - ${collectionName}`;
+      const playlistTitle = "Recently Added";
       const syntheticPlaylist = buildSyntheticPlaylist(playlistTitle, selectedIds);
       await executeJellyfinExport([
         {
@@ -2761,6 +2898,7 @@ export function DeviceSyncPanel({
     setSyncPhase("preparing");
     setSyncError(null);
     setSyncSuccess(null);
+    setSyncFailedTracks(null);
     setSyncWarning(null);
     try {
       if (!selectedCollectionId) {
@@ -2780,7 +2918,7 @@ export function DeviceSyncPanel({
       const collectionName =
         collections.find((collection) => collection.id === selectedCollectionId)?.name ||
         "Collection";
-      const playlistTitle = `Collection - ${collectionName}`;
+      const playlistTitle = "Recently Added";
       const syntheticPlaylist = buildSyntheticPlaylist(playlistTitle, allTrackIds);
       await executeJellyfinExport([
         {
@@ -2803,6 +2941,7 @@ export function DeviceSyncPanel({
     setSyncPhase("preparing");
     setSyncError(null);
     setSyncSuccess(null);
+    setSyncFailedTracks(null);
     setSyncWarning(null);
     setMissingMetadataCount(0);
     try {
@@ -2882,6 +3021,23 @@ export function DeviceSyncPanel({
     }
   }
 
+  async function handleReleaseDevice() {
+    if (!selectedDeviceId || selectedDeviceId === "new" || !deviceHandleRef) return;
+    setSyncError(null);
+    setSyncWarning(null);
+    try {
+      await releaseDeviceHandle(selectedDeviceId);
+      setDeviceHandleRef(null);
+      await refreshDeviceProfiles();
+      setSyncSuccess(
+        "Device released — you can eject safely. Select the device folder again to sync next time."
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to release device";
+      setSyncError(message);
+    }
+  }
+
   function handleStartEditDeviceName() {
     setEditingDeviceName(deviceLabel);
     setIsEditingDeviceName(true);
@@ -2903,6 +3059,7 @@ export function DeviceSyncPanel({
     setIsSavingSettings(true);
     setSyncError(null);
     setSyncSuccess(null);
+    setSyncFailedTracks(null);
     try {
       const label =
         (overrideLabel ?? deviceLabel.trim()) || (isJellyfinPreset ? "Jellyfin" : "USB Device");
@@ -3177,6 +3334,16 @@ export function DeviceSyncPanel({
               >
                 {isCheckingWriteAccess ? "Checking write access..." : "Check write access"}
               </button>
+              <button
+                type="button"
+                onClick={handleReleaseDevice}
+                disabled={!deviceHandleRef || useCompanionApp}
+                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-sm border border-app-border text-[11px] text-app-primary bg-app-surface hover:bg-app-surface-hover disabled:opacity-50"
+                title="Release the device so you can eject it safely"
+              >
+                <Unplug className="size-3.5" />
+                Release device
+              </button>
               {writeAccessStatus === "ok" && (
                 <Check className="size-4 text-green-500 shrink-0" aria-label="Writable" />
               )}
@@ -3195,6 +3362,44 @@ export function DeviceSyncPanel({
               {ipodSetupStatus === "error" && (
                 <span className="text-[11px] text-red-500">Setup failed</span>
               )}
+            </div>
+            <div className="mt-3 pt-2 border-t border-app-border">
+              <span className="block text-app-tertiary text-xs font-medium mb-1.5 uppercase tracking-wider">
+                Testing
+              </span>
+              <div className="flex rounded-md border border-app-border bg-app-surface overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUseIpodTsBackend(true);
+                    setUseIpodTsBackendState(true);
+                  }}
+                  className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+                    useIpodTsBackendState
+                      ? "bg-accent-primary text-white"
+                      : "bg-app-surface text-app-secondary hover:bg-app-border/50"
+                  }`}
+                >
+                  TS
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUseIpodTsBackend(false);
+                    setUseIpodTsBackendState(false);
+                  }}
+                  className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+                    !useIpodTsBackendState
+                      ? "bg-accent-primary text-white"
+                      : "bg-app-surface text-app-secondary hover:bg-app-border/50"
+                  }`}
+                >
+                  WASM
+                </button>
+              </div>
+              <p className="mt-1.5 text-[11px] text-app-tertiary">
+                TS backend is experimental and may fail; use WASM if you see errors.
+              </p>
             </div>
             {(ipodUsbInfo || ipodKnownDevices.length > 0 || ipodDeviceInfo) && (
               <div className="mt-3 text-xs text-app-tertiary space-y-1">
@@ -3303,6 +3508,18 @@ export function DeviceSyncPanel({
       {syncSuccess && (
         <div className="bg-green-500/10 border border-green-500/20 rounded-sm p-3 text-green-500 text-sm">
           {syncSuccess}
+        </div>
+      )}
+      {syncFailedTracks && syncFailedTracks.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-sm p-3 text-amber-600 dark:text-amber-400 text-sm">
+          <p className="font-medium mb-2">Tracks that failed to copy ({syncFailedTracks.length})</p>
+          <ul className="list-disc list-inside space-y-1 text-xs max-h-48 overflow-y-auto">
+            {syncFailedTracks.map((t, i) => (
+              <li key={i}>
+                {[t.artist, t.title].filter(Boolean).join(" – ") || "Unknown track"}: {t.error}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       {isSyncing && syncQueueStatus.total > 0 && (
@@ -3462,6 +3679,16 @@ export function DeviceSyncPanel({
                 <HardDrive className="size-4" />
                 {deviceHandleRef ? "Change Folder" : "Select Folder"}
               </button>
+              <button
+                type="button"
+                onClick={handleReleaseDevice}
+                disabled={!deviceHandleRef || useCompanionApp}
+                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-sm border border-app-border text-[11px] text-app-primary bg-app-surface hover:bg-app-surface-hover disabled:opacity-50"
+                title="Release the device so you can eject it safely"
+              >
+                <Unplug className="size-3.5" />
+                Release device
+              </button>
               {deviceHandleRef && (
                 <span className="text-xs text-app-tertiary flex items-center gap-1">
                   <Usb className="size-3" />
@@ -3546,6 +3773,16 @@ export function DeviceSyncPanel({
               >
                 {isCheckingWriteAccess ? "Checking write access..." : "Check write access"}
               </button>
+              <button
+                type="button"
+                onClick={handleReleaseDevice}
+                disabled={!deviceHandleRef || useCompanionApp}
+                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-sm border border-app-border text-[11px] text-app-primary bg-app-surface hover:bg-app-surface-hover disabled:opacity-50"
+                title="Release the device so you can eject it safely"
+              >
+                <Unplug className="size-3.5" />
+                Release device
+              </button>
               {writeAccessStatus === "ok" && (
                 <Check className="size-4 text-green-500 shrink-0" aria-label="Writable" />
               )}
@@ -3564,6 +3801,44 @@ export function DeviceSyncPanel({
               {ipodSetupStatus === "error" && (
                 <span className="text-[11px] text-red-500">Setup failed</span>
               )}
+            </div>
+            <div className="mt-3 pt-2 border-t border-app-border">
+              <span className="block text-app-tertiary text-xs font-medium mb-1.5 uppercase tracking-wider">
+                Testing
+              </span>
+              <div className="flex rounded-md border border-app-border bg-app-surface overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUseIpodTsBackend(true);
+                    setUseIpodTsBackendState(true);
+                  }}
+                  className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+                    useIpodTsBackendState
+                      ? "bg-accent-primary text-white"
+                      : "bg-app-surface text-app-secondary hover:bg-app-border/50"
+                  }`}
+                >
+                  TS
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUseIpodTsBackend(false);
+                    setUseIpodTsBackendState(false);
+                  }}
+                  className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+                    !useIpodTsBackendState
+                      ? "bg-accent-primary text-white"
+                      : "bg-app-surface text-app-secondary hover:bg-app-border/50"
+                  }`}
+                >
+                  WASM
+                </button>
+              </div>
+              <p className="mt-1.5 text-[11px] text-app-tertiary">
+                TS backend is experimental and may fail; use WASM if you see errors.
+              </p>
             </div>
             {(ipodUsbInfo || ipodKnownDevices.length > 0 || ipodDeviceInfo) && (
               <div className="mt-3 text-xs text-app-tertiary space-y-1">
@@ -3668,18 +3943,24 @@ export function DeviceSyncPanel({
             onTabChange={setCollectionContentTab}
             artworkUrlMap={artworkUrlMap}
             onSyncSelected={
-              hasCollectionExport ? handleExportSelectedTracks : handleSyncSelectedTracks
+              isIpodPreset
+                ? undefined
+                : hasCollectionExport
+                  ? handleExportSelectedTracks
+                  : handleSyncSelectedTracks
             }
             onMirrorCollection={
-              hasCollectionExport
-                ? handleExportFullCollection
-                : handleMirrorCollectionSync
+              isIpodPreset
+                ? undefined
+                : hasCollectionExport
+                  ? handleExportFullCollection
+                  : handleMirrorCollectionSync
             }
             syncLabel={
-              isJellyfinPreset
-                ? "Export selected"
-                : isIpodPreset
-                  ? "Sync selected to iPod"
+              isIpodPreset
+                ? undefined
+                : isJellyfinPreset
+                  ? "Export selected"
                   : isWalkmanPreset
                     ? "Sync selected to Walkman"
                     : isZunePreset
@@ -3687,36 +3968,13 @@ export function DeviceSyncPanel({
                       : "Sync selected"
             }
             mirrorLabel={
-              isJellyfinPreset
-                ? "Export full collection"
-                : isIpodPreset
-                  ? "Mirror collection to iPod"
+              isIpodPreset
+                ? undefined
+                : isJellyfinPreset
+                  ? "Export full collection"
                   : "Sync full collection"
             }
-            mirrorOptions={
-              isIpodPreset && !hasCollectionExport ? (
-                <>
-                  <label className="flex items-start gap-2">
-                    <input
-                      type="checkbox"
-                      checked={mirrorDeleteFromDevice}
-                      onChange={(e) => setMirrorDeleteFromDevice(e.target.checked)}
-                      className="rounded border-app-border mt-0.5"
-                    />
-                    <span>Also delete removed tracks from the iPod storage.</span>
-                  </label>
-                  <label className="flex items-start gap-2">
-                    <input
-                      type="checkbox"
-                      checked={overwriteExistingPlaylistOnIpod}
-                      onChange={(e) => setOverwriteExistingPlaylistOnIpod(e.target.checked)}
-                      className="rounded border-app-border mt-0.5"
-                    />
-                    <span>Replace existing playlist on device if same name.</span>
-                  </label>
-                </>
-              ) : undefined
-            }
+            mirrorOptions={undefined}
             showOnDeviceColumn={
               !hasCollectionExport &&
               (isIpodPreset ||
@@ -3830,12 +4088,15 @@ export function DeviceSyncPanel({
               : undefined
           }
           capacityInfo={
-            ipodDeviceInfo?.capacity_gb != null &&
-            ipodTrackIndexStatus === "ready" &&
-            ipodTrackIndex.usedBytes != null
+            ipodTrackIndexStatus === "ready" && ipodTrackIndex.usedBytes != null
               ? {
                   usedBytes: ipodTrackIndex.usedBytes,
-                  capacityGb: ipodDeviceInfo.capacity_gb,
+                  capacityGb:
+                    ipodDeviceInfo?.capacity_gb ??
+                    Math.max(
+                      32,
+                      Math.ceil((ipodTrackIndex.usedBytes ?? 0) / (32 * 1e9)) * 32
+                    ),
                 }
               : null
           }
@@ -3852,6 +4113,15 @@ export function DeviceSyncPanel({
           onExport={handleExportForJellyfin}
           isSyncing={isSyncing}
           syncPhase={syncPhase}
+          syncProgress={
+            isSyncing && syncQueueStatus.total > 0
+              ? {
+                  current: syncQueueStatus.currentIndex,
+                  total: syncQueueStatus.total,
+                  title: syncQueueStatus.currentTitle,
+                }
+              : null
+          }
           deviceScanStatus={deviceScanStatus}
           lastSyncAt={selectedDeviceProfile?.lastSyncAt}
           syncButtonLabel={
@@ -3861,11 +4131,21 @@ export function DeviceSyncPanel({
                 ? "Sync Selected"
                 : "Sync Playlist"
           }
-          showScanButton={!isJellyfinPreset}
+          showScanButton={!isJellyfinPreset && !isIpodPreset}
           showExportButton={isJellyfinPreset}
           supportsFileSystemAccess={supportsFileSystemAccess()}
           useCompanionApp={useCompanionApp}
           jellyfinExportMode={jellyfinExportMode}
+          showCollectionActions={isIpodPreset}
+          collectionMirrorLabel="Mirror collection to iPod"
+          onCollectionMirror={handleMirrorCollectionSync}
+          disableCollectionMirror={isSyncing || collectionTracksWithStatus.length === 0}
+          syncLibraryOnlyFromCollection={syncLibraryOnlyFromCollection}
+          onSyncLibraryOnlyFromCollectionChange={setSyncLibraryOnlyFromCollection}
+          mirrorDeleteFromDevice={mirrorDeleteFromDevice}
+          onMirrorDeleteFromDeviceChange={setMirrorDeleteFromDevice}
+          overwriteExistingPlaylistOnIpod={overwriteExistingPlaylistOnIpod}
+          onOverwriteExistingPlaylistOnIpodChange={setOverwriteExistingPlaylistOnIpod}
         />
       </div>
       <Modal
@@ -3874,39 +4154,103 @@ export function DeviceSyncPanel({
         title="Tracks not on device"
       >
         <div className="space-y-3 text-sm text-app-secondary">
-          <p>
-            {missingTrackCount} track{missingTrackCount === 1 ? "" : "s"} in the selected
-            playlist(s) {missingTrackCount === 1 ? "is" : "are"} not on the device.
-          </p>
-          <p>Copy missing tracks now, or update the playlist with existing tracks only?</p>
-          <div className="flex flex-wrap items-center gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => handleMissingTracksDialogChoice("sync")}
-              className="px-3 py-2 bg-accent-primary text-white rounded-sm hover:bg-accent-hover text-xs uppercase tracking-wider"
-            >
-              Sync missing
-            </button>
-            <button
-              type="button"
-              onClick={() => handleMissingTracksDialogChoice("playlist-only")}
-              className="px-3 py-2 bg-app-hover text-app-primary rounded-sm hover:bg-app-surface-hover text-xs uppercase tracking-wider"
-            >
-              Playlist only
-            </button>
-            <button
-              type="button"
-              onClick={() => handleMissingTracksDialogChoice("cancel")}
-              className="px-3 py-2 bg-app-hover text-app-primary rounded-sm hover:bg-app-surface-hover text-xs uppercase tracking-wider"
-            >
-              Cancel
-            </button>
-          </div>
+          {pendingIpodSync?.isSelectedTracksOnly ? (
+            missingTracksDialogAfterRescan ? (
+              <>
+                <p>Rescan complete. You can now proceed with the sync.</p>
+                <p>
+                  {missingTrackCount} track{missingTrackCount === 1 ? "" : "s"} in your selection{" "}
+                  {missingTrackCount === 1 ? "is" : "are"} not on the device and will be copied.
+                </p>
+                <div className="flex flex-wrap items-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => handleMissingTracksDialogChoice("sync")}
+                    className="px-3 py-2 bg-accent-primary text-white rounded-sm hover:bg-accent-hover text-xs uppercase tracking-wider"
+                  >
+                    Proceed with sync
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleMissingTracksDialogChoice("cancel");
+                      setMissingTracksDialogAfterRescan(false);
+                    }}
+                    className="px-3 py-2 bg-app-hover text-app-primary rounded-sm hover:bg-app-surface-hover text-xs uppercase tracking-wider"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+            <>
+              <p>
+                {missingTrackCount} track{missingTrackCount === 1 ? "" : "s"} in your selection{" "}
+                {missingTrackCount === 1 ? "is" : "are"} not on the device.
+              </p>
+              <p>Locate the tracks by scanning your library.</p>
+              <div className="flex flex-wrap items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMissingTracksDialog(false);
+                    setMissingTracksDialogAfterRescan(true);
+                    setShowRescanPrompt(true);
+                  }}
+                  className="px-3 py-2 bg-accent-primary text-white rounded-sm hover:bg-accent-hover text-xs uppercase tracking-wider"
+                >
+                  Rescan library
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleMissingTracksDialogChoice("cancel")}
+                  className="px-3 py-2 bg-app-hover text-app-primary rounded-sm hover:bg-app-surface-hover text-xs uppercase tracking-wider"
+                >
+                  Cancel
+                </button>
+              </div>
+            </>
+            )
+          ) : (
+            <>
+              <p>
+                {missingTrackCount} track{missingTrackCount === 1 ? "" : "s"} in the selected
+                playlist(s) {missingTrackCount === 1 ? "is" : "are"} not on the device.
+              </p>
+              <p>Copy missing tracks now, or update the playlist with existing tracks only?</p>
+              <div className="flex flex-wrap items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => handleMissingTracksDialogChoice("sync")}
+                  className="px-3 py-2 bg-accent-primary text-white rounded-sm hover:bg-accent-hover text-xs uppercase tracking-wider"
+                >
+                  Sync missing
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleMissingTracksDialogChoice("playlist-only")}
+                  className="px-3 py-2 bg-app-hover text-app-primary rounded-sm hover:bg-app-surface-hover text-xs uppercase tracking-wider"
+                >
+                  Playlist only
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleMissingTracksDialogChoice("cancel")}
+                  className="px-3 py-2 bg-app-hover text-app-primary rounded-sm hover:bg-app-surface-hover text-xs uppercase tracking-wider"
+                >
+                  Cancel
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </Modal>
       <Modal
         isOpen={showRescanPrompt}
-        onClose={() => setShowRescanPrompt(false)}
+        onClose={() => {
+          setShowRescanPrompt(false);
+          setMissingTracksDialogAfterRescan(false);
+        }}
         title="Rescan Library"
       >
         <div className="space-y-3 text-sm text-app-secondary">

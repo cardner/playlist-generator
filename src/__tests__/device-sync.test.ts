@@ -252,6 +252,35 @@ describe("hashDeviceFileContent", () => {
   });
 });
 
+describe("buildDeviceTrackSubPath", () => {
+  let buildDeviceTrackSubPath: (artist: string | undefined, album: string | undefined) => string;
+
+  beforeAll(async () => {
+    const mod = await import("@/features/devices/device-sync");
+    buildDeviceTrackSubPath = mod.buildDeviceTrackSubPath;
+  });
+
+  it("builds Artist/Album subpath from metadata", () => {
+    expect(buildDeviceTrackSubPath("Billie Eilish", "When We All Fall Asleep")).toBe(
+      "Billie Eilish/When We All Fall Asleep"
+    );
+  });
+
+  it("uses Unknown Artist when artist is missing", () => {
+    expect(buildDeviceTrackSubPath(undefined, "Album")).toBe("Unknown Artist/Album");
+  });
+
+  it("uses Unknown Album when album is missing", () => {
+    expect(buildDeviceTrackSubPath("Artist", undefined)).toBe("Artist/Unknown Album");
+  });
+
+  it("sanitizes invalid path characters", () => {
+    expect(buildDeviceTrackSubPath("Artist:Name", "Album/Title")).toBe(
+      "Artist_Name/Album_Title"
+    );
+  });
+});
+
 describe("syncPlaylistsToDevice iPod onlyReferenceExistingTracks", () => {
   beforeEach(() => {
     mockSyncPlaylistsToIpod.mockClear();

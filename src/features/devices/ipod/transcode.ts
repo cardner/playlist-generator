@@ -1,45 +1,92 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
 import { logger } from "@/lib/logger";
+import {
+  getFfmpegAssetUrls,
+  getFfmpegCdnUrls,
+  getFfmpegAssetBase,
+} from "@/lib/ffmpeg-asset-urls";
 
 type TranscodeProgress = { progress?: number; time?: number };
 
-function getAssetBase(): string {
-  if (typeof window === "undefined") return "http://localhost";
-  const nextData = (window as any).__NEXT_DATA__;
-  const prefix = typeof nextData?.assetPrefix === "string" ? nextData.assetPrefix : "";
-  if (prefix.startsWith("http")) return prefix;
-  return `${window.location.origin}${prefix}`;
+function isLocalhostOrigin(): boolean {
+  if (typeof window === "undefined") return true;
+  const base = getFfmpegAssetBase();
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(base);
 }
 
-async function verifyAsset(url: string) {
+async function verifyAsset(url: string): Promise<boolean> {
   try {
     const head = await fetch(url, { method: "HEAD" });
-    if (head.ok) return;
+    if (head.ok) return true;
   } catch {
     // fall through
   }
-  const get = await fetch(url);
-  if (!get.ok) {
-    throw new Error(`Missing ffmpeg asset: ${url}`);
+  try {
+    const get = await fetch(url);
+    return get.ok;
+  } catch {
+    return false;
   }
 }
 
 async function loadFfmpegInstance(ffmpeg: FFmpeg) {
-  const base = getAssetBase();
-  const coreURL = new URL("/ffmpeg/ffmpeg-core.mjs", base).toString();
-  const wasmURL = new URL("/ffmpeg/ffmpeg-core.wasm", base).toString();
+  const { coreURL: cdnCore, wasmURL: cdnWasm } = getFfmpegCdnUrls();
+  const cdnOk = (await verifyAsset(cdnCore)) && (await verifyAsset(cdnWasm));
 
-  await Promise.all([verifyAsset(coreURL), verifyAsset(wasmURL)]);
+  let coreURL: string;
+  let wasmURL: string;
+
+  if (isLocalhostOrigin()) {
+    if (cdnOk) {
+      logger.info("Using FFmpeg core from CDN (localhost: worker requires ESM from CDN)");
+      coreURL = cdnCore;
+      wasmURL = cdnWasm;
+    } else {
+      throw new Error(
+        "FFmpeg CDN unreachable on localhost. Check network or use production build with public/ffmpeg/."
+      );
+    }
+  } else {
+    const { coreURL: localCore, wasmURL: localWasm } = getFfmpegAssetUrls();
+    const localOk = (await verifyAsset(localCore)) && (await verifyAsset(localWasm));
+    if (localOk) {
+      coreURL = localCore;
+      wasmURL = localWasm;
+    } else if (cdnOk) {
+      logger.info("Using FFmpeg core from CDN (local assets not found)");
+      coreURL = cdnCore;
+      wasmURL = cdnWasm;
+    } else {
+      throw new Error(
+        `Missing ffmpeg asset. Add files to public/ffmpeg/ or run: yarn add -D @ffmpeg/core@^0.12 && yarn copy-ffmpeg`
+      );
+    }
+  }
+
+  async function doLoad(core: string, wasm: string) {
+    await ffmpeg.load({ coreURL: core, wasmURL: wasm });
+  }
 
   try {
-    await ffmpeg.load({
-      coreURL,
-      wasmURL,
-    });
+    await doLoad(coreURL, wasmURL);
   } catch (error) {
-    logger.warn("Failed to load ffmpeg core (single-thread)", error);
-    throw error;
+    if (
+      !isLocalhostOrigin() &&
+      (coreURL.includes("/ffmpeg/") || coreURL.startsWith("http://localhost")) &&
+      cdnOk
+    ) {
+      logger.info("FFmpeg local load failed, retrying with CDN", { error });
+      try {
+        await doLoad(cdnCore, cdnWasm);
+      } catch (cdnError) {
+        logger.warn("Failed to load ffmpeg core (single-thread)", cdnError);
+        throw cdnError;
+      }
+    } else {
+      logger.warn("Failed to load ffmpeg core (single-thread)", error);
+      throw error;
+    }
   }
   return ffmpeg;
 }

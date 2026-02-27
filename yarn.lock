@@ -2077,6 +2077,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@ffmpeg/core@npm:^0.12":
+  version: 0.12.10
+  resolution: "@ffmpeg/core@npm:0.12.10"
+  checksum: 23bee2335ab55bc40dad4c211a0daf1f46a642dd054e680fb7732c9ea1aab6911abada3f211ab0a750484201fb1a72cf979a3be531436a2aedb7fdec09e393fb
+  languageName: node
+  linkType: hard
+
 "@ffmpeg/ffmpeg@npm:^0.12.15":
   version: 0.12.15
   resolution: "@ffmpeg/ffmpeg@npm:0.12.15"
@@ -5641,6 +5648,7 @@ __metadata:
     "@babel/preset-env": ^7.25.0
     "@babel/preset-react": ^7.25.0
     "@babel/preset-typescript": ^7.25.0
+    "@ffmpeg/core": ^0.12
     "@ffmpeg/ffmpeg": ^0.12.15
     "@ffmpeg/util": ^0.12.2
     "@radix-ui/react-dialog": ^1.1.15

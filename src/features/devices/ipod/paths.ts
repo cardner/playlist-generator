@@ -1,4 +1,5 @@
 import { wasmCall, wasmCallWithStrings, wasmGetString } from "./wasm";
+import { ipodPathToDbFormat, dbPathToFsPath } from "./paths-db";
 
 export function createIpodPaths(mountpoint = "/iPod") {
   const mp = String(mountpoint || "/iPod");
@@ -36,6 +37,45 @@ export function createIpodPaths(mountpoint = "/iPod") {
   function toRelFsPathFromIpodDbPath(ipodDbPath: string) {
     const fsPath = wasmStringCall("ipod_path_to_fs_format", [String(ipodDbPath || "")]);
     return normalizeRelFsPath(fsPath || "");
+  }
+
+  return {
+    mountpoint: mp,
+    normalizeRelFsPath,
+    toVfsPath,
+    toRelFsPathFromVfs,
+    toIpodDbPathFromRel,
+    toRelFsPathFromIpodDbPath,
+  };
+}
+
+/** Paths using pure TS (paths-db); use when USE_IPOD_TS_BACKEND. */
+export function createIpodPathsTs(mountpoint = "/iPod") {
+  const mp = String(mountpoint || "/iPod");
+  const mpPrefix = mp.endsWith("/") ? mp : `${mp}/`;
+
+  function normalizeRelFsPath(relFsPath: string) {
+    return String(relFsPath || "").replace(/^\/+/, "");
+  }
+
+  function toVfsPath(relFsPath: string) {
+    const rel = normalizeRelFsPath(relFsPath);
+    return `${mpPrefix}${rel}`;
+  }
+
+  function toRelFsPathFromVfs(vfsPath: string) {
+    const vp = String(vfsPath || "");
+    if (vp.startsWith(mpPrefix)) return vp.slice(mpPrefix.length);
+    if (vp.startsWith(mp)) return vp.slice(mp.length).replace(/^\/+/, "");
+    return vp.replace(/^\/+/, "");
+  }
+
+  function toIpodDbPathFromRel(relFsPath: string) {
+    return ipodPathToDbFormat(normalizeRelFsPath(relFsPath)) || null;
+  }
+
+  function toRelFsPathFromIpodDbPath(ipodDbPath: string) {
+    return normalizeRelFsPath(dbPathToFsPath(String(ipodDbPath || "")));
   }
 
   return {

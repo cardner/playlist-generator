@@ -13,6 +13,8 @@ export interface CollectionTrack {
   trackFileId: string;
   title: string;
   artist?: string;
+  /** Album artist for grouping (TPE2 / aART); falls back to artist when missing. */
+  albumArtist?: string;
   album?: string;
   trackNo?: number;
   addedAt?: number;
@@ -75,6 +77,7 @@ export function useCollectionTracks(
             trackFileId: track.trackFileId,
             title: track.tags?.title || fallbackTitle,
             artist: track.tags?.artist,
+            albumArtist: track.tags?.albumArtist ?? track.tags?.artist,
             album: track.tags?.album,
             trackNo: track.tags?.trackNo,
             addedAt: fileIndex?.updatedAt ?? track.updatedAt,

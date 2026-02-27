@@ -41,8 +41,17 @@ export async function verifyIpodStructure(handle: FileSystemDirectoryHandle): Pr
     }
     return true;
   } catch (error) {
-    const names = await listDirNames(handle);
-    logger.warn("Missing iPod_Control", { names, error });
+    const err = error as DOMException | undefined;
+    const names = await listDirNames(handle).catch(() => [] as string[]);
+    const isStale =
+      err?.name === "NotFoundError" ||
+      err?.name === "SecurityError" ||
+      err?.name === "InvalidStateError";
+    if (isStale) {
+      logger.warn("iPod handle invalid or device disconnected", { names, error });
+    } else {
+      logger.warn("Missing iPod_Control", { names, error });
+    }
     return false;
   }
 }
@@ -319,6 +328,149 @@ export async function syncDbToIpod(
     // Artwork dir may be missing if no artwork API or no thumbnails set; optional
   }
 
+  return { ok: errorCount === 0, errorCount, syncedCount };
+}
+
+/**
+ * Read device files into buffers (for pure TS backend, no WASM).
+ */
+export async function readIpodBuffersFromHandle(
+  handle: FileSystemDirectoryHandle
+): Promise<{ iTunesDB: Uint8Array; SysInfo?: Uint8Array }> {
+  const control = await handle.getDirectoryHandle("iPod_Control", { create: false });
+  const iTunes = await control.getDirectoryHandle("iTunes", { create: false });
+  const dbFile = await iTunes.getFileHandle("iTunesDB", { create: false });
+  const dbBlob = await (await dbFile.getFile()).arrayBuffer();
+  const iTunesDB = new Uint8Array(dbBlob);
+
+  let SysInfo: Uint8Array | undefined;
+  try {
+    const deviceDir = await control.getDirectoryHandle("Device", { create: false });
+    const sysFile = await deviceDir.getFileHandle("SysInfo", { create: false });
+    const sysBlob = await (await sysFile.getFile()).arrayBuffer();
+    SysInfo = new Uint8Array(sysBlob);
+  } catch {
+    // optional
+  }
+  return { iTunesDB, SysInfo };
+}
+
+/**
+ * Write iTunesDB and optional Artwork buffers to device (for pure TS backend).
+ * We only write iTunesDB (and ArtworkDB/ITHMB when artwork is enabled); we do not
+ * create or overwrite iTunesControl. We optionally touch existing iTunesPrefs and
+ * iTunesPrefs.plist (read then write same bytes) to update their modified time; we
+ * do not create or change their content.
+ */
+export async function syncDbToIpodFromBuffers(
+  ipodHandle: FileSystemDirectoryHandle,
+  buffers: {
+    iTunesDB: Uint8Array;
+    ArtworkDB?: Uint8Array;
+    ITHMB?: Map<string, Uint8Array>;
+  },
+  options?: { onProgress?: (progress: { percent: number; detail?: string }) => void }
+): Promise<{ ok: boolean; errorCount: number; syncedCount: number }> {
+  const iPodControl = await ipodHandle.getDirectoryHandle("iPod_Control", { create: true });
+  const iTunes = await iPodControl.getDirectoryHandle("iTunes", { create: true });
+  let errorCount = 0;
+  let syncedCount = 0;
+
+  let didBackup = false;
+  try {
+    try {
+      const existingDb = await iTunes.getFileHandle("iTunesDB", { create: false });
+      const existingBlob = await (await existingDb.getFile()).arrayBuffer();
+      const backupWritable = await iTunes.getFileHandle("iTunesDB.bak", { create: true }).then((h) => h.createWritable());
+      await backupWritable.write(new Uint8Array(existingBlob));
+      await backupWritable.write({ type: "truncate" as const, size: existingBlob.byteLength });
+      await backupWritable.close();
+      didBackup = true;
+      logger.info("iTunesDB backed up to iTunesDB.bak");
+    } catch (e) {
+      // iTunesDB may not exist (fresh device) or backup failed; continue with write
+      logger.debug("No existing iTunesDB or backup skipped", e);
+    }
+    logger.info("Opening iTunesDB on device for write...");
+    const writable = await iTunes.getFileHandle("iTunesDB", { create: true }).then((h) => h.createWritable());
+    logger.info("Writing iTunesDB buffer to device...");
+    const dbLen = buffers.iTunesDB.length;
+    await writable.write(buffers.iTunesDB.slice(0));
+    await writable.write({ type: "truncate" as const, size: dbLen });
+    await writable.close();
+    logger.info("iTunesDB written to device");
+    syncedCount += 1;
+    options?.onProgress?.({ percent: 50, detail: "iTunesDB" });
+    if (didBackup) {
+      try {
+        await iTunes.removeEntry("iTunesDB.bak");
+        logger.info("iTunesDB.bak removed after successful write");
+      } catch (e) {
+        logger.warn("Could not remove iTunesDB.bak", e);
+      }
+    }
+  } catch (error) {
+    errorCount += 1;
+    logger.warn("Failed to write iTunesDB", error);
+  }
+
+  const artDir = await iPodControl.getDirectoryHandle("Artwork", { create: true });
+  const hasArtwork = buffers.ArtworkDB || (buffers.ITHMB && buffers.ITHMB.size > 0);
+  if (hasArtwork) {
+    logger.info(
+      "Writing artwork to device (ArtworkDB + ITHMB)...",
+      {
+        hasArtworkDB: Boolean(buffers.ArtworkDB),
+        ithmbFileCount: buffers.ITHMB?.size ?? 0,
+      }
+    );
+  }
+
+  if (buffers.ArtworkDB) {
+    try {
+      const w = await artDir.getFileHandle("ArtworkDB", { create: true }).then((h) => h.createWritable());
+      const artLen = buffers.ArtworkDB.length;
+      await w.write(buffers.ArtworkDB.slice(0));
+      await w.write({ type: "truncate" as const, size: artLen });
+      await w.close();
+      syncedCount += 1;
+    } catch (err) {
+      logger.warn("Failed to write ArtworkDB", err);
+    }
+  }
+  if (buffers.ITHMB && buffers.ITHMB.size > 0) {
+    for (const [name, data] of buffers.ITHMB) {
+      try {
+        const w = await artDir.getFileHandle(name, { create: true }).then((h) => h.createWritable());
+        const dataLen = data.length;
+        await w.write(data.slice(0));
+        await w.write({ type: "truncate" as const, size: dataLen });
+        await w.close();
+        syncedCount += 1;
+      } catch (err) {
+        logger.warn("Failed to write ITHMB", { name, err });
+      }
+    }
+  }
+  if (hasArtwork) {
+    logger.info("Artwork written to device");
+  }
+
+  for (const prefsName of ["iTunesPrefs", "iTunesPrefs.plist"]) {
+    try {
+      const prefsHandle = await iTunes.getFileHandle(prefsName, { create: false });
+      const prefsFile = await prefsHandle.getFile();
+      const prefsBuffer = new Uint8Array(await prefsFile.arrayBuffer());
+      const writable = await iTunes.getFileHandle(prefsName, { create: true }).then((h) => h.createWritable());
+      await writable.write(prefsBuffer);
+      await writable.write({ type: "truncate" as const, size: prefsBuffer.length });
+      await writable.close();
+    } catch (err) {
+      logger.warn("Could not touch prefs file (optional)", { name: prefsName, err });
+    }
+  }
+
+  options?.onProgress?.({ percent: 100, detail: "done" });
   return { ok: errorCount === 0, errorCount, syncedCount };
 }
 

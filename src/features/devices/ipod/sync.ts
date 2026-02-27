@@ -17,6 +17,7 @@ import {
   wasmGetJson,
   wasmGetString,
   wasmSetTrackArtwork,
+  wasmDeviceSupportsArtwork,
   wasmUpdateTrack,
 } from "./wasm";
 import { extractArtworkFromFile } from "./artwork-extract";
@@ -26,11 +27,44 @@ import {
   reserveVirtualPath,
   setupWasmFilesystem,
   syncDbToIpod,
+  syncDbToIpodFromBuffers,
+  readIpodBuffersFromHandle,
   verifyIpodStructure,
   deleteFileFromIpodRelativePath,
   writeFileToIpodRelativePath,
 } from "./fs-sync";
 import { createTranscodePool } from "./transcode";
+import {
+  getUseIpodTsBackend,
+  createEmptyModel,
+  getIpodTsModel,
+  setIpodTsModel,
+  parseITunesDBFromBuffer,
+  getDeviceInfo,
+  getTracks,
+  getPlaylists,
+  getPlaylistTracks,
+  createPlaylist as apiCreatePlaylist,
+  playlistAddTrack as apiPlaylistAddTrack,
+  playlistRemoveTrack as apiPlaylistRemoveTrack,
+  addTrack as apiAddTrack,
+  updateTrack as apiUpdateTrack,
+  getTrackDestPath as apiGetTrackDestPath,
+  setTrackPath as apiSetTrackPath,
+  finalizeLastTrackNoStat as apiFinalizeLastTrackNoStat,
+  removeTrackByIndex as apiRemoveTrackByIndex,
+  hasLongFilename as apiHasLongFilename,
+  getMigrationDestPath as apiGetMigrationDestPath,
+  setTrackArtwork as apiSetTrackArtwork,
+  writeITunesDB as apiWriteITunesDB,
+  writeArtwork as apiWriteArtwork,
+  getLastError,
+} from "./ipod-db-api";
+import { getDeviceInfoFromSysInfo } from "./device/parse-sysinfo";
+import { ensureModelDbversionForDevice } from "./itunesdb/dbversion-by-model";
+import { readU32LE } from "./itunesdb/binary";
+import { createIpodPathsTs } from "./paths";
+import { supportsArtwork as modelSupportsArtwork } from "./firewire-setup";
 
 /**
  * iPod playlist sync: matches playlist tracks to existing device tracks when possible to avoid
@@ -41,7 +75,20 @@ import { createTranscodePool } from "./transcode";
  */
 
 const DEFAULT_MOUNTPOINT = "/iPod";
+const IPOD_DB_WRITE_TIMEOUT_MS = 600_000; // 10 min after last track/file transfer; device write can be very slow
 const transcodePool = createTranscodePool({ concurrency: 2 });
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`${message} (timed out after ${ms / 1000}s)`)),
+        ms
+      )
+    ),
+  ]);
+}
 const TRANSCODE_TIMEOUT_MS = 120000;
 
 type IpodSyncTarget = {
@@ -52,6 +99,8 @@ type IpodSyncTarget = {
   mirrorDeleteFromDevice?: boolean;
   /** When true, only add playlist entries for tracks already on device; skip copying missing */
   onlyReferenceExistingTracks?: boolean;
+  /** When true, only add tracks to device/Library; do not create a named playlist */
+  libraryOnly?: boolean;
 };
 
 type IpodTrack = {
@@ -70,6 +119,8 @@ type IpodTrack = {
 export type IpodSyncResult = {
   playlistCount: number;
   trackCount: number;
+  /** Tracks that failed to write to the device (e.g. I/O error). */
+  failedTracks?: Array<{ title?: string; artist?: string; error: string }>;
   deviceInfo?: {
     model_name?: string;
     generation_name?: string;
@@ -190,10 +241,31 @@ async function getFileFromLibrary(
 async function ensurePlaylistIndex(
   name: string,
   playlistCache: Map<string, number>,
-  options?: { clearIfExisting?: boolean }
+  options?: { clearIfExisting?: boolean },
+  model?: import("./db-types").IpodDbModel | null
 ) {
   if (playlistCache.has(name)) {
     return playlistCache.get(name)!;
+  }
+  if (model) {
+    const playlists = getPlaylists(model);
+    for (let i = 0; i < playlists.length; i += 1) {
+      if (playlists[i]?.name === name) {
+        if (options?.clearIfExisting) {
+          const playlistTracks = getPlaylistTracks(model, i);
+          for (const playlistTrack of playlistTracks) {
+            if (typeof playlistTrack.id === "number") {
+              apiPlaylistRemoveTrack(model, i, playlistTrack.id);
+            }
+          }
+        }
+        playlistCache.set(name, i);
+        return i;
+      }
+    }
+    const idx = apiCreatePlaylist(model, name);
+    playlistCache.set(name, idx);
+    return idx;
   }
   const playlists = wasmGetJson("ipod_get_all_playlists_json") as
     | Array<{ name: string; is_master?: boolean }>
@@ -234,7 +306,23 @@ export async function loadIpodDeviceInfo(handleRef: string) {
   }
   const isValid = await verifyIpodStructure(ipodHandle);
   if (!isValid) {
-    throw new Error("Selected folder does not look like an iPod root");
+    throw new Error(
+      "Selected folder does not look like an iPod root. If the device was disconnected, remove it and re-select the iPod."
+    );
+  }
+  if (getUseIpodTsBackend()) {
+    const { iTunesDB, SysInfo } = await readIpodBuffersFromHandle(ipodHandle);
+    const model = parseITunesDBFromBuffer(iTunesDB);
+    if (!model) {
+      const msg = getLastError();
+      throw new Error(`Failed to parse iTunesDB${msg ? `: ${msg}` : ""}. The device database may be corrupted—try reconnecting the device.`);
+    }
+    if (SysInfo) {
+      model.deviceInfo = { ...model.deviceInfo, ...getDeviceInfoFromSysInfo(SysInfo) };
+    }
+    ensureModelDbversionForDevice(model, { model_number: model.deviceInfo?.model_number });
+    setIpodTsModel(model);
+    return getDeviceInfo(model) as IpodSyncResult["deviceInfo"];
   }
   const wasmReady = await initIpodWasm();
   if (!wasmReady || !isIpodWasmReady()) {
@@ -243,7 +331,9 @@ export async function loadIpodDeviceInfo(handleRef: string) {
   await setupWasmFilesystem(ipodHandle, DEFAULT_MOUNTPOINT);
   const parseResult = wasmCallWithError("ipod_parse_db");
   if (parseResult !== 0) {
-    throw new Error("Failed to parse iTunesDB");
+    const errPtr = wasmCall("ipod_get_last_error");
+    const errMsg = wasmGetString(errPtr);
+    throw new Error(`Failed to parse iTunesDB${errMsg ? `: ${errMsg}` : ""}. The device database may be corrupted—try reconnecting the device or use the TypeScript backend in settings.`);
   }
   return wasmGetJson("ipod_get_device_info_json") as IpodSyncResult["deviceInfo"];
 }
@@ -255,7 +345,18 @@ export async function loadIpodTracks(handleRef: string): Promise<IpodTrack[]> {
   }
   const isValid = await verifyIpodStructure(ipodHandle);
   if (!isValid) {
-    throw new Error("Selected folder does not look like an iPod root");
+    throw new Error(
+      "Selected folder does not look like an iPod root. If the device was disconnected, remove it and re-select the iPod."
+    );
+  }
+  if (getUseIpodTsBackend()) {
+    let model = getIpodTsModel();
+    if (!model) {
+      const { iTunesDB } = await readIpodBuffersFromHandle(ipodHandle);
+      model = parseITunesDBFromBuffer(iTunesDB);
+      if (model) setIpodTsModel(model);
+    }
+    return model ? getTracks(model) : [];
   }
   const wasmReady = await initIpodWasm();
   if (!wasmReady || !isIpodWasmReady()) {
@@ -264,7 +365,9 @@ export async function loadIpodTracks(handleRef: string): Promise<IpodTrack[]> {
   await setupWasmFilesystem(ipodHandle, DEFAULT_MOUNTPOINT);
   const parseResult = wasmCallWithError("ipod_parse_db");
   if (parseResult !== 0) {
-    throw new Error("Failed to parse iTunesDB");
+    const errPtr = wasmCall("ipod_get_last_error");
+    const errMsg = wasmGetString(errPtr);
+    throw new Error(`Failed to parse iTunesDB${errMsg ? `: ${errMsg}` : ""}. The device database may be corrupted—try reconnecting the device or use the TypeScript backend in settings.`);
   }
   return (wasmGetJson("ipod_get_all_tracks_json") as IpodTrack[]) || [];
 }
@@ -291,18 +394,54 @@ export async function syncPlaylistsToIpod(options: {
 
   const isValid = await verifyIpodStructure(ipodHandle);
   if (!isValid) {
-    throw new Error("Selected folder does not look like an iPod root");
+    throw new Error(
+      "Selected folder does not look like an iPod root. If the device was disconnected, remove it and re-select the iPod."
+    );
   }
 
-  const wasmReady = await initIpodWasm();
-  if (!wasmReady || !isIpodWasmReady()) {
-    throw new Error("Failed to initialize iPod WASM");
+  const useTsBackend = getUseIpodTsBackend();
+  let model: import("./db-types").IpodDbModel | null = null;
+  if (getUseIpodTsBackend()) {
+    const { iTunesDB, SysInfo } = await readIpodBuffersFromHandle(ipodHandle);
+    model = parseITunesDBFromBuffer(iTunesDB);
+    if (!model) {
+      model = createEmptyModel(
+        SysInfo ? getDeviceInfoFromSysInfo(SysInfo) : undefined
+      );
+    }
+    if (model) {
+      if (SysInfo) {
+        model.deviceInfo = { ...model.deviceInfo, ...getDeviceInfoFromSysInfo(SysInfo) };
+      }
+      ensureModelDbversionForDevice(model, {
+        model_number: model.deviceInfo?.model_number,
+        productId: deviceProfile.usbProductId,
+      });
+      setIpodTsModel(model);
+      const emptyParseThreshold = 256;
+      if (iTunesDB.length > emptyParseThreshold) {
+        const noTracks = (model.tracks?.length ?? 0) === 0;
+        const noPlaylists = (model.playlists?.length ?? 0) === 0;
+        if (noTracks && noPlaylists) {
+          throw new Error(
+            "Could not read existing iPod database; sync aborted to avoid data loss."
+          );
+        }
+      }
+    }
   }
-
-  await setupWasmFilesystem(ipodHandle, DEFAULT_MOUNTPOINT);
-  const parseResult = wasmCallWithError("ipod_parse_db");
-  if (parseResult !== 0) {
-    throw new Error("Failed to parse iTunesDB");
+  if (!useTsBackend) {
+    const wasmReady = await initIpodWasm();
+    if (!wasmReady || !isIpodWasmReady()) {
+      throw new Error("Failed to initialize iPod WASM");
+    }
+    await setupWasmFilesystem(ipodHandle, DEFAULT_MOUNTPOINT);
+    const parseResult = wasmCallWithError("ipod_parse_db");
+    if (parseResult !== 0) {
+      const errPtr = wasmCall("ipod_get_last_error");
+      const errMsg = wasmGetString(errPtr);
+      throw new Error(`Failed to parse iTunesDB${errMsg ? `: ${errMsg}` : ""}. The device database may be corrupted—try reconnecting the device or use the TypeScript backend in settings.`);
+    }
   }
 
   const flacAvailable = await transcodePool.init();
@@ -310,9 +449,14 @@ export async function syncPlaylistsToIpod(options: {
     logger.warn("FFmpeg not available; FLAC tracks will be skipped.");
   }
 
-  const paths = createIpodPaths(DEFAULT_MOUNTPOINT);
+  const paths = useTsBackend ? createIpodPathsTs(DEFAULT_MOUNTPOINT) : createIpodPaths(DEFAULT_MOUNTPOINT);
+  const productIdSupportsArtwork =
+    typeof deviceProfile.usbProductId === "number" && modelSupportsArtwork(deviceProfile.usbProductId);
+  const artworkSupported = useTsBackend
+    ? productIdSupportsArtwork
+    : (wasmDeviceSupportsArtwork() || productIdSupportsArtwork);
   const playlistIndexCache = new Map<string, number>();
-  const ipodTracks = (wasmGetJson("ipod_get_all_tracks_json") as IpodTrack[]) || [];
+  const ipodTracks = useTsBackend && model ? getTracks(model) : (wasmGetJson("ipod_get_all_tracks_json") as IpodTrack[]) || [];
   const ipodTrackById = new Map<number, IpodTrack>();
   const ipodTrackByTagSize = new Map<string, number>();
   const ipodTrackByTag = new Map<string, number[]>();
@@ -364,12 +508,19 @@ export async function syncPlaylistsToIpod(options: {
     totalTracks += target.playlist.trackFileIds.length;
   }
   let processed = 0;
+  const failedTracks: NonNullable<IpodSyncResult["failedTracks"]> = [];
   logger.info(`Starting iPod sync: ${targets.length} playlist(s), ${totalTracks} track(s)`);
 
   for (const target of targets) {
-    const playlistIndex = await ensurePlaylistIndex(target.playlist.title, playlistIndexCache, {
-      clearIfExisting: overwriteExistingPlaylist,
-    });
+    const libraryOnly = target.libraryOnly === true;
+    const playlistIndex = libraryOnly
+      ? null
+      : await ensurePlaylistIndex(
+          target.playlist.title,
+          playlistIndexCache,
+          { clearIfExisting: overwriteExistingPlaylist },
+          useTsBackend ? model ?? undefined : undefined
+        );
     const playlistAddedTrackIds = new Set<number>();
     const desiredKeys = target.mirrorMode
       ? new Set(
@@ -548,16 +699,24 @@ export async function syncPlaylistsToIpod(options: {
         const ipodTrack = ipodTrackById.get(matchedTrackId);
         if (ipodTrack && metadataNeedsUpdate(lookup, ipodTrack)) {
           const tags = lookup.track.tags;
-          wasmUpdateTrack({
-            trackIndex: matchedTrackId,
+          const updatePayload = {
             title: tags.title,
             artist: tags.artist,
             album: tags.album,
             genre: tags.genres?.[0] || "",
             trackNr: tags.trackNo ?? 0,
             year: tags.year ?? 0,
-            rating: -1,
-          });
+          };
+          if (useTsBackend && model) {
+            const trackIndex = model.tracks.findIndex((t) => t.id === matchedTrackId);
+            if (trackIndex >= 0) apiUpdateTrack(model, trackIndex, updatePayload);
+          } else {
+            wasmUpdateTrack({
+              trackIndex: matchedTrackId,
+              ...updatePayload,
+              rating: -1,
+            });
+          }
           ipodTrackById.set(matchedTrackId, {
             ...ipodTrack,
             title: tags.title,
@@ -568,8 +727,33 @@ export async function syncPlaylistsToIpod(options: {
             year: tags.year ?? 0,
           });
         }
+        if (useTsBackend && model && ipodTrack?.ipod_path) {
+          const relFsPath = paths.toRelFsPathFromIpodDbPath(ipodTrack.ipod_path);
+          if (apiHasLongFilename(relFsPath)) {
+            try {
+              const fileHandle = await getFileHandleFromRelativePath(ipodHandle, relFsPath);
+              const fileOnDevice = await fileHandle.getFile();
+              const newPath = apiGetMigrationDestPath(model, relFsPath);
+              logger.info(`Migrating track to iPod 4-char name: ${relFsPath} -> ${newPath}`);
+              await writeFileToIpodRelativePath(ipodHandle, newPath, fileOnDevice);
+              const trackIndex = model.tracks.findIndex((t) => t.id === matchedTrackId);
+              if (trackIndex >= 0) apiSetTrackPath(model, trackIndex, newPath);
+              await deleteFileFromIpodRelativePath(ipodHandle, relFsPath);
+              ipodTrack.ipod_path = paths.toIpodDbPathFromRel(newPath) ?? ipodTrack.ipod_path;
+              ipodTrackById.set(matchedTrackId, { ...ipodTrack, ipod_path: ipodTrack.ipod_path });
+            } catch (migErr) {
+              logger.warn("Failed to migrate track to 4-char filename", { relFsPath, error: migErr });
+            }
+          }
+        }
         if (!playlistAddedTrackIds.has(matchedTrackId)) {
-          wasmCall("ipod_playlist_add_track", playlistIndex, matchedTrackId);
+            if (playlistIndex !== null) {
+              if (useTsBackend && model) {
+                apiPlaylistAddTrack(model, playlistIndex, matchedTrackId);
+              } else {
+                wasmCall("ipod_playlist_add_track", playlistIndex, matchedTrackId);
+              }
+            }
           playlistAddedTrackIds.add(matchedTrackId);
         }
         continue;
@@ -577,76 +761,133 @@ export async function syncPlaylistsToIpod(options: {
 
       const tags = lookup.track.tags;
       const tech = lookup.track.tech;
-      const trackIndex = wasmAddTrack({
-        title: tags.title,
-        artist: tags.artist,
-        album: tags.album,
-        genre: tags.genres?.[0] || "",
-        trackNr: tags.trackNo ?? 0,
-        cdNr: tags.discNo ?? 0,
-        year: tags.year ?? 0,
-        durationMs: tech?.durationSeconds ? Math.round(tech.durationSeconds * 1000) : undefined,
-        bitrateKbps: tech?.bitrate,
-        samplerateHz: tech?.sampleRate,
-        sizeBytes: effectiveFile.size,
-        filetype: getFiletypeFromName(effectiveFile.name),
-      });
+      let trackIndex: number;
+      let destPath: string;
+      let relFsPath: string;
+      if (useTsBackend && model) {
+        trackIndex = apiAddTrack(model, {
+          title: tags.title,
+          artist: tags.artist,
+          album: tags.album,
+          genre: tags.genres?.[0] || "",
+          trackNr: tags.trackNo ?? 0,
+          year: tags.year ?? 0,
+          durationMs: tech?.durationSeconds ? Math.round(tech.durationSeconds * 1000) : undefined,
+          sizeBytes: effectiveFile.size,
+          filetype: getFiletypeFromName(effectiveFile.name),
+        });
+        destPath = apiGetTrackDestPath(model, effectiveFile.name);
+        relFsPath = destPath;
+      } else {
+        trackIndex = wasmAddTrack({
+          title: tags.title,
+          artist: tags.artist,
+          album: tags.album,
+          genre: tags.genres?.[0] || "",
+          trackNr: tags.trackNo ?? 0,
+          cdNr: tags.discNo ?? 0,
+          year: tags.year ?? 0,
+          durationMs: tech?.durationSeconds ? Math.round(tech.durationSeconds * 1000) : undefined,
+          bitrateKbps: tech?.bitrate,
+          samplerateHz: tech?.sampleRate,
+          sizeBytes: effectiveFile.size,
+          filetype: getFiletypeFromName(effectiveFile.name),
+        });
+        if (trackIndex < 0) {
+          logger.warn("Failed to add track to iPod", { trackFileId: lookup.track.trackFileId });
+          continue;
+        }
+        const destPathPtr = wasmCallWithStrings("ipod_get_track_dest_path", [effectiveFile.name]);
+        if (!destPathPtr) {
+          logger.warn("Failed to get iPod destination path");
+          continue;
+        }
+        destPath = wasmGetString(destPathPtr) ?? "";
+        wasmCall("ipod_free_string", destPathPtr);
+        if (!destPath) {
+          logger.warn("Failed to read iPod destination path");
+          continue;
+        }
+        relFsPath = paths.toRelFsPathFromVfs(destPath);
+      }
 
       if (trackIndex < 0) {
         logger.warn("Failed to add track to iPod", { trackFileId: lookup.track.trackFileId });
         continue;
       }
 
-      const destPathPtr = wasmCallWithStrings("ipod_get_track_dest_path", [effectiveFile.name]);
-      if (!destPathPtr) {
-        logger.warn("Failed to get iPod destination path");
-        continue;
-      }
-      const destPath = wasmGetString(destPathPtr);
-      wasmCall("ipod_free_string", destPathPtr);
-      if (!destPath) {
-        logger.warn("Failed to read iPod destination path");
-        continue;
+      if (!useTsBackend) reserveVirtualPath(destPath);
+      if (useTsBackend && model) {
+        try {
+          logger.info(`Writing file to iPod: ${relFsPath}`);
+          await writeFileToIpodRelativePath(ipodHandle, relFsPath, effectiveFile);
+          logger.info(`Wrote file to iPod: ${relFsPath}`);
+          apiFinalizeLastTrackNoStat(model, relFsPath, effectiveFile.size);
+        } catch (writeErr) {
+          const tags = lookup.track.tags;
+          failedTracks.push({
+            title: tags?.title,
+            artist: tags?.artist,
+            error: writeErr instanceof Error ? writeErr.message : String(writeErr),
+          });
+          logger.warn("Failed to write track file to iPod; removing from database", {
+            trackFileId: lookup.track.trackFileId,
+            relFsPath,
+            error: writeErr,
+          });
+          apiRemoveTrackByIndex(model, trackIndex);
+          continue;
+        }
+      } else {
+        logger.info(`Writing file to iPod: ${relFsPath}`);
+        await writeFileToIpodRelativePath(ipodHandle, relFsPath, effectiveFile);
+        logger.info(`Wrote file to iPod: ${relFsPath}`);
+        const finalizeResult = wasmCallWithStrings(
+          "ipod_finalize_last_track_no_stat",
+          [destPath],
+          [effectiveFile.size]
+        );
+        if (finalizeResult !== 0) {
+          const ipodPath = paths.toIpodDbPathFromRel(relFsPath) || "";
+          wasmCallWithStrings("ipod_track_set_path", [ipodPath], [trackIndex]);
+        }
       }
 
-      reserveVirtualPath(destPath);
-      const relFsPath = paths.toRelFsPathFromVfs(destPath);
-      logger.info(`Writing file to iPod: ${relFsPath}`);
-      await writeFileToIpodRelativePath(ipodHandle, relFsPath, effectiveFile);
-      logger.info(`Wrote file to iPod: ${relFsPath}`);
-
-      const finalizeResult = wasmCallWithStrings(
-        "ipod_finalize_last_track_no_stat",
-        [destPath],
-        [effectiveFile.size]
-      );
-      if (finalizeResult !== 0) {
-        const ipodPath = paths.toIpodDbPathFromRel(relFsPath) || "";
-        wasmCallWithStrings("ipod_track_set_path", [ipodPath], [trackIndex]);
-      }
-
-      if (!playlistAddedTrackIds.has(trackIndex)) {
-        wasmCall("ipod_playlist_add_track", playlistIndex, trackIndex);
-        playlistAddedTrackIds.add(trackIndex);
+      const trackIdForMapping = useTsBackend && model ? model.tracks[trackIndex].id : trackIndex;
+      if (!playlistAddedTrackIds.has(trackIdForMapping)) {
+          if (playlistIndex !== null) {
+            if (useTsBackend && model) {
+              apiPlaylistAddTrack(model, playlistIndex, trackIdForMapping);
+            } else {
+              wasmCall("ipod_playlist_add_track", playlistIndex, trackIndex);
+            }
+          }
+        playlistAddedTrackIds.add(trackIdForMapping);
       }
       await saveDeviceTrackMapping(
         deviceProfile.id,
         libraryKey,
-        trackIndex,
+        trackIdForMapping,
         lookup.track.acoustidId
       );
-      const newTrack: IpodTrack = {
-        id: trackIndex,
-        title: tags.title,
-        artist: tags.artist,
-        album: tags.album,
-        genre: tags.genres?.[0] || "",
-        track_nr: tags.trackNo ?? 0,
-        year: tags.year ?? 0,
-        size: effectiveFile.size,
-        ipod_path: paths.toIpodDbPathFromRel(relFsPath) || undefined,
-      };
-      ipodTrackById.set(trackIndex, newTrack);
+      const newTrack: IpodTrack =
+        useTsBackend && model
+          ? {
+              ...(model.tracks[trackIndex] as IpodTrack),
+              ipod_path: paths.toIpodDbPathFromRel(relFsPath) || undefined,
+            }
+          : {
+              id: trackIndex,
+              title: tags.title,
+              artist: tags.artist,
+              album: tags.album,
+              genre: tags.genres?.[0] || "",
+              track_nr: tags.trackNo ?? 0,
+              year: tags.year ?? 0,
+              size: effectiveFile.size,
+              ipod_path: paths.toIpodDbPathFromRel(relFsPath) || undefined,
+            };
+      ipodTrackById.set(newTrack.id, newTrack);
       const newTagKey = buildTagKey({
         title: newTrack.title,
         artist: newTrack.artist,
@@ -660,54 +901,61 @@ export async function syncPlaylistsToIpod(options: {
         trackNo: newTrack.track_nr,
         size: newTrack.size,
       });
-      ipodTrackByTagSize.set(newTagSizeKey, trackIndex);
+      ipodTrackByTagSize.set(newTagSizeKey, newTrack.id);
       const newList = ipodTrackByTag.get(newTagKey) ?? [];
-      newList.push(trackIndex);
+      newList.push(newTrack.id);
       ipodTrackByTag.set(newTagKey, newList);
       if (typeof newTrack.size === "number") {
         const sizeList = ipodTrackBySize.get(newTrack.size) ?? [];
-        sizeList.push(trackIndex);
+        sizeList.push(newTrack.id);
         ipodTrackBySize.set(newTrack.size, sizeList);
       }
 
-      // Artwork: prefer cache (from scan), else extract from file, resize to iPod thumbnail, set on track
-      try {
-        const libraryRootId = target.libraryRootId;
-        const compositeId =
-          libraryRootId != null
-            ? getCompositeId(lookup.track.trackFileId, libraryRootId)
-            : null;
-        let jpegBytes: Uint8Array | null = null;
-        if (compositeId) {
-          const cached = await db.artworkCache.get(compositeId);
-          if (cached?.thumbnail) {
-            const buf = await cached.thumbnail.arrayBuffer();
-            jpegBytes = new Uint8Array(buf);
+      // Artwork: only for models that support it; prefer cache, else extract from file, resize, set on track
+      if (artworkSupported) {
+        try {
+          const libraryRootId = target.libraryRootId;
+          const compositeId =
+            libraryRootId != null
+              ? getCompositeId(lookup.track.trackFileId, libraryRootId)
+              : null;
+          let jpegBytes: Uint8Array | null = null;
+          if (compositeId) {
+            const cached = await db.artworkCache.get(compositeId);
+            if (cached?.thumbnail) {
+              const buf = await cached.thumbnail.arrayBuffer();
+              jpegBytes = new Uint8Array(buf);
+            }
           }
-        }
-        if (!jpegBytes?.length) {
-          const picture = await extractArtworkFromFile(file);
-          if (picture) {
-            jpegBytes = await resizeToIpodThumbnail(picture);
+          if (!jpegBytes?.length) {
+            const picture = await extractArtworkFromFile(file);
+            if (picture) {
+              jpegBytes = await resizeToIpodThumbnail(picture);
+            }
           }
-        }
-        if (jpegBytes && jpegBytes.length > 0) {
-          const artResult = wasmSetTrackArtwork(trackIndex, jpegBytes);
-          if (artResult !== 0) {
-            logger.debug("Track artwork not set (WASM artwork API may be unavailable)", {
-              trackIndex,
-            });
+          if (jpegBytes && jpegBytes.length > 0) {
+            if (useTsBackend && model) {
+              apiSetTrackArtwork(model, trackIndex, jpegBytes);
+            } else {
+              const artResult = wasmSetTrackArtwork(trackIndex, jpegBytes);
+              if (artResult !== 0) {
+                logger.debug("Track artwork not set (WASM artwork API may be unavailable)", {
+                  trackIndex,
+                });
+              }
+            }
           }
+        } catch (err) {
+          logger.warn("Failed to extract or set track artwork", { trackFileId: lookup.track.trackFileId, err });
         }
-      } catch (err) {
-        logger.warn("Failed to extract or set track artwork", { trackFileId: lookup.track.trackFileId, err });
       }
     }
 
-    if (target.mirrorMode && desiredKeys) {
-      const playlistTracks = wasmGetJson("ipod_get_playlist_tracks_json", playlistIndex) as
-        | IpodTrack[]
-        | null;
+    if (!libraryOnly && target.mirrorMode && desiredKeys && playlistIndex !== null) {
+      const playlistTracks =
+        useTsBackend && model
+          ? getPlaylistTracks(model, playlistIndex)
+          : (wasmGetJson("ipod_get_playlist_tracks_json", playlistIndex) as IpodTrack[] | null);
       if (Array.isArray(playlistTracks)) {
         for (const playlistTrack of playlistTracks) {
           const key = buildTagKey({
@@ -717,7 +965,11 @@ export async function syncPlaylistsToIpod(options: {
             trackNo: playlistTrack.track_nr,
           });
           if (!desiredKeys.has(key)) {
-            wasmCall("ipod_playlist_remove_track", playlistIndex, playlistTrack.id);
+            if (useTsBackend && model) {
+              apiPlaylistRemoveTrack(model, playlistIndex, playlistTrack.id);
+            } else {
+              wasmCall("ipod_playlist_remove_track", playlistIndex, playlistTrack.id);
+            }
             if (target.mirrorDeleteFromDevice && playlistTrack.ipod_path) {
               const relFsPath = paths.toRelFsPathFromIpodDbPath(playlistTrack.ipod_path);
               try {
@@ -733,6 +985,83 @@ export async function syncPlaylistsToIpod(options: {
   }
 
   logger.info("Writing iTunesDB...");
+  if (useTsBackend && model) {
+    const iTunesDB = apiWriteITunesDB(model);
+    if (!iTunesDB || getLastError()) {
+      throw new Error(`Failed to write iTunesDB: ${getLastError() ?? "unknown"}`);
+    }
+    const fileLenAt8 = readU32LE(iTunesDB, 8);
+    if (iTunesDB.length !== fileLenAt8) {
+      throw new Error(
+        `iTunesDB file length mismatch: buffer length ${iTunesDB.length} !== fileLen at offset 8 (${fileLenAt8}); aborting write.`
+      );
+    }
+    const roundTrip = parseITunesDBFromBuffer(iTunesDB);
+    if (!roundTrip) {
+      throw new Error(
+        "iTunesDB round-trip parse failed; aborting write to prevent device corruption."
+      );
+    }
+    const expectedTrackCount = model.tracks?.length ?? 0;
+    const expectedPlaylistCount = model.playlists?.length ?? 0;
+    if (roundTrip.tracks.length !== expectedTrackCount) {
+      throw new Error(
+        `iTunesDB round-trip track count mismatch (${roundTrip.tracks.length} vs ${expectedTrackCount}); aborting write.`
+      );
+    }
+    if ((roundTrip.playlists ?? []).length !== expectedPlaylistCount) {
+      throw new Error(
+        "iTunesDB round-trip playlist count mismatch; aborting write."
+      );
+    }
+    const master = model.playlists?.find((p) => p.is_master);
+    const libraryTrackIds = master?.trackIds ?? [];
+    const trackSample = (model.tracks ?? []).slice(0, 5).map((t) => ({
+      id: t.id,
+      ipod_path: t.ipod_path ?? "(none)",
+      size: t.size ?? 0,
+    }));
+    logger.info("iTunesDB pre-write dump", {
+      dbversion: model.dbversion ?? "(none)",
+      trackCount: model.tracks?.length ?? 0,
+      playlistCount: model.playlists?.length ?? 0,
+      libraryTrackIdsLength: libraryTrackIds.length,
+      libraryMatchesTracks: libraryTrackIds.length === (model.tracks?.length ?? 0),
+      iTunesDBBufferLength: iTunesDB.length,
+      fileLenAtOffset8: fileLenAt8,
+      trackSample,
+    });
+    const { ArtworkDB, ITHMB } = artworkSupported ? apiWriteArtwork(model) : {};
+    const hasNewArtwork =
+      artworkSupported &&
+      ((ArtworkDB?.length ?? 0) > 0 || (ITHMB?.size ?? 0) > 0);
+    if (hasNewArtwork) {
+      logger.info("Serialized artwork (ArtworkDB + ITHMB) for device");
+    }
+    logger.info("Serialized iTunesDB, writing to device...");
+    const syncResult = await withTimeout(
+      syncDbToIpodFromBuffers(ipodHandle, {
+        iTunesDB,
+        ArtworkDB: hasNewArtwork ? (ArtworkDB ?? undefined) : undefined,
+        ITHMB: hasNewArtwork ? ITHMB : undefined,
+      }),
+      IPOD_DB_WRITE_TIMEOUT_MS,
+      "Writing iTunesDB to device"
+    );
+    if (!syncResult.ok) {
+      throw new Error("Failed to sync iTunesDB to iPod");
+    }
+    logger.info("Sync complete. Eject the iPod from your system (e.g. Finder) before unplugging.");
+    const deviceInfo = getDeviceInfo(model) as IpodSyncResult["deviceInfo"];
+    const playlistCount = targets.filter((t) => !t.libraryOnly).length;
+    return {
+      playlistCount,
+      trackCount: totalTracks,
+      failedTracks: failedTracks.length > 0 ? failedTracks : undefined,
+      deviceInfo,
+    };
+  }
+
   const writeResult = wasmCallWithError("ipod_write_db");
   if (writeResult !== 0) {
     throw new Error("Failed to write iTunesDB");
@@ -749,6 +1078,7 @@ export async function syncPlaylistsToIpod(options: {
   return {
     playlistCount: targets.length,
     trackCount: totalTracks,
+    failedTracks: failedTracks.length > 0 ? failedTracks : undefined,
     deviceInfo,
   };
 }

@@ -8,6 +8,7 @@ import type {
   DeviceSyncManifestRecord,
   DeviceFileIndexRecord,
   DeviceTrackMappingRecord,
+  DeviceScanMetaRecord,
 } from "@/db/schema";
 
 export type DeviceProfileInput = Omit<
@@ -16,6 +17,8 @@ export type DeviceProfileInput = Omit<
 > & {
   id?: string;
   lastSyncAt?: number;
+  /** When true, clear handleRef so the device can be safely ejected. */
+  clearHandleRef?: boolean;
 };
 
 export async function saveDeviceProfile(input: DeviceProfileInput): Promise<DeviceProfileRecord> {
@@ -27,7 +30,7 @@ export async function saveDeviceProfile(input: DeviceProfileInput): Promise<Devi
     id,
     label: input.label,
     deviceType: input.deviceType ?? existing?.deviceType,
-    handleRef: input.handleRef ?? existing?.handleRef,
+    handleRef: input.clearHandleRef ? undefined : (input.handleRef ?? existing?.handleRef),
     playlistFormat: input.playlistFormat,
     playlistFolder: input.playlistFolder,
     pathStrategy: input.pathStrategy,
@@ -61,16 +64,47 @@ export async function getDeviceProfile(id: string): Promise<DeviceProfileRecord 
   return db.deviceProfiles.get(id);
 }
 
+/**
+ * Release the device folder handle so the OS can safely eject the volume.
+ * Removes the handle from IndexedDB and clears the profile's handleRef.
+ * Call after sync so the user can eject without "Force Eject". User must
+ * re-select the device folder next time they want to sync.
+ */
+export async function releaseDeviceHandle(profileId: string): Promise<void> {
+  const profile = await db.deviceProfiles.get(profileId);
+  if (!profile) return;
+  if (profile.handleRef) {
+    await db.directoryHandles.delete(profile.handleRef);
+  }
+  await saveDeviceProfile({
+    ...profile,
+    id: profileId,
+    clearHandleRef: true,
+  });
+}
+
 export async function deleteDeviceProfile(id: string): Promise<void> {
   await db.deviceProfiles.delete(id);
 }
 
 export async function deleteDeviceProfileWithManifests(id: string): Promise<void> {
-  await db.transaction("rw", [db.deviceProfiles, db.deviceSyncManifests, db.deviceTrackMappings], async () => {
-    await db.deviceSyncManifests.where("deviceId").equals(id).delete();
-    await db.deviceTrackMappings.where("deviceId").equals(id).delete();
-    await db.deviceProfiles.delete(id);
-  });
+  await db.transaction(
+    "rw",
+    [
+      db.deviceProfiles,
+      db.deviceSyncManifests,
+      db.deviceTrackMappings,
+      db.deviceFileIndex,
+      db.deviceScanMeta,
+    ],
+    async () => {
+      await db.deviceSyncManifests.where("deviceId").equals(id).delete();
+      await db.deviceTrackMappings.where("deviceId").equals(id).delete();
+      await db.deviceFileIndex.where("deviceId").equals(id).delete();
+      await db.deviceScanMeta.where("deviceId").equals(id).delete();
+      await db.deviceProfiles.delete(id);
+    }
+  );
 }
 
 export async function saveDeviceSyncManifest(
@@ -106,6 +140,31 @@ export async function getDeviceFileIndexMap(
 
 export async function clearDeviceFileIndex(deviceId: string): Promise<void> {
   await db.deviceFileIndex.where("deviceId").equals(deviceId).delete();
+}
+
+export type DeviceScanMetaInput = { scanRoots: string; scannedAt: number };
+
+export async function saveDeviceScanMeta(
+  deviceId: string,
+  input: DeviceScanMetaInput
+): Promise<DeviceScanMetaRecord> {
+  const record: DeviceScanMetaRecord = {
+    deviceId,
+    scanRoots: input.scanRoots,
+    scannedAt: input.scannedAt,
+  };
+  await db.deviceScanMeta.put(record);
+  return record;
+}
+
+export async function getDeviceScanMeta(
+  deviceId: string
+): Promise<DeviceScanMetaRecord | undefined> {
+  return db.deviceScanMeta.get(deviceId);
+}
+
+export async function clearDeviceScanMeta(deviceId: string): Promise<void> {
+  await db.deviceScanMeta.where("deviceId").equals(deviceId).delete();
 }
 
 export async function getDeviceSyncManifest(

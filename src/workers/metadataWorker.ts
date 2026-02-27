@@ -36,6 +36,7 @@ self.onmessage = async (event: MessageEvent<MetadataWorkerRequest>) => {
     const warnings: string[] = [];
 
     // Normalize tags
+    const albumartist = (metadata.common as { albumartist?: string }).albumartist;
     const tags: NormalizedTags = {
       title: normalizeTitle(metadata.common.title, file.name),
       artist: normalizeArtist(metadata.common.artist),
@@ -44,6 +45,9 @@ self.onmessage = async (event: MessageEvent<MetadataWorkerRequest>) => {
       year: normalizeYear(metadata.common.year),
       trackNo: normalizeTrackNo(metadata.common.track),
       discNo: normalizeDiscNo(metadata.common.disk),
+      ...(albumartist?.trim()
+        ? { albumArtist: normalizeArtist(albumartist) }
+        : {}),
     };
 
     // Extract tech info

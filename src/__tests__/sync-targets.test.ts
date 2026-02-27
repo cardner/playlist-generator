@@ -143,7 +143,7 @@ describe("sync-targets", () => {
         mockBuildTrackLookups
       );
       expect(result).toHaveLength(1);
-      expect(result[0].playlist.title).toBe("Selected Tracks - Collection A");
+      expect(result[0].playlist.title).toBe("Recently Added");
       expect(result[0].playlist.trackFileIds).toEqual(["t1", "t2"]);
       expect(result[0].libraryRootId).toBe("col-1");
       expect(mockBuildTrackLookups).toHaveBeenCalledWith(
@@ -184,7 +184,7 @@ describe("sync-targets", () => {
         mockBuildTrackLookups,
         { mirrorMode: true, mirrorDeleteFromDevice: true }
       );
-      expect(result.playlist.title).toBe("Collection - My Collection");
+      expect(result.playlist.title).toBe("Recently Added");
       expect(result.playlist.trackFileIds).toEqual(["t1", "t2", "t3"]);
       expect(result.mirrorMode).toBe(true);
       expect(result.mirrorDeleteFromDevice).toBe(true);

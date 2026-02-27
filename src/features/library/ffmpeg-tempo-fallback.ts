@@ -7,6 +7,7 @@
 
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
+import { resolveFfmpegAssetUrls } from "@/lib/ffmpeg-asset-urls";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_FILE_BYTES = 50 * 1024 * 1024; // 50MB
@@ -42,7 +43,8 @@ async function getFFmpeg(): Promise<FFmpeg> {
         }
 
         const instance = new FFmpeg();
-        await instance.load();
+        const { coreURL, wasmURL } = await resolveFfmpegAssetUrls();
+        await instance.load({ coreURL, wasmURL });
         ffmpegInstance = instance;
         
         // Reset error state on success
