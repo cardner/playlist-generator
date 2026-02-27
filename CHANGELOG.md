@@ -59,6 +59,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.15.4] - 2026-02-27
+
+### Fixed
+
+- **footer**: fix github link in footer
+
+### Other Changes
+
+- Merge pull request #72 from cardner/fix-footer-link
+
 ## [1.15.3] - 2026-02-27
 
 ### Fixed
