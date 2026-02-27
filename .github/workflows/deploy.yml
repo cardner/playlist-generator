@@ -17,7 +17,9 @@ permissions:
   id-token: write
 
 jobs:
-  build:
+  # Runs first on merge to main: updates version and CHANGELOG, commits and pushes.
+  # Build job then checks out main so the built site includes the new version.
+  update-changelog-and-version:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -25,8 +27,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Fetch all history for version calculation
-     
+          fetch-depth: 0
+
       - name: Enable Corepack
         run: corepack enable
 
@@ -39,10 +41,7 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
-      - name: Build
-        run: yarn build
-
-      - name: Calculate version
+      - name: Calculate version and update package.json
         id: version
         run: |
           VERSION=$(node scripts/version.js)
@@ -50,17 +49,8 @@ jobs:
           echo "Calculated version: $VERSION"
 
       - name: Generate release notes
-        id: release-notes
         run: |
           node scripts/release-notes.js "${{ steps.version.outputs.version }}" > release-notes.md
-          echo "Release notes generated"
-
-      - name: Upload release notes artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-notes
-          path: release-notes.md
-          retention-days: 30
 
       - name: Update CHANGELOG.md
         run: |
@@ -79,15 +69,48 @@ jobs:
             echo "No changes to commit"
           fi
 
+      - name: Upload release notes artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          retention-days: 30
+
+  build:
+    needs: update-changelog-and-version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ needs.update-changelog-and-version.outputs.version }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build
+        run: yarn build
+
       - name: Create git tag
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          # Check if tag already exists
-          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
-            echo "Tag v${{ steps.version.outputs.version }} already exists, skipping"
+          if git rev-parse "v${{ needs.update-changelog-and-version.outputs.version }}" >/dev/null 2>&1; then
+            echo "Tag v${{ needs.update-changelog-and-version.outputs.version }} already exists, skipping"
           else
-            git tag -a "v${{ steps.version.outputs.version }}" -m "Release v${{ steps.version.outputs.version }}"
-            git push origin "v${{ steps.version.outputs.version }}"
+            git tag -a "v${{ needs.update-changelog-and-version.outputs.version }}" -m "Release v${{ needs.update-changelog-and-version.outputs.version }}"
+            git push origin "v${{ needs.update-changelog-and-version.outputs.version }}"
           fi
 
       - name: Setup Pages
@@ -101,15 +124,15 @@ jobs:
       - name: Create zip artifact
         run: |
           cd out
-          zip -r "../ai-playlist-generator-v${{ steps.version.outputs.version }}.zip" . -x "*.git*" "*.DS_Store"
+          zip -r "../ai-playlist-generator-v${{ needs.update-changelog-and-version.outputs.version }}.zip" . -x "*.git*" "*.DS_Store"
           cd ..
         continue-on-error: true
 
       - name: Upload zip artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-zip-v${{ steps.version.outputs.version }}
-          path: ai-playlist-generator-v${{ steps.version.outputs.version }}.zip
+          name: release-zip-v${{ needs.update-changelog-and-version.outputs.version }}
+          path: ai-playlist-generator-v${{ needs.update-changelog-and-version.outputs.version }}.zip
           retention-days: 30
         continue-on-error: true
 

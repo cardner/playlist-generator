@@ -6,6 +6,12 @@ A privacy-first, local-first web application that generates playlists from your 
 
 Generate intelligent playlists from your local music collection while maintaining complete privacy. All processing happens locally in your browser—no backend server required. Your music files and metadata never leave your device.
 
+**Disclaimer that this is built partially with AI tooling (cursor)**
+
+![Home dashboard](public/screenshots/DevTools%20localhost%203000.png)
+
+*Home: intelligent music curation, get started steps, and jump back in to collections, devices, and playlists.*
+
 ## Core Principles
 
 ### Privacy-First
@@ -421,6 +427,10 @@ If the LLM returns invalid JSON or doesn't match the schema, the app automatical
 
 ### 🎵 Library Management
 
+![Library view](public/screenshots/DevTools%20Library.png)
+
+*Scan your music folder, view library stats and top genres/artists, and browse tracks, albums, or artists.*
+
 - **Multiple Collections**: Scan and manage multiple music library collections
 - **Collection Switching**: Switch between saved collections seamlessly
 - **Persistent Storage**: Collections persist across browser refreshes and cache clears
@@ -429,6 +439,10 @@ If the LLM returns invalid JSON or doesn't match the schema, the app automatical
 - **Collection Deletion**: Remove collections and all associated data
 
 ### 🎼 Playlist Generation
+
+![New Playlist form](public/screenshots/Playlists%20New%20Screenshot.png)
+
+*Create a playlist: choose collection, length, mood, activity, tempo, include/exclude artists, and generation method (Roll-in Agents or AI).*
 
 - **Intelligent Matching**: Deterministic algorithm for track selection based on user preferences
 - **Mood & Activity Matching**: Tracks scored by mood and activity tags; inferred from BPM/genres when missing
@@ -450,6 +464,14 @@ If the LLM returns invalid JSON or doesn't match the schema, the app automatical
 
 ### 📊 Playlist Management
 
+![Saved playlist with flow arc](public/screenshots/Playlists%20New.png)
+
+*Saved playlist view: flow arc editor, “Why this playlist?” summary, and track list with remix and edit options.*
+
+![Flow arc editor](public/screenshots/Playlists%20New-arch-flow.png)
+
+*Flow arc editor: define warmup, peak, and cooldown sections with intensity and tempo; preview the arc over the playlist duration.*
+
 - **Playlist Persistence**: Save playlists to IndexedDB with collection association
 - **Playlist History**: View all saved playlists
 - **Collection Association**: Playlists remember which collection they were generated from
@@ -465,6 +487,14 @@ If the LLM returns invalid JSON or doesn't match the schema, the app automatical
 - **Track Reasoning**: See why each track was selected with detailed explanations
 - **Playlist Variants**: Generate variations of existing playlists
 - **Track Reordering**: Drag and drop to reorder tracks in playlists
+
+### 📲 Device Sync
+
+![Device Sync](public/screenshots/Device%20Sync%20from%20DevTools.png)
+
+*Detect USB devices (Walkman, iPod, generic), add Jellyfin export, pick playlists, and sync or export to your device or M3U.*
+
+- **Device Sync**: Detect USB devices (Walkman, iPod, generic), sync saved playlists, or export M3U playlists for Jellyfin
 
 ## Configuration
 
