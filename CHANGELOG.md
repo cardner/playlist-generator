@@ -55,6 +55,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.15.0] - 2026-02-27
+
+### Added
+
+- **home**: redesign homepage with hero, get started, jump back in, and discovery/sync
+- add footer (copyright, GitHub, TunesReloaded), iPod WASM artwork, default WASM toggle, merge sync targets, failed-track report, and ffmpeg path fixes
+- **library**: add album and artist layout views, group by album artist
+- **device-sync**: add Artist/Album folder structure and default Recently Added playlist name
+- **device-sync**: add cumulative progress bar in sidebar above sync button
+- **device-sync**: add collection sync browser, sidebar, and real-time connection status
+- **device-sync**: add album and artist cover art from scan and cache
+- **ipod**: add album art sync path with ArtworkDB and WASM stub
+- **device-sync**: redesign sidebar container, playlist list, and action buttons
+
+### Fixed
+
+- **ipod**: fix TS iTunesDB serializer and add sync progress story variants
+- add new dependencies for testing
+- **tables**: single-line truncation and no blank rows from audio prefetch
+
+### Other Changes
+
+- Merge pull request #69 from cardner/wasm-ipod-manager-replacement
+- Merge pull request #67 from cardner/device-sync-redesign
+
 ## [1.14.1] - 2026-02-16
 
 ### Fixed
