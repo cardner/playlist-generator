@@ -90,6 +90,15 @@ export const Syncing: Story = {
   args: {
     ...defaultArgs,
     isSyncing: true,
+    syncProgress: { current: 7, total: 10, title: "Track Seven.mp3" },
+  },
+};
+
+export const SyncingNoProgress: Story = {
+  args: {
+    ...defaultArgs,
+    isSyncing: true,
+    syncProgress: null,
   },
 };
 

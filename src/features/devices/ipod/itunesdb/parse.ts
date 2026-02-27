@@ -52,6 +52,7 @@ const MHOD_FILETYPE = 6;
 
 /**
  * Parse mhod at data[offset]. Returns type and string value; advances offset past chunk.
+ * Tolerates both 18-byte (legacy) and 24-byte (spec-correct) header layouts.
  */
 function parseMhod(
   data: Uint8Array,
@@ -62,10 +63,26 @@ function parseMhod(
     return { type: 0, value: "", nextOffset: offset + (h.endOrChildCount || h.headerEnd) };
   }
   const chunkEnd = offset + h.endOrChildCount;
+  const headerSize = h.headerEnd; // u32 at offset+4
   const type = readU32LE(data, offset + 12);
-  // mhod string: often 2-byte length (UTF-16 units) at 16, then UTF-16LE data
+
   let value = "";
-  if (chunkEnd > offset + 18) {
+  if (headerSize >= 24 && chunkEnd > offset + 24) {
+    // Spec-correct 24-byte header: string byte length at +20, string data at +24
+    const strByteLen = readU32LE(data, offset + 20);
+    if (strByteLen > 0 && offset + 24 + strByteLen <= chunkEnd) {
+      const units = (strByteLen / 2) | 0;
+      value = readUtf16LEString(data, offset + 24, units);
+    } else if (chunkEnd > offset + 24) {
+      const { value: v } = readUtf16LEStringNullTerminated(
+        data,
+        offset + 24,
+        chunkEnd - (offset + 24)
+      );
+      value = v;
+    }
+  } else if (chunkEnd > offset + 18) {
+    // Legacy 18-byte header: UTF-16 unit count at +16, string data at +18
     const lenUnits = readU16LE(data, offset + 16);
     if (lenUnits > 0 && offset + 18 + lenUnits * 2 <= chunkEnd) {
       value = readUtf16LEString(data, offset + 18, lenUnits);
@@ -101,10 +118,16 @@ function parseMhit(
   const chunkEnd = offset + h.endOrChildCount;
 
   const id = readU32LE(data, offset + 16);
+  const bitrate = readU32LE(data, offset + 24);
+  const sampleratePacked = readU32LE(data, offset + 28);
+  const samplerate = (sampleratePacked >>> 16) & 0xffff;
+  const filetypeMarker = readU32LE(data, offset + 32);
   const size = readU32LE(data, offset + 36);
   const lengthMs = readU32LE(data, offset + 40);
   const trackNr = readU32LE(data, offset + 44);
   const year = readU32LE(data, offset + 52);
+  const dbid = readU64LE(data, offset + 112);
+  const mediatype = headerSize > 156 + 3 ? readU32LE(data, offset + 156) : 0;
 
   let title = "";
   let artist = "";
@@ -148,6 +171,7 @@ function parseMhit(
 
   const track: IpodTrack = {
     id,
+    dbid: dbid !== 0n ? dbid : undefined,
     title: title || undefined,
     artist: artist || undefined,
     album: album || undefined,
@@ -156,6 +180,10 @@ function parseMhit(
     year: year || undefined,
     size: size || undefined,
     tracklen: lengthMs || undefined,
+    bitrate: bitrate || undefined,
+    samplerate: samplerate || undefined,
+    mediatype: mediatype || undefined,
+    filetype_marker: filetypeMarker || undefined,
     ipod_path: location ? normalizeToDbPath(location) : undefined,
   };
   return { track, nextOffset: chunkEnd };

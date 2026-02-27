@@ -6,6 +6,8 @@
 /** Single track as exposed to sync; matches current IpodTrack shape from sync.ts */
 export type IpodTrack = {
   id: number;
+  /** Persistent 64-bit unique ID. Preserved across syncs; used by firmware for play state. */
+  dbid?: bigint;
   title?: string;
   artist?: string;
   album?: string;
@@ -14,6 +16,14 @@ export type IpodTrack = {
   year?: number;
   size?: number;
   tracklen?: number;
+  /** Bitrate in kbps */
+  bitrate?: number;
+  /** Sample rate in Hz */
+  samplerate?: number;
+  /** Media type: 1 = audio (default), 2 = podcast, 6 = video */
+  mediatype?: number;
+  /** 4-char filetype marker derived from file extension (e.g. 0x4d503320 for "MP3 ") */
+  filetype_marker?: number;
   /** Path in iPod DB format (colon-separated with leading colon, e.g. :iPod_Control:Music:F00:file.mp3). Serializer normalizes if not. */
   ipod_path?: string;
 };

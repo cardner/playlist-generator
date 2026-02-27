@@ -238,12 +238,19 @@ export function addTrack(
     durationMs?: number;
     sizeBytes?: number;
     filetype?: string;
+    bitrate?: number;
+    samplerate?: number;
   }
 ): number {
   const tracks = model.tracks ?? [];
   const id = tracks.length > 0 ? Math.max(...tracks.map((t) => t.id ?? 0)) + 1 : 0;
+  let maxDbid = 0n;
+  for (const t of tracks) {
+    if (t.dbid !== undefined && t.dbid > maxDbid) maxDbid = t.dbid;
+  }
   const track: IpodTrack = {
     id,
+    dbid: maxDbid + 1n,
     title: metadata.title ?? "",
     artist: metadata.artist ?? "Unknown Artist",
     album: metadata.album ?? "Unknown Album",
@@ -252,6 +259,9 @@ export function addTrack(
     year: metadata.year ?? 0,
     tracklen: metadata.durationMs ?? 180000,
     size: metadata.sizeBytes ?? 0,
+    bitrate: metadata.bitrate,
+    samplerate: metadata.samplerate,
+    mediatype: 1,
     ipod_path: undefined,
   };
   model.tracks = [...tracks, track];

@@ -4,7 +4,7 @@
 
 import { parseITunesDB } from "@/features/devices/ipod/itunesdb/parse";
 import { serializeITunesDB } from "@/features/devices/ipod/itunesdb/serialize";
-import { writeChunkType, writeU32LE, readU64LE } from "@/features/devices/ipod/itunesdb/binary";
+import { writeChunkType, writeU32LE, readU32LE, readU64LE } from "@/features/devices/ipod/itunesdb/binary";
 import { ipodPathToDbFormat, dbPathToFsPath } from "@/features/devices/ipod/paths-db";
 
 describe("itunesdb/parse", () => {
@@ -241,6 +241,113 @@ describe("itunesdb/parse", () => {
     expect(parsed.mhsdBlobs).toBeDefined();
     expect(parsed.mhsdBlobs![4]).toEqual(blob4);
     expect(parsed.mhsdBlobs![5]).toEqual(blob5);
+  });
+
+  it("mhod header size is 24 bytes in serialized output", () => {
+    const model = {
+      dbversion: 0x0b,
+      tracks: [
+        { id: 0, title: "Test", ipod_path: ":iPod_Control:Music:F00:t.mp3", size: 100, tracklen: 1000 },
+      ],
+      playlists: [{ name: "Library", is_master: true, trackIds: [0] }],
+    };
+    const buf = serializeITunesDB(model);
+    const mhbdHeaderSize = readU32LE(buf, 4);
+    const mhsdHeaderSize = readU32LE(buf, mhbdHeaderSize + 4);
+    const mhltStart = mhbdHeaderSize + mhsdHeaderSize;
+    const mhitStart = mhltStart + 12;
+    const mhitHeaderSize = readU32LE(buf, mhitStart + 4);
+    const firstMhodOffset = mhitStart + mhitHeaderSize;
+    expect(readU32LE(buf, firstMhodOffset + 4)).toBe(24);
+  });
+
+  it("round-trips mediatype = 1 (audio) for tracks with large enough header", () => {
+    const model = {
+      dbversion: 0x14,
+      tracks: [
+        { id: 0, title: "Audio", ipod_path: ":iPod_Control:Music:F00:a.mp3", size: 100, tracklen: 1000 },
+      ],
+      playlists: [{ name: "Library", is_master: true, trackIds: [0] }],
+    };
+    const buf = serializeITunesDB(model);
+    const parsed = parseITunesDB(buf);
+    expect(parsed.tracks[0].mediatype).toBe(1);
+  });
+
+  it("preserves dbid through serialize -> parse round-trip", () => {
+    const model = {
+      dbversion: 0x0b,
+      tracks: [
+        { id: 0, dbid: 42n, title: "DbidTest", ipod_path: ":iPod_Control:Music:F00:d.mp3", size: 100, tracklen: 1000 },
+      ],
+      playlists: [{ name: "Library", is_master: true, trackIds: [0] }],
+    };
+    const buf = serializeITunesDB(model);
+    const parsed = parseITunesDB(buf);
+    expect(parsed.tracks[0].dbid).toBe(42n);
+  });
+
+  it("generates new dbids from max+1 for tracks without dbid", () => {
+    const model = {
+      dbversion: 0x0b,
+      tracks: [
+        { id: 0, dbid: 10n, title: "A", ipod_path: ":iPod_Control:Music:F00:a.mp3", size: 100, tracklen: 1000 },
+        { id: 1, title: "B", ipod_path: ":iPod_Control:Music:F00:b.mp3", size: 100, tracklen: 1000 },
+      ],
+      playlists: [{ name: "Library", is_master: true, trackIds: [0, 1] }],
+    };
+    const buf = serializeITunesDB(model);
+    const parsed = parseITunesDB(buf);
+    expect(parsed.tracks[0].dbid).toBe(10n);
+    expect(parsed.tracks[1].dbid).toBe(11n);
+  });
+
+  it("round-trips bitrate and samplerate", () => {
+    const model = {
+      dbversion: 0x0b,
+      tracks: [
+        {
+          id: 0,
+          title: "Rates",
+          ipod_path: ":iPod_Control:Music:F00:r.mp3",
+          size: 100,
+          tracklen: 1000,
+          bitrate: 320,
+          samplerate: 44100,
+        },
+      ],
+      playlists: [{ name: "Library", is_master: true, trackIds: [0] }],
+    };
+    const buf = serializeITunesDB(model);
+    const parsed = parseITunesDB(buf);
+    expect(parsed.tracks[0].bitrate).toBe(320);
+    expect(parsed.tracks[0].samplerate).toBe(44100);
+  });
+
+  it("sets filetype mhod to 'AAC audio file' for .m4a tracks", () => {
+    const model = {
+      dbversion: 0x0b,
+      tracks: [
+        { id: 0, title: "AAC", ipod_path: ":iPod_Control:Music:F00:song.m4a", size: 100, tracklen: 1000 },
+      ],
+      playlists: [{ name: "Library", is_master: true, trackIds: [0] }],
+    };
+    const buf = serializeITunesDB(model);
+    const text = new TextDecoder("utf-16le").decode(buf);
+    expect(text).toContain("AAC audio file");
+  });
+
+  it("sets filetype mhod to 'MPEG audio file' for .mp3 tracks", () => {
+    const model = {
+      dbversion: 0x0b,
+      tracks: [
+        { id: 0, title: "MP3", ipod_path: ":iPod_Control:Music:F00:song.mp3", size: 100, tracklen: 1000 },
+      ],
+      playlists: [{ name: "Library", is_master: true, trackIds: [0] }],
+    };
+    const buf = serializeITunesDB(model);
+    const text = new TextDecoder("utf-16le").decode(buf);
+    expect(text).toContain("MPEG audio file");
   });
 });
 
