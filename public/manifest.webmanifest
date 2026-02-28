@@ -1,5 +1,5 @@
 {
-  "version": "1.15.4",
+  "version": "1.15.5",
   "name": "Mixtape Gen",
   "short_name": "Mixtape",
   "description": "Intelligent music curation",
@@ -7,7 +7,10 @@
   "scope": "/",
   "id": "/",
   "display": "standalone",
-  "display_override": ["window-controls-overlay", "standalone"],
+  "display_override": [
+    "window-controls-overlay",
+    "standalone"
+  ],
   "orientation": "any",
   "background_color": "#0b0b0f",
   "theme_color": "#0b0b0f",
@@ -44,33 +47,33 @@
     }
   ],
   "screenshots": [
-  {
-    "src": "screenshots/home1.png",
-    "sizes": "1536x1850",
-    "type": "image/png",
-    "form_factor": "wide",
-    "label": "Home screen showing main navigation and featured content"
-  },
-  {
-    "src": "screenshots/playlist-gen.png",
-    "sizes": "1536x1850",
-    "type": "image/png",
-    "form_factor": "wide",
-    "label": "Generating a new playlist"
-  },
-  {
-    "src": "screenshots/mobile-home.png",
-    "sizes": "850x1388",
-    "type": "image/png",
-    "form_factor": "narrow",
-    "label": "Example of what a playlist looks like"
-  },
-  {
-    "src": "screenshots/mobile-playlist.png",
-    "sizes": "850x1388",
-    "type": "image/png",
-    "form_factor": "narrow",
-    "label": "Generating a new playlist"
-  }
-]
+    {
+      "src": "screenshots/home1.png",
+      "sizes": "1536x1850",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Home screen showing main navigation and featured content"
+    },
+    {
+      "src": "screenshots/playlist-gen.png",
+      "sizes": "1536x1850",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Generating a new playlist"
+    },
+    {
+      "src": "screenshots/mobile-home.png",
+      "sizes": "850x1388",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Example of what a playlist looks like"
+    },
+    {
+      "src": "screenshots/mobile-playlist.png",
+      "sizes": "850x1388",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Generating a new playlist"
+    }
+  ]
 }

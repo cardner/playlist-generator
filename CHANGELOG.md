@@ -60,6 +60,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.15.5] - 2026-02-28
+
+### Other Changes
+
+- Merge pull request #73 from cardner/fix-manifest-version
+- git commit -m "chore(ci): sync manifest version on release and fix git config for tagging"
+
 ## [1.15.4] - 2026-02-27
 
 ### Fixed
