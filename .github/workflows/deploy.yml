@@ -56,12 +56,15 @@ jobs:
         run: |
           node scripts/update-changelog.js "${{ steps.version.outputs.version }}" release-notes.md
 
+      - name: Update manifest version
+        run: node scripts/update-manifest-version.js
+
       - name: Commit version and changelog updates
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add package.json CHANGELOG.md
+          git add package.json CHANGELOG.md public/manifest.webmanifest
           if ! git diff --staged --quiet; then
             git commit -m "chore: bump version to ${{ steps.version.outputs.version }} [skip ci]"
             git push
