@@ -481,7 +481,7 @@ export function LibrarySelector({
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                   <div className="min-w-0 pl-6">
                     <div className="flex items-baseline gap-2">
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 flex-shrink-0">
                       <button
                         onClick={() => {
                           if (currentRoot) {
@@ -490,15 +490,15 @@ export function LibrarySelector({
                           }
                         }}
                         disabled={isLoading || permissionStatus !== "granted"}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-accent-primary text-white rounded-sm hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-[10px] w-fit"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-accent-primary text-white rounded-sm hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-[9px]"
                       >
-                        <Music className="size-3.5" />
+                        <Music className="size-3" />
                         <span>Start Scanning</span>
                       </button>
                       <button
                         onClick={() => enhanceAction?.()}
                         disabled={!enhanceAction || isLoading || !currentRootId}
-                        className="inline-flex items-center gap-2 px-3 py-2 bg-app-hover text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-[10px] w-fit"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-app-hover text-app-primary rounded-sm border border-app-border hover:bg-app-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-[9px]"
                       >
                         <span>Enhance metadata</span>
                       </button>
