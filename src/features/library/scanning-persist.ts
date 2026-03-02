@@ -7,6 +7,7 @@
 import type { LibraryRoot } from "@/lib/library-selection";
 import {
   buildFileIndex,
+  buildFileIndexUpdateOnly,
   diffFileIndex,
   type FileIndex,
   type FileIndexEntry,
@@ -284,6 +285,80 @@ export async function scanLibraryWithPersistence(
     }
     throw error;
   }
+}
+
+/**
+ * Quick scan: path-only update that detects added/removed files without hashing.
+ * Much faster than a full scan for large libraries.
+ */
+export async function quickScanLibraryWithPersistence(
+  root: LibraryRoot,
+  onProgress?: ScanProgressCallback,
+  options?: {
+    signal?: AbortSignal;
+    existingLibraryRootId?: string;
+  }
+): Promise<{ result: ScanResult; libraryRoot: LibraryRootRecord; scanRunId: string }> {
+  const startTime = Date.now();
+
+  const libraryRoot = await saveLibraryRoot(root, root.handleId, {
+    setAsCurrent: false,
+    existingCollectionId: options?.existingLibraryRootId,
+  });
+
+  const prevEntries = await getFileIndexEntries(libraryRoot.id);
+  const trackIdMap = await migrateTrackFileIdsIfNeeded(libraryRoot.id, prevEntries);
+  const normalizedPrevEntries = applyTrackIdMapping(prevEntries, trackIdMap);
+
+  const prevIndex: FileIndex = new Map();
+  for (const entry of normalizedPrevEntries) {
+    prevIndex.set(entry.trackFileId, entry);
+  }
+
+  const { index: nextIndex, diff: rawDiff } = await buildFileIndexUpdateOnly(
+    root,
+    prevIndex,
+    undefined,
+    options?.signal
+  );
+
+  onProgress?.({ found: nextIndex.size, scanned: nextIndex.size });
+
+  let diff = rawDiff;
+  const moveDetection = detectMovedEntries(diff.removed, diff.added);
+  if (moveDetection.moved.length > 0) {
+    await applyMovedTrackIds(libraryRoot.id, moveDetection.moved);
+    diff = {
+      added: moveDetection.added,
+      changed: diff.changed,
+      removed: moveDetection.removed,
+    };
+  }
+
+  const nextEntries = Array.from(nextIndex.values());
+  await saveFileIndexEntries(nextEntries, libraryRoot.id);
+
+  if (diff.removed.length > 0) {
+    const removedIds = diff.removed.map((e) => e.trackFileId);
+    await removeFileIndexEntries(removedIds, libraryRoot.id);
+  }
+
+  // Record a scan run so hasExistingScans stays true
+  const scanRun = await createScanRun(libraryRoot.id, 0, 0, 0, 0);
+  await updateScanRun(scanRun.id, 0);
+
+  const duration = Date.now() - startTime;
+  const result: ScanResult = {
+    total: nextIndex.size,
+    added: diff.added.length,
+    changed: diff.changed.length,
+    removed: diff.removed.length,
+    duration,
+    entries: nextEntries,
+    diff,
+  };
+
+  return { result, libraryRoot, scanRunId: scanRun.id };
 }
 
 function applyTrackIdMapping(

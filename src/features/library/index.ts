@@ -22,6 +22,7 @@ export {
   scanLibraryFromFileList,
   buildFileIndex,
   buildFileIndexFromFileList,
+  buildFileIndexUpdateOnly,
   diffFileIndex,
   generateTrackFileId,
   isSupportedExtension,

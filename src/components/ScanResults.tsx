@@ -37,12 +37,14 @@ interface ScanResultsProps {
   result: ScanResult;
   onRescan: () => void;
   isScanning?: boolean;
+  scanType?: "full" | "quick";
 }
 
 export function ScanResults({
   result,
   onRescan,
   isScanning = false,
+  scanType = "full",
 }: ScanResultsProps) {
   const formatDuration = (ms: number): string => {
     if (ms < 1000) {
@@ -55,7 +57,9 @@ export function ScanResults({
     <div className="">
       <div className="bg-app-surface rounded-sm shadow-2xl p-6">
         <div className="flex justify-between items-center mb-6">
-          <h3 className="text-app-primary">Scan Complete</h3>
+          <h3 className="text-app-primary">
+            {scanType === "quick" ? "Update Scan Complete" : "Scan Complete"}
+          </h3>
           <button
             onClick={onRescan}
             disabled={isScanning}
@@ -66,7 +70,7 @@ export function ScanResults({
           </button>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-app-border">
+        <div className={`grid grid-cols-2 ${scanType === "quick" ? "md:grid-cols-3" : "md:grid-cols-4"} gap-px bg-app-border`}>
           <div className="bg-app-surface p-4">
             <div className="text-2xl font-bold text-app-primary tabular-nums">
               {result.total}
@@ -85,14 +89,16 @@ export function ScanResults({
             </div>
           </div>
 
-          <div className="bg-app-surface p-4">
-            <div className="text-2xl font-bold text-accent-primary tabular-nums">
-              {result.changed}
+          {scanType !== "quick" && (
+            <div className="bg-app-surface p-4">
+              <div className="text-2xl font-bold text-accent-primary tabular-nums">
+                {result.changed}
+              </div>
+              <div className="text-sm text-app-secondary uppercase tracking-wider mt-1">
+                Changed
+              </div>
             </div>
-            <div className="text-sm text-app-secondary uppercase tracking-wider mt-1">
-              Changed
-            </div>
-          </div>
+          )}
 
           <div className="bg-app-surface p-4">
             <div className="text-2xl font-bold text-red-500 tabular-nums">

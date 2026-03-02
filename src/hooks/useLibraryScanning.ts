@@ -25,7 +25,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { LibraryRoot } from "@/lib/library-selection";
 import type { ScanResult, ScanProgressCallback } from "@/features/library";
-import { scanLibraryWithPersistence } from "@/features/library/scanning-persist";
+import { scanLibraryWithPersistence, quickScanLibraryWithPersistence } from "@/features/library/scanning-persist";
 import { NetworkDriveDisconnectedError, isNetworkDriveDisconnectedError } from "@/features/library/network-drive-errors";
 import { ReconnectionMonitor } from "@/features/library/reconnection-monitor";
 import { getDirectoryHandle } from "@/lib/library-selection-fs-api";
@@ -78,6 +78,8 @@ export interface UseLibraryScanningReturn {
   clearScanResult: () => void;
   /** Cancel reconnection monitoring */
   cancelReconnectionMonitoring: () => void;
+  /** Run a quick scan (path-only, no hashing) to detect added/removed files */
+  handleQuickScan: () => Promise<void>;
   /** Pause an in-progress scan */
   pauseScan: () => void;
   /** Stop an in-progress scan */
@@ -427,6 +429,62 @@ export function useLibraryScanning(
   }, [handleScan]);
 
   /**
+   * Run a quick scan (path-only comparison, no hashing) to detect added/removed files
+   */
+  const handleQuickScan = useCallback(async () => {
+    if (!libraryRoot || permissionStatus !== "granted") {
+      return;
+    }
+    if (libraryRoot.mode !== "handle") {
+      setError("Quick scan requires handle mode. Please re-select your folder.");
+      return;
+    }
+
+    setIsScanning(true);
+    setError(null);
+    setScanProgress({ found: 0, scanned: 0 });
+    scanCancelModeRef.current = null;
+    const abortController = new AbortController();
+    scanAbortControllerRef.current = abortController;
+
+    const onProgress: ScanProgressCallback = (progress) => {
+      setScanProgress(progress);
+    };
+
+    try {
+      const scanResult = await quickScanLibraryWithPersistence(
+        libraryRoot,
+        onProgress,
+        {
+          signal: abortController.signal,
+          ...(existingCollectionId != null && existingCollectionId !== ""
+            ? { existingLibraryRootId: existingCollectionId }
+            : {}),
+        }
+      );
+
+      setScanResult(scanResult.result);
+      setLibraryRootId(scanResult.libraryRoot.id);
+      setScanRunId(scanResult.scanRunId);
+      onScanCompleteRef.current?.();
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        if (scanCancelModeRef.current === "stop") {
+          setScanResult(null);
+        }
+        return;
+      }
+      const errorMessage = err instanceof Error ? err.message : "Quick scan failed";
+      setError(errorMessage);
+      logger.error("Quick scan error:", err);
+    } finally {
+      setIsScanning(false);
+      setScanProgress(null);
+      scanAbortControllerRef.current = null;
+    }
+  }, [libraryRoot, permissionStatus, existingCollectionId]);
+
+  /**
    * Cancel reconnection monitoring
    */
   const cancelReconnectionMonitoring = useCallback(() => {
@@ -473,6 +531,7 @@ export function useLibraryScanning(
     handleScan,
     handleResumeScan,
     handleRescan,
+    handleQuickScan,
     clearError,
     clearScanResult,
     cancelReconnectionMonitoring,

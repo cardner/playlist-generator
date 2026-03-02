@@ -109,6 +109,7 @@ export function LibraryScanner({
     libraryRootId: string;
     lastWrittenPath?: string;
   } | null>(null);
+  const [lastScanType, setLastScanType] = useState<"full" | "quick">("full");
   const [dismissedInterruptedScanRunId, setDismissedInterruptedScanRunId] = useState<string | null>(null);
   const [dismissedProcessingCheckpointKey, setDismissedProcessingCheckpointKey] = useState<string | null>(null);
   const [dismissedWritebackCheckpointKey, setDismissedWritebackCheckpointKey] = useState<string | null>(null);
@@ -152,6 +153,7 @@ export function LibraryScanner({
     handleScan: handleScanInternal,
     handleResumeScan,
     handleRescan,
+    handleQuickScan: handleQuickScanInternal,
     clearError: clearScanError,
     clearScanResult,
     cancelReconnectionMonitoring,
@@ -410,17 +412,25 @@ export function LibraryScanner({
     clearMetadataResults();
     clearParseError();
     setAutoProcessEnabled(true);
+    setLastScanType("full");
     await handleScanInternal();
-    // Metadata parsing will be triggered automatically by useEffect below
-    // when scanResult becomes available
   }, [clearMetadataResults, clearParseError, handleScanInternal]);
 
   const handleRescanWithReset = useCallback(async () => {
     clearMetadataResults();
     clearParseError();
     setAutoProcessEnabled(true);
+    setLastScanType("full");
     await handleRescan();
   }, [clearMetadataResults, clearParseError, handleRescan]);
+
+  const handleQuickScan = useCallback(async () => {
+    clearMetadataResults();
+    clearParseError();
+    setAutoProcessEnabled(true);
+    setLastScanType("quick");
+    await handleQuickScanInternal();
+  }, [clearMetadataResults, clearParseError, handleQuickScanInternal]);
 
   const handleManualResumeScan = useCallback(
     async (resumeScanRunId: string) => {
@@ -873,7 +883,7 @@ export function LibraryScanner({
           </div>
         ) : null}
 
-        <ScanResults result={scanResult} onRescan={handleRescanWithReset} />
+        <ScanResults result={scanResult} onRescan={handleRescanWithReset} scanType={lastScanType} />
         
         {/* Metadata parsing progress is shown via MetadataProgress component above */}
         {/* This section is kept for when parsing completes but results aren't ready yet */}
@@ -910,10 +920,18 @@ export function LibraryScanner({
                     Create Playlist
                   </a>
                   <button
-                    onClick={handleRescanWithReset}
-                    className="px-4 py-2 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm border border-app-border"
+                    onClick={handleQuickScan}
+                    disabled={isScanning}
+                    className="px-3 py-1.5 bg-accent-info/10 hover:bg-accent-info/20 text-accent-info rounded-sm transition-colors text-xs border border-accent-info/20 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider"
                   >
-                    Rescan Library
+                    Update Scan
+                  </button>
+                  <button
+                    onClick={handleRescanWithReset}
+                    disabled={isScanning}
+                    className="px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-xs border border-app-border disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider"
+                  >
+                    Full Rescan
                   </button>
                 </div>
               </div>
@@ -980,11 +998,19 @@ export function LibraryScanner({
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <button
+                    onClick={handleQuickScan}
+                    disabled={isScanning || hasExistingScans === null}
+                    className="px-3 py-1.5 bg-accent-info/10 hover:bg-accent-info/20 text-accent-info rounded-sm border border-accent-info/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
+                    title="Check for new or removed files without re-hashing"
+                  >
+                    Update Scan
+                  </button>
+                  <button
                     onClick={handleRescanWithReset}
                     disabled={isScanning || hasExistingScans === null}
-                    className="px-6 py-3 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
+                    className="px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
                   >
-                    Rescan Library
+                    Full Rescan
                   </button>
                   <button
                     onClick={() => {
@@ -1001,7 +1027,7 @@ export function LibraryScanner({
                       !libraryRoot ||
                       libraryRoot.mode !== "handle"
                     }
-                    className="px-6 py-3 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
+                    className="px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
                   >
                     Re-process metadata
                   </button>
