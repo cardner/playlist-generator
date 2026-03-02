@@ -68,6 +68,12 @@ import { getResumableScans } from "@/db/storage-scan-checkpoints";
 import { getInterruptedProcessingCheckpoints } from "@/db/storage-processing-checkpoints";
 import { getInterruptedWritebackCheckpoints } from "@/db/storage-writeback-checkpoints";
 import { logger } from "@/lib/logger";
+import {
+  getDismissed,
+  setDismissedScan,
+  setDismissedProcessing,
+  setDismissedWriteback,
+} from "@/lib/dismissed-interruption-storage";
 import { useBackgroundLibraryTasks } from "./BackgroundLibraryTasksProvider";
 
 interface LibraryScannerProps {
@@ -227,7 +233,11 @@ export function LibraryScanner({
               </h3>
               <button
                 type="button"
-                onClick={() => setDismissedProcessingCheckpointKey(processingKey)}
+                onClick={() => {
+                  setDismissedProcessingCheckpointKey(processingKey);
+                  const rootId = getRootId(libraryRoot);
+                  if (rootId) setDismissedProcessing(rootId, processingKey);
+                }}
                 className="p-1 rounded text-yellow-600 hover:bg-yellow-100 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-1"
                 aria-label="Dismiss"
               >
@@ -368,7 +378,11 @@ export function LibraryScanner({
               </h3>
               <button
                 type="button"
-                onClick={() => setDismissedWritebackCheckpointKey(writebackKey)}
+                onClick={() => {
+                setDismissedWritebackCheckpointKey(writebackKey);
+                const rootId = getRootId(libraryRoot);
+                if (rootId) setDismissedWriteback(rootId, writebackKey);
+              }}
                 className="p-1 rounded text-yellow-600 hover:bg-yellow-100 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-1"
                 aria-label="Dismiss"
               >
@@ -592,9 +606,6 @@ export function LibraryScanner({
         setCurrentRootId(rootId);
         setHasCheckedResumable(false);
         setAutoProcessEnabled(false);
-        setDismissedInterruptedScanRunId(null);
-        setDismissedProcessingCheckpointKey(null);
-        setDismissedWritebackCheckpointKey(null);
         // If this is a new root (not initial mount), mark as new selection
         if (libraryRoot && !isInitialMount) {
           onNewSelection?.();
@@ -615,6 +626,21 @@ export function LibraryScanner({
     clearParseError,
     clearMetadataResults,
   ]);
+
+  // Rehydrate dismissed banner state from localStorage when library root is set; clear when root is cleared
+  useEffect(() => {
+    const rootId = getRootId(libraryRoot);
+    if (rootId) {
+      const d = getDismissed(rootId);
+      setDismissedInterruptedScanRunId(d.scanRunId);
+      setDismissedProcessingCheckpointKey(d.processingKey);
+      setDismissedWritebackCheckpointKey(d.writebackKey);
+    } else {
+      setDismissedInterruptedScanRunId(null);
+      setDismissedProcessingCheckpointKey(null);
+      setDismissedWritebackCheckpointKey(null);
+    }
+  }, [libraryRoot]);
 
   useEffect(() => {
     const updateProcessingStatus = async () => {
@@ -708,7 +734,11 @@ export function LibraryScanner({
             lastScannedPath={interruptedScanRunId ? null : detectedResumableLastPath}
             onCancelAutoResume={cancelReconnectionMonitoring}
             onManualResume={handleManualResumeScan}
-            onDismiss={() => setDismissedInterruptedScanRunId(effectiveScanRunId)}
+            onDismiss={() => {
+              setDismissedInterruptedScanRunId(effectiveScanRunId);
+              const rootId = getRootId(libraryRoot);
+              if (rootId) setDismissedScan(rootId, effectiveScanRunId);
+            }}
           />
         )}
         {renderProcessingResumeBanner()}
@@ -823,7 +853,11 @@ export function LibraryScanner({
             lastScannedPath={null}
             onCancelAutoResume={cancelReconnectionMonitoring}
             onManualResume={handleManualResumeScan}
-            onDismiss={() => setDismissedInterruptedScanRunId(interruptedScanRunId)}
+            onDismiss={() => {
+            setDismissedInterruptedScanRunId(interruptedScanRunId);
+            const rootId = getRootId(libraryRoot);
+            if (rootId) setDismissedScan(rootId, interruptedScanRunId);
+          }}
           />
         )}
         {renderProcessingResumeBanner()}
@@ -972,7 +1006,11 @@ export function LibraryScanner({
                 lastScannedPath={interruptedScanRunId ? null : detectedResumableLastPath}
                 onCancelAutoResume={cancelReconnectionMonitoring}
                 onManualResume={handleManualResumeScan}
-                onDismiss={() => setDismissedInterruptedScanRunId(effectiveScanRunId)}
+                onDismiss={() => {
+                  setDismissedInterruptedScanRunId(effectiveScanRunId);
+                  const rootId = getRootId(libraryRoot);
+                  if (rootId) setDismissedScan(rootId, effectiveScanRunId);
+                }}
               />
             ) : null;
           })()}
@@ -1069,7 +1107,11 @@ export function LibraryScanner({
                 lastScannedPath={interruptedScanRunId ? null : detectedResumableLastPath}
                 onCancelAutoResume={cancelReconnectionMonitoring}
                 onManualResume={handleManualResumeScan}
-                onDismiss={() => setDismissedInterruptedScanRunId(effectiveScanRunId)}
+                onDismiss={() => {
+                  setDismissedInterruptedScanRunId(effectiveScanRunId);
+                  const rootId = getRootId(libraryRoot);
+                  if (rootId) setDismissedScan(rootId, effectiveScanRunId);
+                }}
               />
             ) : null;
           })()}
