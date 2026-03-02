@@ -301,6 +301,8 @@ export function DeviceSyncPanel({
   const [collectionTracksPageSize, setCollectionTracksPageSize] = useState(50);
   const [mirrorDeleteFromDevice, setMirrorDeleteFromDevice] = useState(false);
   const [overwriteExistingPlaylistOnIpod, setOverwriteExistingPlaylistOnIpod] = useState(false);
+  /** When false (default), Walkman/Generic sync only writes playlist files and references existing device paths; when true, copies missing tracks to device. */
+  const [transferMissingTracksToDevice, setTransferMissingTracksToDevice] = useState(false);
   const [syncLibraryOnlyFromCollection, setSyncLibraryOnlyFromCollection] = useState(true);
   const [collectionContentTab, setCollectionContentTab] = useState<
     "tracks" | "albums" | "artists"
@@ -1832,7 +1834,7 @@ export function DeviceSyncPanel({
               deviceEntries: devicePathDetectionEnabled ? activeDeviceEntries : undefined,
               onlyIncludeMatchedPaths: devicePathDetectionEnabled && effectiveOnlyIncludeMatchedPaths,
               deviceMusicFolder:
-                (isWalkmanPreset || isGenericPreset) ? "MUSIC" : undefined,
+                (isWalkmanPreset || isGenericPreset) && transferMissingTracksToDevice ? "MUSIC" : undefined,
               onProgress: (p) =>
                 setSyncQueueStatus({
                   currentIndex: p.current,
@@ -2094,7 +2096,7 @@ export function DeviceSyncPanel({
           deviceEntries: devicePathDetectionEnabled ? activeDeviceEntries : undefined,
           onlyIncludeMatchedPaths: false,
           deviceMusicFolder:
-            isWalkmanPreset || isGenericPreset ? "MUSIC" : undefined,
+            (isWalkmanPreset || isGenericPreset) && transferMissingTracksToDevice ? "MUSIC" : undefined,
           onProgress: (p) =>
             setSyncQueueStatus({
               currentIndex: p.current,
@@ -2228,7 +2230,7 @@ export function DeviceSyncPanel({
           deviceEntries: devicePathDetectionEnabled ? activeDeviceEntries : undefined,
           onlyIncludeMatchedPaths: false,
           deviceMusicFolder:
-            isWalkmanPreset || isGenericPreset ? "MUSIC" : undefined,
+            (isWalkmanPreset || isGenericPreset) && transferMissingTracksToDevice ? "MUSIC" : undefined,
           onProgress: (p) =>
             setSyncQueueStatus({
               currentIndex: p.current,
@@ -4146,6 +4148,8 @@ export function DeviceSyncPanel({
           onMirrorDeleteFromDeviceChange={setMirrorDeleteFromDevice}
           overwriteExistingPlaylistOnIpod={overwriteExistingPlaylistOnIpod}
           onOverwriteExistingPlaylistOnIpodChange={setOverwriteExistingPlaylistOnIpod}
+          transferMissingTracksToDevice={transferMissingTracksToDevice}
+          onTransferMissingTracksToDeviceChange={setTransferMissingTracksToDevice}
         />
       </div>
       <Modal

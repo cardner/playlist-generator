@@ -77,6 +77,9 @@ interface DeviceSyncSidebarProps {
   onMirrorDeleteFromDeviceChange?: (value: boolean) => void;
   overwriteExistingPlaylistOnIpod?: boolean;
   onOverwriteExistingPlaylistOnIpodChange?: (value: boolean) => void;
+  /** Walkman/Generic: when true, copy missing tracks to device; when false (default), only write playlist and reference existing paths. */
+  transferMissingTracksToDevice?: boolean;
+  onTransferMissingTracksToDeviceChange?: (value: boolean) => void;
   showScanButton?: boolean;
   showExportButton?: boolean;
   supportsFileSystemAccess?: boolean;
@@ -145,6 +148,8 @@ export function DeviceSyncSidebar({
   onMirrorDeleteFromDeviceChange,
   overwriteExistingPlaylistOnIpod = false,
   onOverwriteExistingPlaylistOnIpodChange,
+  transferMissingTracksToDevice = false,
+  onTransferMissingTracksToDeviceChange,
   showScanButton = true,
   showExportButton = false,
   supportsFileSystemAccess = true,
@@ -559,6 +564,20 @@ export function DeviceSyncSidebar({
                   : "Syncing..."
                 : syncButtonLabel}
             </Button>
+          )}
+
+          {(devicePreset === "walkman" || devicePreset === "generic") && (
+            <label className="flex items-start gap-2 text-app-primary text-xs mt-2">
+              <input
+                type="checkbox"
+                checked={transferMissingTracksToDevice}
+                onChange={(e) =>
+                  onTransferMissingTracksToDeviceChange?.(e.target.checked)
+                }
+                className="rounded border-app-border mt-0.5"
+              />
+              <span>Transfer missing tracks to device</span>
+            </label>
           )}
 
           {(shouldShowCollectionSyncButton ||
