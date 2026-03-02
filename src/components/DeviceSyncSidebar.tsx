@@ -323,6 +323,19 @@ export function DeviceSyncSidebar({
               />
               <span>Scan the device and map files to improve playlist path accuracy.</span>
             </label>
+            {(devicePreset === "walkman" || devicePreset === "generic") && (
+              <label className="flex items-start gap-2 text-app-primary text-xs mt-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={transferMissingTracksToDevice}
+                  onChange={(e) =>
+                    onTransferMissingTracksToDeviceChange?.(e.target.checked)
+                  }
+                  className="rounded border-app-border mt-0.5"
+                />
+                <span>Transfer missing tracks to device</span>
+              </label>
+            )}
             {devicePathDetection.enabled && (
               <>
                 <label className="flex items-start gap-2 text-app-primary text-xs mt-2 cursor-pointer">
@@ -564,20 +577,6 @@ export function DeviceSyncSidebar({
                   : "Syncing..."
                 : syncButtonLabel}
             </Button>
-          )}
-
-          {(devicePreset === "walkman" || devicePreset === "generic") && (
-            <label className="flex items-start gap-2 text-app-primary text-xs mt-2">
-              <input
-                type="checkbox"
-                checked={transferMissingTracksToDevice}
-                onChange={(e) =>
-                  onTransferMissingTracksToDeviceChange?.(e.target.checked)
-                }
-                className="rounded border-app-border mt-0.5"
-              />
-              <span>Transfer missing tracks to device</span>
-            </label>
           )}
 
           {(shouldShowCollectionSyncButton ||
