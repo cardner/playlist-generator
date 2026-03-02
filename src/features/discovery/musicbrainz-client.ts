@@ -10,6 +10,7 @@
 import type { MusicBrainzRecordingResult, MusicBrainzRecordingWithDetails } from './musicbrainz-types';
 import type { TrackRecord } from '@/db/schema';
 import { logger } from '@/lib/logger';
+import { performanceLogger } from '@/features/library/performance';
 
 const MUSICBRAINZ_API_BASE = 'https://musicbrainz.org/ws/2';
 const USER_AGENT = 'AI-Playlist-Generator/1.0.0 (https://github.com/yourusername/ai-playlist-generator)';
@@ -49,9 +50,9 @@ async function processQueue() {
     }
 
     lastRequestTime = Date.now();
+    const fetchStart = performance.now();
     
     try {
-      // Make the request and wait for it to complete
       const response = await fetch(queuedRequest.url, {
         ...queuedRequest.options,
         headers: {
@@ -61,8 +62,24 @@ async function processQueue() {
         },
       });
       
+      const fetchDuration = performance.now() - fetchStart;
+      const urlPath = new URL(queuedRequest.url).pathname;
+      const cacheStatus = response.headers.get("x-sw-cache") ?? "none";
+      performanceLogger.log("enhancement.fetch", fetchDuration, {
+        api: "musicbrainz",
+        endpoint: urlPath,
+        status: response.status,
+        cacheStatus,
+      });
+      
       queuedRequest.resolve(response);
     } catch (error) {
+      const fetchDuration = performance.now() - fetchStart;
+      performanceLogger.log("enhancement.fetch", fetchDuration, {
+        api: "musicbrainz",
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
       queuedRequest.reject(error as Error);
     }
   }

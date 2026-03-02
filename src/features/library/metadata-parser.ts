@@ -60,6 +60,7 @@ class MetadataWorkerPool {
   private async init(): Promise<void> {
     if (this.initPromise) return this.initPromise;
     this.initPromise = (async () => {
+      const bootstrapStart = performance.now();
       for (let i = 0; i < this.poolSize; i++) {
         try {
           const worker = new Worker(this.workerUrl, { type: "classic" });
@@ -69,6 +70,12 @@ class MetadataWorkerPool {
           break;
         }
       }
+      const bootstrapDuration = performance.now() - bootstrapStart;
+      const { performanceLogger } = await import("./performance");
+      performanceLogger.log("workerPool.bootstrap", bootstrapDuration, {
+        poolSize: this.poolSize,
+        workersCreated: this.workers.length,
+      });
     })();
     return this.initPromise;
   }

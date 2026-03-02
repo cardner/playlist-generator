@@ -29,6 +29,9 @@ import { getLibraryFilesForEntries } from "@/features/library/metadata-integrati
 import { saveTrackMetadata, updateScanRun, removeTrackMetadata } from "@/db/storage";
 import { detectTempoForLibrary } from "@/features/library/metadata-enhancement";
 import { isQuotaExceededError, getStorageQuotaInfo } from "@/db/storage-errors";
+import { PerformanceTimer } from "@/features/library/performance";
+import { prewarmProcessingAssets, cancelEnhancementTasks } from "@/lib/sw-messaging";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import { saveArtworkCacheFromResults } from "@/features/library/artwork-cache";
 import {
   applySidecarEnhancements,
@@ -139,6 +142,7 @@ export function useMetadataParsing(
   const tempoLogStateRef = useRef({ lastLogTime: 0, lastProcessed: 0 });
   const parseAbortControllerRef = useRef<AbortController | null>(null);
   const parseCancelModeRef = useRef<"pause" | "stop" | null>(null);
+  const activeRunIdRef = useRef<string | null>(null);
   const tempoAbortControllerRef = useRef<AbortController | null>(null);
   const tempoCancelModeRef = useRef<"pause" | "stop" | null>(null);
 
@@ -171,9 +175,15 @@ export function useMetadataParsing(
       parseAbortControllerRef.current = abortController;
       parseCancelModeRef.current = null;
 
+      if (isFeatureEnabled("swPrewarm")) {
+        prewarmProcessingAssets();
+      }
+
       let sortedEntries: typeof result.entries = [];
       let processedOffset = 0;
       const activeScanRunId = scanRunIdOverride ?? scanRunId ?? null;
+      activeRunIdRef.current = activeScanRunId;
+      const stageTimer = new PerformanceTimer("metadataParsing.stages");
       try {
         const permission = await checkLibraryPermission(root);
         if (permission !== "granted") {
@@ -238,6 +248,8 @@ export function useMetadataParsing(
           }
         }
 
+        stageTimer.step("checkpoint-loaded");
+
         // Get LibraryFile objects for these entries
         const libraryFiles = await getLibraryFilesForEntries(root, entriesToParse, libraryRootId);
 
@@ -253,6 +265,8 @@ export function useMetadataParsing(
           setMetadataProgress(null);
           return;
         }
+
+        stageTimer.step("library-files-resolved");
 
         // Use batched parsing for large libraries to prevent timeouts
         const orderedFiles = reorderLibraryFiles(entriesToParse, libraryFiles);
@@ -345,6 +359,7 @@ export function useMetadataParsing(
             }
           );
 
+          stageTimer.step("batched-parse-complete");
           results = batchedResult.results ?? [];
           successCount = batchedResult.saved;
           errorCount = batchedResult.errors;
@@ -393,6 +408,8 @@ export function useMetadataParsing(
             concurrency,
             abortController.signal
           );
+
+          stageTimer.step("direct-parse-complete");
 
           const sidecarMap = await readSidecarMetadataForTracks(
             libraryRootId,
@@ -454,6 +471,8 @@ export function useMetadataParsing(
           }
         }
 
+        stageTimer.step("persistence-complete");
+
         // Update scan run with parse error count (for both batched and direct parsing)
         if (activeScanRunId) {
           await updateScanRun(activeScanRunId, errorCount);
@@ -469,6 +488,14 @@ export function useMetadataParsing(
           logger.error("Tracks were parsed but not saved to database!");
           setError("Failed to save tracks to database. Please try scanning again.");
         }
+
+        stageTimer.finish({
+          totalEntries,
+          successCount,
+          errorCount,
+          useBatched,
+          libraryRootId,
+        });
 
         // Automatically detect tempo for tracks missing BPM (runs in background)
         // This is non-blocking and happens after metadata parsing completes
@@ -616,8 +643,9 @@ export function useMetadataParsing(
         onParseCompleteRef.current?.();
       } finally {
         setIsParsingMetadata(false);
-        setMetadataProgress(null); // Clear progress when done
+        setMetadataProgress(null);
         parseAbortControllerRef.current = null;
+        activeRunIdRef.current = null;
       }
     },
     [scanRunId, metadataProgress] // Removed onParseComplete dependency - using ref instead
@@ -644,6 +672,9 @@ export function useMetadataParsing(
     }
     parseCancelModeRef.current = "pause";
     parseAbortControllerRef.current.abort();
+    if (activeRunIdRef.current) {
+      cancelEnhancementTasks(activeRunIdRef.current, "pause");
+    }
   }, []);
 
   const stopProcessing = useCallback(() => {
@@ -652,6 +683,9 @@ export function useMetadataParsing(
     }
     parseCancelModeRef.current = "stop";
     parseAbortControllerRef.current.abort();
+    if (activeRunIdRef.current) {
+      cancelEnhancementTasks(activeRunIdRef.current, "stop");
+    }
   }, []);
 
   const pauseTempoDetection = useCallback(() => {
