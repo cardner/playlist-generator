@@ -260,6 +260,87 @@ export async function verifyDeviceConnection(handleId: string): Promise<boolean>
 }
 
 /**
+ * Fast file count using names-only directory traversal (no getFile() calls).
+ * Only iterates directory entries and checks file names against a filter,
+ * making it much faster than a full scan.
+ *
+ * Subdirectories are processed in parallel batches to overlap I/O latency,
+ * which is especially beneficial for NAS / external drives.
+ */
+export async function countLibraryFilesWithFSAPI(
+  root: LibraryRoot,
+  options?: {
+    signal?: AbortSignal;
+    isSupportedExtension?: (name: string) => boolean;
+  }
+): Promise<number> {
+  if (root.mode !== "handle") {
+    throw new Error("Library root must be in handle mode");
+  }
+
+  const handle = await getDirectoryHandle(root.handleId!);
+  if (!handle) {
+    throw new Error("Directory handle not found");
+  }
+
+  const CONCURRENCY = 6;
+
+  async function countInDirectory(dirHandle: FileSystemDirectoryHandle): Promise<number> {
+    let localCount = 0;
+    const subdirs: FileSystemDirectoryHandle[] = [];
+
+    try {
+      for await (const [name, entry] of dirHandle.entries()) {
+        if (options?.signal?.aborted) {
+          throw new DOMException("Count aborted", "AbortError");
+        }
+
+        if (entry.kind === "file") {
+          if (!options?.isSupportedExtension || options.isSupportedExtension(name)) {
+            localCount++;
+          }
+        } else if (entry.kind === "directory") {
+          subdirs.push(entry as FileSystemDirectoryHandle);
+        }
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw error;
+      }
+      if (error instanceof DOMException && error.name === "NotFoundError") {
+        return localCount;
+      }
+      throw error;
+    }
+
+    // Yield once per directory to keep the main thread responsive
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Process subdirectories in parallel batches
+    for (let i = 0; i < subdirs.length; i += CONCURRENCY) {
+      if (options?.signal?.aborted) {
+        throw new DOMException("Count aborted", "AbortError");
+      }
+      const batch = subdirs.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        batch.map((d) =>
+          countInDirectory(d).catch((err) => {
+            if (err instanceof DOMException && err.name === "AbortError") throw err;
+            if (err instanceof DOMException && err.name === "NotFoundError") return 0;
+            throw err;
+          })
+        )
+      );
+      for (const r of results) localCount += r;
+    }
+
+    return localCount;
+  }
+
+  return countInDirectory(handle);
+}
+
+/**
  * Recursively traverse directory and yield files
  * 
  * Handles network drive issues gracefully by catching NotFoundError and

@@ -41,6 +41,7 @@ export {
   removeFileIndexEntries,
   getFileIndexEntries,
   getFileIndexEntry,
+  getFileIndexCount,
   getAllFileIndexEntries,
 } from "./storage-file-index";
 

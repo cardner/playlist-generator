@@ -23,6 +23,8 @@ export {
   buildFileIndex,
   buildFileIndexFromFileList,
   buildFileIndexUpdateOnly,
+  countLibraryFiles,
+  getCachedFileCount,
   diffFileIndex,
   generateTrackFileId,
   isSupportedExtension,

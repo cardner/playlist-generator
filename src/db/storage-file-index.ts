@@ -108,6 +108,19 @@ export async function getFileIndexEntry(
 }
 
 /**
+ * Get the count of file index entries for a library root.
+ * Uses the indexed `libraryRootId` field for an efficient count.
+ *
+ * @param libraryRootId - Library root ID
+ * @returns Number of indexed files
+ */
+export async function getFileIndexCount(
+  libraryRootId: string
+): Promise<number> {
+  return db.fileIndex.where("libraryRootId").equals(libraryRootId).count();
+}
+
+/**
  * Get all file index entries (across all library roots)
  * 
  * @returns Array of all file index records

@@ -8,8 +8,11 @@ import type { LibraryRoot, LibraryFile } from "@/lib/library-selection";
 import {
   getLibraryFiles,
   getLibraryFilesFromFileList,
+  countLibraryFilesWithFSAPI,
 } from "@/lib/library-selection";
+import { getFileExtension } from "@/lib/library-selection-utils";
 import { hashFileContent, hashFullFileContent } from "@/lib/file-hash";
+import { getFileIndexCount } from "@/db/storage-file-index";
 import { logger } from "@/lib/logger";
 
 /**
@@ -154,6 +157,42 @@ export function generateTrackFileId(
  */
 export function isSupportedExtension(extension: string): boolean {
   return SUPPORTED_EXTENSIONS.includes(extension as SupportedExtension);
+}
+
+/**
+ * Fast count of supported audio files in a library root.
+ * Uses a names-only directory traversal (no getFile() calls) for speed.
+ *
+ * @param root Library root to count files in (handle mode only)
+ * @param options Optional signal and extension filter
+ * @returns Total number of supported audio files
+ */
+export async function countLibraryFiles(
+  root: LibraryRoot,
+  options?: {
+    isSupportedExtension?: (name: string) => boolean;
+    signal?: AbortSignal;
+  }
+): Promise<number> {
+  const filter =
+    options?.isSupportedExtension ??
+    ((name: string) => isSupportedExtension(getFileExtension(name)));
+
+  return countLibraryFilesWithFSAPI(root, {
+    signal: options?.signal,
+    isSupportedExtension: filter,
+  });
+}
+
+/**
+ * Return the number of indexed files from a previous scan, or null if none
+ * exist yet. Uses an efficient indexed count on the Dexie `fileIndex` table.
+ */
+export async function getCachedFileCount(
+  libraryRootId: string
+): Promise<number | null> {
+  const count = await getFileIndexCount(libraryRootId);
+  return count > 0 ? count : null;
 }
 
 /**

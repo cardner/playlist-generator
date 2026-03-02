@@ -25,6 +25,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { LibraryRoot } from "@/lib/library-selection";
 import type { ScanResult, ScanProgressCallback } from "@/features/library";
+import { countLibraryFiles, getCachedFileCount } from "@/features/library/scanning";
+import { isSupportedExtension } from "@/features/library/scanning";
+import { getFileExtension } from "@/lib/library-selection-utils";
 import { scanLibraryWithPersistence, quickScanLibraryWithPersistence } from "@/features/library/scanning-persist";
 import { NetworkDriveDisconnectedError, isNetworkDriveDisconnectedError } from "@/features/library/network-drive-errors";
 import { ReconnectionMonitor } from "@/features/library/reconnection-monitor";
@@ -47,6 +50,10 @@ export interface ScanProgress {
   found: number;
   scanned: number;
   currentFile?: string;
+  /** Stable total from count pass when available; otherwise use found */
+  total?: number;
+  /** 'counting' while the fast count pass runs; 'scanning' (or absent) during the real scan */
+  stage?: "counting" | "scanning";
 }
 
 export interface UseLibraryScanningReturn {
@@ -104,6 +111,7 @@ export function useLibraryScanning(
   const [interruptedScanRunId, setInterruptedScanRunId] = useState<string | null>(null);
   const scanAbortControllerRef = useRef<AbortController | null>(null);
   const scanCancelModeRef = useRef<"pause" | "stop" | null>(null);
+  const totalFromCountRef = useRef<number | null>(null);
 
   // Use ref for callback to avoid recreating handleScan when callback changes
   const onScanCompleteRef = useRef(onScanComplete);
@@ -153,13 +161,60 @@ export function useLibraryScanning(
 
     setIsScanning(true);
     setError(null);
-    setScanProgress({ found: 0, scanned: 0 });
+    totalFromCountRef.current = null;
     scanCancelModeRef.current = null;
     const abortController = new AbortController();
     scanAbortControllerRef.current = abortController;
 
+    // --- Count-first phase (handle mode only) ---
+    if (libraryRoot.mode === "handle") {
+      // Try cached count from a previous scan first (near-instant)
+      if (existingCollectionId) {
+        try {
+          const cached = await getCachedFileCount(existingCollectionId);
+          if (cached !== null) {
+            totalFromCountRef.current = cached;
+          }
+        } catch {
+          // Ignore -- fall through to live count
+        }
+      }
+
+      if (totalFromCountRef.current === null) {
+        setScanProgress({ found: 0, scanned: 0, stage: "counting" });
+        try {
+          const total = await countLibraryFiles(libraryRoot, {
+            isSupportedExtension: (name) =>
+              isSupportedExtension(getFileExtension(name)),
+            signal: abortController.signal,
+          });
+          totalFromCountRef.current = total;
+        } catch (countErr) {
+          if (countErr instanceof DOMException && countErr.name === "AbortError") {
+            setIsScanning(false);
+            setScanProgress(null);
+            scanAbortControllerRef.current = null;
+            return;
+          }
+          logger.warn("Count pass failed, falling back to incremental total", countErr);
+        }
+      }
+    }
+
+    // --- Scanning phase ---
+    setScanProgress({
+      found: 0,
+      scanned: 0,
+      stage: "scanning",
+      total: totalFromCountRef.current ?? undefined,
+    });
+
     const onProgress: ScanProgressCallback = (progress) => {
-      setScanProgress(progress);
+      setScanProgress({
+        ...progress,
+        stage: "scanning",
+        total: totalFromCountRef.current ?? undefined,
+      });
     };
 
     try {
@@ -183,14 +238,12 @@ export function useLibraryScanning(
         rootId = scanResult.libraryRoot.id;
         setLibraryRootId(rootId);
 
-        // Get scan run ID
         const { getScanRuns } = await import("@/db/storage");
         const runs = await getScanRuns(rootId);
         if (runs.length > 0) {
           setScanRunId(runs[runs.length - 1].id);
         }
       } else {
-        // Fallback mode requires file list - this shouldn't happen in normal flow
         throw new Error(
           "Fallback mode scanning requires file list. Please re-select your folder."
         );
@@ -201,7 +254,6 @@ export function useLibraryScanning(
       setInterruptedScanRunId(null);
       onScanCompleteRef.current?.();
     } catch (err) {
-      // Handle network drive disconnection
       if (err instanceof DOMException && err.name === "AbortError") {
         setIsMonitoringReconnection(false);
         if (scanCancelModeRef.current === "pause") {
@@ -216,7 +268,6 @@ export function useLibraryScanning(
         setInterruptedScanRunId(err.scanRunId);
         setIsMonitoringReconnection(true);
         
-        // Start reconnection monitoring if we have a directory handle
         if (libraryRoot?.mode === "handle" && libraryRoot.handleId) {
           try {
             const directoryHandle = await getDirectoryHandle(libraryRoot.handleId);
@@ -224,7 +275,6 @@ export function useLibraryScanning(
               const monitor = new ReconnectionMonitor({
                 directoryHandle,
                 onReconnected: async () => {
-                  // Auto-resume scan when reconnected
                   logger.info("Network drive reconnected, resuming scan");
                   setIsMonitoringReconnection(false);
                   if (handleResumeScanRef.current) {
@@ -250,7 +300,6 @@ export function useLibraryScanning(
           setIsMonitoringReconnection(false);
         }
       } else {
-        // Handle other errors
         let errorMessage: string;
         
         if (err instanceof DOMException && err.name === "NotFoundError") {
@@ -259,7 +308,6 @@ export function useLibraryScanning(
             "This is common with network drives. Please ensure the network drive is connected " +
             "and accessible. The scan will continue with accessible files.";
         } else if (err instanceof Error) {
-          // Check if error message mentions network drive or NotFoundError
           if (
             err.message.includes("NotFoundError") ||
             err.message.includes("network drive") ||
@@ -284,7 +332,7 @@ export function useLibraryScanning(
       setScanProgress(null);
       scanAbortControllerRef.current = null;
     }
-  }, [libraryRoot, permissionStatus, scanRunId, existingCollectionId]); // Removed onScanComplete dependency - using ref instead
+  }, [libraryRoot, permissionStatus, scanRunId, existingCollectionId]);
 
   /**
    * Resume an interrupted scan from a checkpoint
@@ -442,13 +490,56 @@ export function useLibraryScanning(
 
     setIsScanning(true);
     setError(null);
-    setScanProgress({ found: 0, scanned: 0 });
+    totalFromCountRef.current = null;
     scanCancelModeRef.current = null;
     const abortController = new AbortController();
     scanAbortControllerRef.current = abortController;
 
+    // Try cached count first (near-instant for repeat scans)
+    if (existingCollectionId) {
+      try {
+        const cached = await getCachedFileCount(existingCollectionId);
+        if (cached !== null) {
+          totalFromCountRef.current = cached;
+        }
+      } catch {
+        // Ignore -- fall through to live count
+      }
+    }
+
+    if (totalFromCountRef.current === null) {
+      setScanProgress({ found: 0, scanned: 0, stage: "counting" });
+      try {
+        const total = await countLibraryFiles(libraryRoot, {
+          isSupportedExtension: (name) =>
+            isSupportedExtension(getFileExtension(name)),
+          signal: abortController.signal,
+        });
+        totalFromCountRef.current = total;
+      } catch (countErr) {
+        if (countErr instanceof DOMException && countErr.name === "AbortError") {
+          setIsScanning(false);
+          setScanProgress(null);
+          scanAbortControllerRef.current = null;
+          return;
+        }
+        logger.warn("Count pass failed for quick scan, falling back", countErr);
+      }
+    }
+
+    setScanProgress({
+      found: 0,
+      scanned: 0,
+      stage: "scanning",
+      total: totalFromCountRef.current ?? undefined,
+    });
+
     const onProgress: ScanProgressCallback = (progress) => {
-      setScanProgress(progress);
+      setScanProgress({
+        ...progress,
+        stage: "scanning",
+        total: totalFromCountRef.current ?? undefined,
+      });
     };
 
     try {

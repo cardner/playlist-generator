@@ -35,12 +35,61 @@ interface ScanProgressProps {
   found: number;
   scanned: number;
   currentFile?: string;
+  total?: number;
+  stage?: "counting" | "scanning";
   onPause?: () => void;
   onStop?: () => void;
 }
 
-export function ScanProgress({ found, scanned, currentFile, onPause, onStop }: ScanProgressProps) {
-  const percentage = found > 0 ? Math.round((scanned / found) * 100) : 0;
+export function ScanProgress({ found, scanned, currentFile, total, stage, onPause, onStop }: ScanProgressProps) {
+  const denominator = total ?? found;
+  const percentage = denominator > 0 ? Math.round((scanned / denominator) * 100) : 0;
+
+  if (stage === "counting") {
+    return (
+      <div className="">
+        <div className="bg-app-surface rounded-sm border border-app-border p-8 md:p-12">
+          <div className="text-center">
+            <p className="text-app-tertiary text-xs uppercase tracking-wider mb-2">
+              Step 1 of 3
+            </p>
+            <div className="flex items-center justify-center gap-3 text-accent-primary mb-6">
+              <Loader2 className="size-6 animate-spin" />
+              <span className="uppercase tracking-wider text-lg font-medium">Preparing Scan...</span>
+            </div>
+
+            <div className="max-w-md mx-auto space-y-4">
+              <p className="text-app-secondary text-sm">
+                Calculating the total number of tracks in the collection directory.
+              </p>
+              {(onPause || onStop) && (
+                <div className="pt-4 border-t border-app-border flex items-center justify-center gap-2">
+                  {onPause && (
+                    <button
+                      type="button"
+                      onClick={onPause}
+                      className="px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border text-xs uppercase tracking-wider"
+                    >
+                      Pause
+                    </button>
+                  )}
+                  {onStop && (
+                    <button
+                      type="button"
+                      onClick={onStop}
+                      className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-sm border border-red-500/20 text-xs uppercase tracking-wider"
+                    >
+                      Stop
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="">
@@ -64,7 +113,7 @@ export function ScanProgress({ found, scanned, currentFile, onPause, onStop }: S
               </div>
               <div className="flex justify-between items-center mt-2">
                 <p className="text-app-secondary text-sm">
-                  <span className="font-medium text-app-primary">{scanned}</span> of <span className="font-medium text-app-primary">{found}</span> files scanned
+                  <span className="font-medium text-app-primary">{scanned}</span> of <span className="font-medium text-app-primary">{denominator}</span> files scanned
                 </p>
                 <p className="text-app-tertiary text-sm tabular-nums">
                   {percentage}%
