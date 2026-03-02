@@ -23,6 +23,7 @@ export function Footer() {
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 text-app-secondary hover:text-accent-primary underline underline-offset-2 transition-colors"
             aria-label="Source on GitHub"
+            data-icon="github"
           >
             <Github size={14} aria-hidden />
             Source on GitHub

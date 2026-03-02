@@ -48,8 +48,8 @@ export function PlaylistTabs({ activeTab, onTabChange }: PlaylistTabsProps) {
       value={activeTab}
       onValueChange={(v) => onTabChange(v as "library" | "discovery")}
       items={[
-        { value: "library", label: "From Library", icon: <Music className="size-4" /> },
-        { value: "discovery", label: "Discover New Music", icon: <Sparkles className="size-4" /> },
+        { value: "library", label: "From Library", icon: <Music className="size-4" />, dataIcon: "music" },
+        { value: "discovery", label: "Discover New Music", icon: <Sparkles className="size-4" />, dataIcon: "sparkles" },
       ]}
     />
   );

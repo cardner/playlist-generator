@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 export interface TabsProps {
   value: string;
   onValueChange: (value: string) => void;
-  items: Array<{ value: string; label: React.ReactNode; icon?: React.ReactNode }>;
+  items: Array<{ value: string; label: React.ReactNode; icon?: React.ReactNode; dataIcon?: string }>;
   className?: string;
 }
 
@@ -23,6 +23,7 @@ export function Tabs({ value, onValueChange, items, className }: TabsProps) {
           <RadixTabs.Trigger
             key={item.value}
             value={item.value}
+            data-icon={item.dataIcon}
             className={cn(
               "px-4 py-2 flex items-center gap-2 transition-colors relative",
               "data-[state=active]:text-accent-primary data-[state=inactive]:text-app-secondary data-[state=inactive]:hover:text-app-primary",

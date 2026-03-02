@@ -41,11 +41,11 @@ import { Logo } from "./Logo";
 import { InstallPromptButton } from "./InstallPromptButton";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Home", Icon: Home },
-  { href: "/library", label: "Library", Icon: Library },
-  { href: "/device-sync", label: "Device Sync", Icon: Smartphone },
-  { href: "/playlists/new", label: "New Playlist", Icon: ListMusic },
-  { href: "/playlists/saved", label: "Saved Playlists", Icon: ListMusic },
+  { href: "/", label: "Home", Icon: Home, dataIcon: "home" },
+  { href: "/library", label: "Library", Icon: Library, dataIcon: "library" },
+  { href: "/device-sync", label: "Device Sync", Icon: Smartphone, dataIcon: "smartphone" },
+  { href: "/playlists/new", label: "New Playlist", Icon: ListMusic, dataIcon: "list-music" },
+  { href: "/playlists/saved", label: "Saved Playlists", Icon: ListMusic, dataIcon: "list-music" },
 ];
 
 /**
@@ -118,6 +118,7 @@ export function Navigation() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  data-icon={item.dataIcon}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                     isActive
                       ? "bg-app-hover text-app-primary"
@@ -144,6 +145,7 @@ export function Navigation() {
               onClick={toggleMobileMenu}
               aria-label="Toggle mobile menu"
               aria-expanded={isMobileMenuOpen}
+              data-icon="menu"
             >
               <Menu className="size-6" />
             </button>
@@ -172,6 +174,7 @@ export function Navigation() {
                 onClick={closeMobileMenu}
                 className="p-2 text-app-primary hover:bg-app-hover rounded-sm transition-colors"
                 aria-label="Close mobile menu"
+                data-icon="close"
               >
                 <X className="size-6" />
               </button>
@@ -189,6 +192,7 @@ export function Navigation() {
                       key={item.href}
                       href={item.href}
                       onClick={closeMobileMenu}
+                      data-icon={item.dataIcon}
                       className={`flex items-center gap-3 px-6 py-4 rounded-lg text-lg font-medium transition-colors ${
                         isActive
                           ? "bg-app-hover text-app-primary"

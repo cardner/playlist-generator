@@ -44,6 +44,20 @@ const config: Config = {
       boxShadow: {
         "2xl": "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
       },
+      keyframes: {
+        "icon-bounce": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-3px)" },
+        },
+        "icon-pop": {
+          "0%, 100%": { transform: "scale(1)" },
+          "50%": { transform: "scale(1.12)" },
+        },
+      },
+      animation: {
+        "icon-bounce": "icon-bounce 0.4s ease-out",
+        "icon-pop": "icon-pop 0.35s ease-out",
+      },
     },
   },
   plugins: [],

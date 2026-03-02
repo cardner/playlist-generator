@@ -204,3 +204,44 @@ body {
   animation: scan-indeterminate 1.5s ease-in-out infinite;
 }
 
+/* Icon hover animations: singular-element, icon-specific.
+   All rules are inside @media (prefers-reduced-motion: no-preference) so animations
+   are disabled when the user prefers reduced motion (accessibility). */
+@keyframes icon-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes icon-pop {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-icon] svg path {
+    transition: transform 0.2s ease-out;
+  }
+  [data-icon]:hover svg path {
+    transform: scale(1.06);
+    transform-origin: center;
+  }
+  [data-icon] svg line {
+    transition: stroke-dashoffset 0.2s ease-out;
+  }
+  [data-icon="close"] svg line {
+    stroke-dasharray: 12;
+    stroke-dashoffset: 12;
+  }
+  [data-icon="close"]:hover svg line {
+    stroke-dashoffset: 0;
+  }
+
+  .theme-toggle__rays {
+    transition: transform 0.25s ease-out;
+  }
+  .theme-toggle:hover .theme-toggle__rays {
+    transform: rotate(5deg);
+    transform-origin: center;
+  }
+}
+

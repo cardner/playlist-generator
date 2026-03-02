@@ -56,6 +56,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { X } from "lucide-react";
+import { AudioLines } from "@/components/animate-ui";
 import type { LibraryRoot } from "@/lib/library-selection";
 import { ScanProgress } from "./ScanProgress";
 import { ScanResults } from "./ScanResults";
@@ -924,7 +925,7 @@ export function LibraryScanner({
         {isParsingMetadata && !metadataProgress && (
           <div className="bg-app-surface rounded-sm border border-app-border p-6">
             <div className="flex items-center gap-3 mb-4">
-              <div className="animate-spin rounded-full h-6 w-6 border-2 border-accent-primary border-t-transparent" />
+              <AudioLines size={24} loop className="size-6 text-accent-primary" />
               <h3 className="text-app-primary uppercase tracking-wider text-xs">Processing Files...</h3>
             </div>
             <p className="text-app-secondary text-sm">
@@ -1084,7 +1085,7 @@ export function LibraryScanner({
       <div className="">
         <div className="bg-app-surface rounded-sm border border-app-border p-6">
           <div className="flex items-center gap-3">
-            <div className="animate-spin rounded-full h-5 w-5 border-2 border-accent-primary border-t-transparent" />
+            <AudioLines size={20} loop className="size-5 text-accent-primary" />
             <p className="text-app-secondary text-sm">Loading library information...</p>
           </div>
         </div>

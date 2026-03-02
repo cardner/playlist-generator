@@ -36,10 +36,13 @@ export function Button({
   disabled,
   ...props
 }: ButtonProps) {
+  const hasIcon = Boolean(leftIcon || rightIcon);
+
   return (
     <button
       type="button"
       disabled={disabled}
+      data-icon={hasIcon ? "button-icon" : undefined}
       className={cn(
         "inline-flex items-center justify-center gap-2 rounded-sm transition-colors focus:outline-none focus:ring-2 focus:ring-accent-primary focus:ring-offset-2 focus:ring-offset-app-bg",
         variantStyles[variant],
