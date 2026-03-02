@@ -6,7 +6,7 @@ const variantStyles = {
   warning: "bg-yellow-500/10 border-yellow-500/20 text-yellow-500",
   error: "bg-red-500/10 border-red-500/20 text-red-500",
   success: "bg-green-500/10 border-green-500/20 text-green-500",
-  info: "bg-blue-500/10 border-blue-500/20 text-blue-500",
+  info: "bg-info-blue-400/10 border-info-blue-400/20 text-info-blue-400",
 } as const;
 
 export interface AlertProps extends React.HTMLAttributes<HTMLDivElement> {

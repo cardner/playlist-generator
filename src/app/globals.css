@@ -7,6 +7,14 @@
   --background: #ffffff;
   --foreground: oklch(0.145 0 0);
   --radius: 0.625rem;
+  /* Info blue palette (base #4FB3EA) – metadata/info banners, alerts, badges */
+  --info-blue-50: #e8f6fc;
+  --info-blue-100: #c5e9f8;
+  --info-blue-200: #9dd9f4;
+  --info-blue-300: #6fc4ef;
+  --info-blue-400: #4fb3ea;
+  --info-blue-500: #3a9fd6;
+  --info-blue-600: #2b8bc4;
 }
 
 .dark {
@@ -27,6 +35,8 @@
   --accent-primary: #e91e63;
   --accent-secondary: #c2185b;
   --accent-hover: #f06292;
+  --accent-tertiary: #AB47BC;
+  --accent-tertiary-hover: #BA68C8;
   /* Table theme */
   --table-wrap-bg: var(--app-surface);
   --table-wrap-border: var(--app-border);
@@ -52,6 +62,8 @@
   --accent-primary: #e91e63;
   --accent-secondary: #c2185b;
   --accent-hover: #f06292;
+  --accent-tertiary: #AB47BC;
+  --accent-tertiary-hover: #BA68C8;
   /* Table theme */
   --table-wrap-bg: var(--app-surface);
   --table-wrap-border: var(--app-border);
@@ -78,6 +90,8 @@
   --accent-primary: #e91e63;
   --accent-secondary: #c2185b;
   --accent-hover: #f06292;
+  --accent-tertiary: #AB47BC;
+  --accent-tertiary-hover: #BA68C8;
   /* Table theme */
   --table-wrap-bg: var(--app-surface);
   --table-wrap-border: var(--app-border);

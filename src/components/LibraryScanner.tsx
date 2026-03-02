@@ -68,6 +68,12 @@ import { getResumableScans } from "@/db/storage-scan-checkpoints";
 import { getInterruptedProcessingCheckpoints } from "@/db/storage-processing-checkpoints";
 import { getInterruptedWritebackCheckpoints } from "@/db/storage-writeback-checkpoints";
 import { logger } from "@/lib/logger";
+import {
+  getDismissed,
+  setDismissedScan,
+  setDismissedProcessing,
+  setDismissedWriteback,
+} from "@/lib/dismissed-interruption-storage";
 import { useBackgroundLibraryTasks } from "./BackgroundLibraryTasksProvider";
 
 interface LibraryScannerProps {
@@ -109,6 +115,7 @@ export function LibraryScanner({
     libraryRootId: string;
     lastWrittenPath?: string;
   } | null>(null);
+  const [lastScanType, setLastScanType] = useState<"full" | "quick">("full");
   const [dismissedInterruptedScanRunId, setDismissedInterruptedScanRunId] = useState<string | null>(null);
   const [dismissedProcessingCheckpointKey, setDismissedProcessingCheckpointKey] = useState<string | null>(null);
   const [dismissedWritebackCheckpointKey, setDismissedWritebackCheckpointKey] = useState<string | null>(null);
@@ -152,6 +159,7 @@ export function LibraryScanner({
     handleScan: handleScanInternal,
     handleResumeScan,
     handleRescan,
+    handleQuickScan: handleQuickScanInternal,
     clearError: clearScanError,
     clearScanResult,
     cancelReconnectionMonitoring,
@@ -225,7 +233,11 @@ export function LibraryScanner({
               </h3>
               <button
                 type="button"
-                onClick={() => setDismissedProcessingCheckpointKey(processingKey)}
+                onClick={() => {
+                  setDismissedProcessingCheckpointKey(processingKey);
+                  const rootId = getRootId(libraryRoot);
+                  if (rootId) setDismissedProcessing(rootId, processingKey);
+                }}
                 className="p-1 rounded text-yellow-600 hover:bg-yellow-100 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-1"
                 aria-label="Dismiss"
               >
@@ -277,15 +289,15 @@ export function LibraryScanner({
       unprocessedCount !== null && unprocessedCount > 0;
 
     return (
-      <div className="bg-blue-500/10 border border-blue-500/20 rounded-sm p-4">
+      <div className="bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm p-4">
         <div className="flex items-start gap-3">
-          <div className="size-8 bg-blue-500/20 rounded-sm flex items-center justify-center shrink-0">
-            <svg className="size-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="size-8 bg-info-blue-400/20 rounded-sm flex items-center justify-center shrink-0">
+            <svg className="size-4 text-info-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2" />
             </svg>
           </div>
           <div className="flex-1">
-            <h3 className="text-blue-500 font-medium mb-1">
+            <h3 className="text-info-blue-400 font-medium mb-1">
               {hasUnprocessed ? "Tracks Pending Processing" : "Metadata Processing"}
             </h3>
             {hasUnprocessed ? (
@@ -310,7 +322,7 @@ export function LibraryScanner({
                     );
                   }}
                   disabled={isParsingMetadata}
-                  className="px-3 py-2 bg-blue-500 text-white rounded-sm text-xs uppercase tracking-wider hover:bg-blue-400 transition-colors disabled:opacity-50"
+                  className="px-3 py-2 bg-info-blue-500 text-white rounded-sm text-xs uppercase tracking-wider hover:bg-info-blue-400 transition-colors disabled:opacity-50"
                 >
                   Process Pending Tracks
                 </button>
@@ -366,7 +378,11 @@ export function LibraryScanner({
               </h3>
               <button
                 type="button"
-                onClick={() => setDismissedWritebackCheckpointKey(writebackKey)}
+                onClick={() => {
+                setDismissedWritebackCheckpointKey(writebackKey);
+                const rootId = getRootId(libraryRoot);
+                if (rootId) setDismissedWriteback(rootId, writebackKey);
+              }}
                 className="p-1 rounded text-yellow-600 hover:bg-yellow-100 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-1"
                 aria-label="Dismiss"
               >
@@ -410,17 +426,25 @@ export function LibraryScanner({
     clearMetadataResults();
     clearParseError();
     setAutoProcessEnabled(true);
+    setLastScanType("full");
     await handleScanInternal();
-    // Metadata parsing will be triggered automatically by useEffect below
-    // when scanResult becomes available
   }, [clearMetadataResults, clearParseError, handleScanInternal]);
 
   const handleRescanWithReset = useCallback(async () => {
     clearMetadataResults();
     clearParseError();
     setAutoProcessEnabled(true);
+    setLastScanType("full");
     await handleRescan();
   }, [clearMetadataResults, clearParseError, handleRescan]);
+
+  const handleQuickScan = useCallback(async () => {
+    clearMetadataResults();
+    clearParseError();
+    setAutoProcessEnabled(true);
+    setLastScanType("quick");
+    await handleQuickScanInternal();
+  }, [clearMetadataResults, clearParseError, handleQuickScanInternal]);
 
   const handleManualResumeScan = useCallback(
     async (resumeScanRunId: string) => {
@@ -582,9 +606,6 @@ export function LibraryScanner({
         setCurrentRootId(rootId);
         setHasCheckedResumable(false);
         setAutoProcessEnabled(false);
-        setDismissedInterruptedScanRunId(null);
-        setDismissedProcessingCheckpointKey(null);
-        setDismissedWritebackCheckpointKey(null);
         // If this is a new root (not initial mount), mark as new selection
         if (libraryRoot && !isInitialMount) {
           onNewSelection?.();
@@ -605,6 +626,21 @@ export function LibraryScanner({
     clearParseError,
     clearMetadataResults,
   ]);
+
+  // Rehydrate dismissed banner state from localStorage when library root is set; clear when root is cleared
+  useEffect(() => {
+    const rootId = getRootId(libraryRoot);
+    if (rootId) {
+      const d = getDismissed(rootId);
+      setDismissedInterruptedScanRunId(d.scanRunId);
+      setDismissedProcessingCheckpointKey(d.processingKey);
+      setDismissedWritebackCheckpointKey(d.writebackKey);
+    } else {
+      setDismissedInterruptedScanRunId(null);
+      setDismissedProcessingCheckpointKey(null);
+      setDismissedWritebackCheckpointKey(null);
+    }
+  }, [libraryRoot]);
 
   useEffect(() => {
     const updateProcessingStatus = async () => {
@@ -698,7 +734,11 @@ export function LibraryScanner({
             lastScannedPath={interruptedScanRunId ? null : detectedResumableLastPath}
             onCancelAutoResume={cancelReconnectionMonitoring}
             onManualResume={handleManualResumeScan}
-            onDismiss={() => setDismissedInterruptedScanRunId(effectiveScanRunId)}
+            onDismiss={() => {
+              setDismissedInterruptedScanRunId(effectiveScanRunId);
+              const rootId = getRootId(libraryRoot);
+              if (rootId) setDismissedScan(rootId, effectiveScanRunId);
+            }}
           />
         )}
         {renderProcessingResumeBanner()}
@@ -813,7 +853,11 @@ export function LibraryScanner({
             lastScannedPath={null}
             onCancelAutoResume={cancelReconnectionMonitoring}
             onManualResume={handleManualResumeScan}
-            onDismiss={() => setDismissedInterruptedScanRunId(interruptedScanRunId)}
+            onDismiss={() => {
+            setDismissedInterruptedScanRunId(interruptedScanRunId);
+            const rootId = getRootId(libraryRoot);
+            if (rootId) setDismissedScan(rootId, interruptedScanRunId);
+          }}
           />
         )}
         {renderProcessingResumeBanner()}
@@ -834,7 +878,7 @@ export function LibraryScanner({
                 <div className="px-3 py-1 bg-green-500/10 text-green-500 rounded-sm text-xs font-medium uppercase tracking-wider">
                   Ready
                 </div>
-                <div className="px-3 py-1 bg-blue-500/10 text-blue-500 rounded-sm text-xs font-medium uppercase tracking-wider">
+                <div className="px-3 py-1 bg-info-blue-400/10 text-info-blue-400 rounded-sm text-xs font-medium uppercase tracking-wider">
                   Saved
                 </div>
               </div>
@@ -873,7 +917,7 @@ export function LibraryScanner({
           </div>
         ) : null}
 
-        <ScanResults result={scanResult} onRescan={handleRescanWithReset} />
+        <ScanResults result={scanResult} onRescan={handleRescanWithReset} scanType={lastScanType} />
         
         {/* Metadata parsing progress is shown via MetadataProgress component above */}
         {/* This section is kept for when parsing completes but results aren't ready yet */}
@@ -910,10 +954,18 @@ export function LibraryScanner({
                     Create Playlist
                   </a>
                   <button
-                    onClick={handleRescanWithReset}
-                    className="px-4 py-2 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm border border-app-border"
+                    onClick={handleQuickScan}
+                    disabled={isScanning}
+                    className="px-3 py-1.5 bg-accent-info/10 hover:bg-accent-info/20 text-accent-info rounded-sm transition-colors text-xs border border-accent-info/20 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider"
                   >
-                    Rescan Library
+                    Update Scan
+                  </button>
+                  <button
+                    onClick={handleRescanWithReset}
+                    disabled={isScanning}
+                    className="px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-xs border border-app-border disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider"
+                  >
+                    Full Rescan
                   </button>
                 </div>
               </div>
@@ -954,7 +1006,11 @@ export function LibraryScanner({
                 lastScannedPath={interruptedScanRunId ? null : detectedResumableLastPath}
                 onCancelAutoResume={cancelReconnectionMonitoring}
                 onManualResume={handleManualResumeScan}
-                onDismiss={() => setDismissedInterruptedScanRunId(effectiveScanRunId)}
+                onDismiss={() => {
+                  setDismissedInterruptedScanRunId(effectiveScanRunId);
+                  const rootId = getRootId(libraryRoot);
+                  if (rootId) setDismissedScan(rootId, effectiveScanRunId);
+                }}
               />
             ) : null;
           })()}
@@ -980,11 +1036,19 @@ export function LibraryScanner({
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <button
+                    onClick={handleQuickScan}
+                    disabled={isScanning || hasExistingScans === null}
+                    className="px-3 py-1.5 bg-accent-info/10 hover:bg-accent-info/20 text-accent-info rounded-sm border border-accent-info/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
+                    title="Check for new or removed files without re-hashing"
+                  >
+                    Update Scan
+                  </button>
+                  <button
                     onClick={handleRescanWithReset}
                     disabled={isScanning || hasExistingScans === null}
-                    className="px-6 py-3 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
+                    className="px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
                   >
-                    Rescan Library
+                    Full Rescan
                   </button>
                   <button
                     onClick={() => {
@@ -1001,7 +1065,7 @@ export function LibraryScanner({
                       !libraryRoot ||
                       libraryRoot.mode !== "handle"
                     }
-                    className="px-6 py-3 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
+                    className="px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider text-xs"
                   >
                     Re-process metadata
                   </button>
@@ -1043,7 +1107,11 @@ export function LibraryScanner({
                 lastScannedPath={interruptedScanRunId ? null : detectedResumableLastPath}
                 onCancelAutoResume={cancelReconnectionMonitoring}
                 onManualResume={handleManualResumeScan}
-                onDismiss={() => setDismissedInterruptedScanRunId(effectiveScanRunId)}
+                onDismiss={() => {
+                  setDismissedInterruptedScanRunId(effectiveScanRunId);
+                  const rootId = getRootId(libraryRoot);
+                  if (rootId) setDismissedScan(rootId, effectiveScanRunId);
+                }}
               />
             ) : null;
           })()}

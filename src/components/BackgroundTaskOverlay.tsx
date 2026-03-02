@@ -60,11 +60,13 @@ export function BackgroundTaskOverlay() {
                 <div className="text-app-primary font-medium">Scanning library</div>
                 <div className="mt-1 flex items-center justify-between gap-3">
                   <span>
-                    {scanProgress
-                      ? `${scanProgress.scanned}/${scanProgress.found} files`
-                      : "Starting..."}
+                    {scanProgress?.stage === "counting"
+                      ? "Counting tracks\u2026"
+                      : scanProgress
+                        ? `${scanProgress.scanned}/${scanProgress.total ?? scanProgress.found} files`
+                        : "Starting..."}
                   </span>
-                  {scanProgress?.currentFile && (
+                  {scanProgress?.currentFile && scanProgress.stage !== "counting" && (
                     <span className="text-app-tertiary truncate max-w-[140px]">
                       {scanProgress.currentFile}
                     </span>

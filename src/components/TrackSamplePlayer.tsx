@@ -165,7 +165,7 @@ export function TrackSamplePlayer({
    */
   const getPlatformBadge = () => {
     return (
-      <span className={cn("px-2 py-0.5 rounded-sm text-xs font-medium", "bg-blue-500/10 text-blue-500")}>
+      <span className={cn("px-2 py-0.5 rounded-sm text-xs font-medium", "bg-info-blue-400/10 text-info-blue-400")}>
         Apple Music
       </span>
     );

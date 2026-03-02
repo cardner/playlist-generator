@@ -20,6 +20,7 @@ export type {
 export {
   pickLibraryRootWithFSAPI,
   getLibraryFilesWithFSAPI,
+  countLibraryFilesWithFSAPI,
   storeDirectoryHandle,
   getDirectoryHandle,
 } from "./library-selection-fs-api";

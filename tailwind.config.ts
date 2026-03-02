@@ -24,6 +24,19 @@ const config: Config = {
         "accent-primary": "var(--accent-primary)",
         "accent-secondary": "var(--accent-secondary)",
         "accent-hover": "var(--accent-hover)",
+        /* Tertiary accent purple – RGB with <alpha-value> so opacity modifiers work */
+        "accent-tertiary": "rgb(171 71 188 / <alpha-value>)",
+        "accent-tertiary-hover": "rgb(186 104 200 / <alpha-value>)",
+        /* Info blue palette (base #4FB3EA) – RGB with <alpha-value> so opacity modifiers work */
+        "info-blue": {
+          50: "rgb(232 246 252 / <alpha-value>)",
+          100: "rgb(197 233 248 / <alpha-value>)",
+          200: "rgb(157 217 244 / <alpha-value>)",
+          300: "rgb(111 196 239 / <alpha-value>)",
+          400: "rgb(79 179 234 / <alpha-value>)",
+          500: "rgb(58 159 214 / <alpha-value>)",
+          600: "rgb(43 139 196 / <alpha-value>)",
+        },
       },
       borderRadius: {
         sm: "calc(var(--radius) - 4px)",

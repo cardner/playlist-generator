@@ -8,8 +8,11 @@ import type { LibraryRoot, LibraryFile } from "@/lib/library-selection";
 import {
   getLibraryFiles,
   getLibraryFilesFromFileList,
+  countLibraryFilesWithFSAPI,
 } from "@/lib/library-selection";
+import { getFileExtension } from "@/lib/library-selection-utils";
 import { hashFileContent, hashFullFileContent } from "@/lib/file-hash";
+import { getFileIndexCount } from "@/db/storage-file-index";
 import { logger } from "@/lib/logger";
 
 /**
@@ -154,6 +157,42 @@ export function generateTrackFileId(
  */
 export function isSupportedExtension(extension: string): boolean {
   return SUPPORTED_EXTENSIONS.includes(extension as SupportedExtension);
+}
+
+/**
+ * Fast count of supported audio files in a library root.
+ * Uses a names-only directory traversal (no getFile() calls) for speed.
+ *
+ * @param root Library root to count files in (handle mode only)
+ * @param options Optional signal and extension filter
+ * @returns Total number of supported audio files
+ */
+export async function countLibraryFiles(
+  root: LibraryRoot,
+  options?: {
+    isSupportedExtension?: (name: string) => boolean;
+    signal?: AbortSignal;
+  }
+): Promise<number> {
+  const filter =
+    options?.isSupportedExtension ??
+    ((name: string) => isSupportedExtension(getFileExtension(name)));
+
+  return countLibraryFilesWithFSAPI(root, {
+    signal: options?.signal,
+    isSupportedExtension: filter,
+  });
+}
+
+/**
+ * Return the number of indexed files from a previous scan, or null if none
+ * exist yet. Uses an efficient indexed count on the Dexie `fileIndex` table.
+ */
+export async function getCachedFileCount(
+  libraryRootId: string
+): Promise<number | null> {
+  const count = await getFileIndexCount(libraryRootId);
+  return count > 0 ? count : null;
 }
 
 /**
@@ -565,6 +604,94 @@ export async function scanLibraryFromFileList(
     entries: Array.from(nextIndex.values()),
     diff,
   };
+}
+
+/**
+ * Build file index using path-only comparison (no hashing).
+ *
+ * Walks the directory tree and compares each discovered file against a previous
+ * index by trackFileId. Existing entries are carried forward unchanged (preserving
+ * hashes); new files are added without hashes; missing files are reported as removed.
+ * The `changed` diff is always empty because this mode does not inspect file contents.
+ *
+ * @param root Library root (must be handle mode)
+ * @param prevIndex Previous file index to compare against
+ * @param checkpoint Optional checkpoint for resuming
+ * @param signal Optional abort signal
+ * @returns New index and diff
+ */
+export async function buildFileIndexUpdateOnly(
+  root: LibraryRoot,
+  prevIndex: FileIndex,
+  checkpoint?: ScanCheckpoint,
+  signal?: AbortSignal
+): Promise<{ index: FileIndex; diff: FileIndexDiff }> {
+  if (root.mode !== "handle") {
+    throw new Error("Update scan requires handle mode");
+  }
+  if (signal?.aborted) {
+    throw new DOMException("Scan aborted", "AbortError");
+  }
+
+  const index = new Map<string, FileIndexEntry>();
+  const added: FileIndexEntry[] = [];
+  const seenIds = new Set<string>();
+  let currentIndex = checkpoint ? checkpoint.lastScannedIndex : -1;
+
+  for await (const libraryFile of getLibraryFiles(root)) {
+    if (signal?.aborted) {
+      throw new DOMException("Scan aborted", "AbortError");
+    }
+
+    currentIndex++;
+    if (checkpoint) {
+      checkpoint.lastScannedIndex = currentIndex;
+      checkpoint.lastScannedPath = libraryFile.relativePath ?? libraryFile.file.name;
+    }
+
+    if (!isSupportedExtension(libraryFile.extension)) {
+      continue;
+    }
+
+    const { trackFileId } = libraryFile;
+    seenIds.add(trackFileId);
+
+    const existing = prevIndex.get(trackFileId);
+    if (existing) {
+      index.set(trackFileId, existing);
+    } else {
+      const normalizedRelativePath = libraryFile.relativePath
+        ? normalizeRelativePath(libraryFile.relativePath)
+        : undefined;
+      const entry: FileIndexEntry = {
+        trackFileId,
+        relativePath: normalizedRelativePath,
+        name: libraryFile.file.name,
+        extension: libraryFile.extension,
+        size: libraryFile.size,
+        mtime: libraryFile.mtime,
+      };
+      index.set(trackFileId, entry);
+      added.push(entry);
+    }
+
+    if (checkpoint) {
+      checkpoint.scannedFileIds.add(trackFileId);
+    }
+
+    if (index.size % 100 === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  const removed: FileIndexEntry[] = [];
+  for (const [trackFileId, entry] of prevIndex) {
+    if (!seenIds.has(trackFileId)) {
+      removed.push(entry);
+    }
+  }
+
+  return { index, diff: { added, changed: [], removed } };
 }
 
 // ============================================================================

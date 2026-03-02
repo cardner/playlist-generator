@@ -1,6 +1,43 @@
 "use client";
 
 import { useEffect } from "react";
+import { queryTaskStatus } from "@/lib/sw-messaging";
+import { logger } from "@/lib/logger";
+
+/**
+ * Reconcile orphaned SW enhancement runs on startup.
+ * If a run is still "active" with no controlling client, transition to "paused"
+ * so the interrupted-scan banner can offer to resume it.
+ */
+async function reconcileOrphanedRuns(): Promise<void> {
+  try {
+    const { loadProcessingCheckpoint } = await import(
+      "@/db/storage-processing-checkpoints"
+    );
+    const { db } = await import("@/db/schema");
+    const scanRuns = await db.scanRuns?.toArray?.();
+    if (!scanRuns?.length) return;
+
+    for (const run of scanRuns) {
+      if (!run.id) continue;
+      try {
+        const checkpoint = await loadProcessingCheckpoint(run.id);
+        if (!checkpoint) continue;
+
+        const status = await queryTaskStatus(run.id);
+        if (status.status === "active") {
+          const { cancelEnhancementTasks } = await import("@/lib/sw-messaging");
+          cancelEnhancementTasks(run.id, "pause");
+          logger.info(`Paused orphaned SW enhancement run: ${run.id}`);
+        }
+      } catch {
+        // SW may not support the query yet; safe to ignore
+      }
+    }
+  } catch {
+    // Non-critical startup reconciliation
+  }
+}
 
 export function PwaRegister() {
   useEffect(() => {
@@ -24,6 +61,7 @@ export function PwaRegister() {
           }
         } else {
           sessionStorage.removeItem("sw-reload");
+          reconcileOrphanedRuns();
         }
       } catch (error) {
         console.warn("Service worker registration failed", error);
