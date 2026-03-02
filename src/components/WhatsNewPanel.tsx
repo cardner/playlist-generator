@@ -177,7 +177,7 @@ export function WhatsNewPanel({ markdown }: { markdown: string }) {
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        className="fixed bottom-6 left-6 z-40 flex items-center gap-1.5 px-3 py-2 rounded-full bg-accent-primary text-white shadow-lg hover:bg-accent-hover transition-colors"
+        className="fixed bottom-6 left-6 z-40 flex items-center gap-1.5 px-3 py-2 rounded-full bg-accent-tertiary text-white shadow-lg hover:bg-accent-tertiary-hover transition-colors"
         aria-label={isOpen ? "Close What's New panel" : "Open What's New panel"}
         aria-expanded={isOpen}
         aria-controls={PANEL_ID}
