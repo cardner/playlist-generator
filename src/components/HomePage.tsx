@@ -94,7 +94,7 @@ export function HomePage() {
             href="/library"
             className="group flex items-start gap-3 rounded-lg border border-app-border bg-app-surface p-4 transition-colors hover:border-app-hover hover:bg-app-surface-hover"
           >
-            <span className="rounded-md bg-accent-primary/15 p-2 text-accent-primary">
+            <span className="shrink-0 text-info-blue-400">
               <FolderOpen className="size-5" aria-hidden />
             </span>
             <div>
@@ -107,7 +107,7 @@ export function HomePage() {
             href="/library"
             className="group flex items-start gap-3 rounded-lg border border-app-border bg-app-surface p-4 transition-colors hover:border-app-hover hover:bg-app-surface-hover"
           >
-            <span className="rounded-md bg-accent-primary/15 p-2 text-accent-primary">
+            <span className="shrink-0 text-accent-tertiary">
               <RefreshCw className="size-5" aria-hidden />
             </span>
             <div>
@@ -271,21 +271,21 @@ export function HomePage() {
           <div className="grid gap-8 md:grid-cols-2">
             {/* Left: New music discovery + Device sync */}
             <div className="space-y-8">
-              <div className="rounded-lg border border-app-border bg-app-surface p-6">
+              <div className="rounded-lg border border-app-border bg-app-surface bg-accent-tertiary/5 p-6">
                 <h2 className="text-lg font-medium text-app-primary mb-3 flex items-center gap-2">
-                  <Compass className="size-5 text-accent-primary" aria-hidden />
+                  <Compass className="size-5 text-accent-tertiary" aria-hidden />
                   New music discovery
                 </h2>
                 <p className="text-app-secondary text-sm leading-relaxed mb-3">
                   When you create a playlist, enable <strong className="text-app-primary">Discovery</strong> to mix in tracks you don&apos;t own yet—suggestions come from MusicBrainz based on your chosen genres, artists, and mood. Discovery tracks appear in the playlist with a note that they&apos;re for finding new music; you can export or sync the rest of the playlist as usual.
                 </p>
-                <Link href="/playlists/new" className="inline-flex items-center gap-1 text-sm text-accent-primary hover:underline">
+                <Link href="/playlists/new" className="inline-flex items-center gap-1 text-sm text-accent-tertiary hover:underline">
                   Create a playlist with discovery <ArrowRight className="size-3.5" aria-hidden />
                 </Link>
               </div>
               <div className="rounded-lg border border-app-border bg-app-surface p-6">
                 <h2 className="text-lg font-medium text-app-primary mb-3 flex items-center gap-2">
-                  <Usb className="size-5 text-accent-primary" aria-hidden />
+                  <Usb className="size-5 text-info-blue-400" aria-hidden />
                   Device sync
                 </h2>
                 <p className="text-app-secondary text-sm leading-relaxed mb-3">
@@ -294,7 +294,7 @@ export function HomePage() {
                 <p className="text-app-tertiary text-xs leading-relaxed mb-3">
                   <strong className="text-app-secondary">iPod sync:</strong> Uses a WebAssembly build of libgpod (WASM, default) or an experimental TypeScript backend. If the device database is corrupted or you see parse errors, try the other backend in settings. Artwork sync is supported on compatible devices with the WASM build.
                 </p>
-                <Link href="/device-sync" className="inline-flex items-center gap-1 text-sm text-accent-primary hover:underline">
+                <Link href="/device-sync" className="inline-flex items-center gap-1 text-sm text-info-blue-400 hover:underline">
                   Open device sync <ArrowRight className="size-3.5" aria-hidden />
                 </Link>
               </div>

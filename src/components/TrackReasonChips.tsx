@@ -60,8 +60,8 @@ const REASON_ICONS = {
 };
 
 const REASON_COLORS = {
-  genre_match: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  tempo_match: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+  genre_match: "bg-info-blue-400/10 text-info-blue-400 border-info-blue-400/20",
+  tempo_match: "bg-accent-tertiary/10 text-accent-tertiary border-accent-tertiary/20",
   mood_match: "bg-rose-500/10 text-rose-500 border-rose-500/20",
   activity_match: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
   duration_fit: "bg-green-500/10 text-green-500 border-green-500/20",

@@ -289,15 +289,15 @@ export function LibraryScanner({
       unprocessedCount !== null && unprocessedCount > 0;
 
     return (
-      <div className="bg-blue-500/10 border border-blue-500/20 rounded-sm p-4">
+      <div className="bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm p-4">
         <div className="flex items-start gap-3">
-          <div className="size-8 bg-blue-500/20 rounded-sm flex items-center justify-center shrink-0">
-            <svg className="size-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="size-8 bg-info-blue-400/20 rounded-sm flex items-center justify-center shrink-0">
+            <svg className="size-4 text-info-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2" />
             </svg>
           </div>
           <div className="flex-1">
-            <h3 className="text-blue-500 font-medium mb-1">
+            <h3 className="text-info-blue-400 font-medium mb-1">
               {hasUnprocessed ? "Tracks Pending Processing" : "Metadata Processing"}
             </h3>
             {hasUnprocessed ? (
@@ -322,7 +322,7 @@ export function LibraryScanner({
                     );
                   }}
                   disabled={isParsingMetadata}
-                  className="px-3 py-2 bg-blue-500 text-white rounded-sm text-xs uppercase tracking-wider hover:bg-blue-400 transition-colors disabled:opacity-50"
+                  className="px-3 py-2 bg-info-blue-500 text-white rounded-sm text-xs uppercase tracking-wider hover:bg-info-blue-400 transition-colors disabled:opacity-50"
                 >
                   Process Pending Tracks
                 </button>
@@ -878,7 +878,7 @@ export function LibraryScanner({
                 <div className="px-3 py-1 bg-green-500/10 text-green-500 rounded-sm text-xs font-medium uppercase tracking-wider">
                   Ready
                 </div>
-                <div className="px-3 py-1 bg-blue-500/10 text-blue-500 rounded-sm text-xs font-medium uppercase tracking-wider">
+                <div className="px-3 py-1 bg-info-blue-400/10 text-info-blue-400 rounded-sm text-xs font-medium uppercase tracking-wider">
                   Saved
                 </div>
               </div>

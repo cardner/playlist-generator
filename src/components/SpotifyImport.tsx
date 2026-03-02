@@ -312,11 +312,11 @@ export function SpotifyImport({ onImportComplete, onClose }: SpotifyImportProps)
 
           <div className="space-y-4">
             {isUpdating && existingCollection && (
-              <div className="bg-blue-500/10 border border-blue-500/20 rounded-sm p-3 flex items-start gap-2">
-                <AlertCircle className="size-5 text-blue-500 shrink-0 mt-0.5" />
+              <div className="bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm p-3 flex items-start gap-2">
+                <AlertCircle className="size-5 text-info-blue-400 shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <p className="text-blue-500 text-sm font-medium mb-1">Updating Existing Collection</p>
-                  <p className="text-blue-500 text-sm">
+                  <p className="text-info-blue-400 text-sm font-medium mb-1">Updating Existing Collection</p>
+                  <p className="text-info-blue-400 text-sm">
                     Found existing collection &quot;{existingCollection.name}&quot;. It will be updated with new tracks.
                   </p>
                 </div>
