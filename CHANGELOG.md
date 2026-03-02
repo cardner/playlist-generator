@@ -61,6 +61,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.16.0] - 2026-03-02
+
+### Added
+
+- **ui**: add info-blue and tertiary purple accents, apply to banners and homepage
+- **sw**: add prewarm, API caching, cancel protocol, and scan telemetry
+- **library**: add count-first scan stage with cached total and parallel counting
+- **library**: add update scan with auto-processing of new files
+
+### Fixed
+
+- make banner dismissals permanent
+
+### Other Changes
+
+- Merge pull request #74 from cardner/improve-scanning-process
+
 ## [1.15.5] - 2026-02-28
 
 ### Other Changes
