@@ -77,6 +77,9 @@ interface DeviceSyncSidebarProps {
   onMirrorDeleteFromDeviceChange?: (value: boolean) => void;
   overwriteExistingPlaylistOnIpod?: boolean;
   onOverwriteExistingPlaylistOnIpodChange?: (value: boolean) => void;
+  /** Walkman/Generic: when true, copy missing tracks to device; when false (default), only write playlist and reference existing paths. */
+  transferMissingTracksToDevice?: boolean;
+  onTransferMissingTracksToDeviceChange?: (value: boolean) => void;
   showScanButton?: boolean;
   showExportButton?: boolean;
   supportsFileSystemAccess?: boolean;
@@ -145,6 +148,8 @@ export function DeviceSyncSidebar({
   onMirrorDeleteFromDeviceChange,
   overwriteExistingPlaylistOnIpod = false,
   onOverwriteExistingPlaylistOnIpodChange,
+  transferMissingTracksToDevice = false,
+  onTransferMissingTracksToDeviceChange,
   showScanButton = true,
   showExportButton = false,
   supportsFileSystemAccess = true,
@@ -318,6 +323,19 @@ export function DeviceSyncSidebar({
               />
               <span>Scan the device and map files to improve playlist path accuracy.</span>
             </label>
+            {(devicePreset === "walkman" || devicePreset === "generic") && (
+              <label className="flex items-start gap-2 text-app-primary text-xs mt-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={transferMissingTracksToDevice}
+                  onChange={(e) =>
+                    onTransferMissingTracksToDeviceChange?.(e.target.checked)
+                  }
+                  className="rounded border-app-border mt-0.5"
+                />
+                <span>Transfer missing tracks to device</span>
+              </label>
+            )}
             {devicePathDetection.enabled && (
               <>
                 <label className="flex items-start gap-2 text-app-primary text-xs mt-2 cursor-pointer">
@@ -388,20 +406,20 @@ export function DeviceSyncSidebar({
                     )}
                     {devicePathDetection.keyCoverageLog.keyMapSize === 0 &&
                       devicePathDetection.keyCoverageLog.scanned > 0 && (
-                        <p className="mt-1 text-[11px] text-yellow-500">
+                        <p className="mt-1 text-[11px] text-info-blue-500">
                           Device scan completed, but no library match keys were available.
                         </p>
                       )}
                   </div>
                 )}
                 {(devicePathDetection.missingMetadataCount ?? 0) > 0 && (
-                  <div className="mt-2 text-xs text-yellow-500">
+                  <div className="mt-2 text-xs text-info-blue-500">
                     {devicePathDetection.missingMetadataCount} track(s) missing metadata.{" "}
                     {devicePathDetection.onRescanLibrary && (
                       <button
                         type="button"
                         onClick={devicePathDetection.onRescanLibrary}
-                        className="underline hover:text-yellow-400"
+                        className="underline hover:text-info-blue-400"
                       >
                         Rescan library
                       </button>
@@ -429,7 +447,7 @@ export function DeviceSyncSidebar({
                               <button
                                 type="button"
                                 onClick={devicePathDetection.onRescanLibrary}
-                                className="text-yellow-500 underline hover:text-yellow-400"
+                                className="text-info-blue-500 underline hover:text-info-blue-400"
                               >
                                 Rescan library
                               </button>

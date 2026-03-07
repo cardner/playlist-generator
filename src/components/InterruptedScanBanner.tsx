@@ -56,11 +56,11 @@ export function InterruptedScanBanner({
   }
 
   return (
-    <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4 rounded">
+    <div className="bg-info-blue-50 border-l-4 border-info-blue-400 p-4 mb-4 rounded">
       <div className="flex items-start">
         <div className="flex-shrink-0">
           <svg
-            className="h-5 w-5 text-yellow-400"
+            className="h-5 w-5 text-info-blue-700"
             viewBox="0 0 20 20"
             fill="currentColor"
           >
@@ -73,21 +73,21 @@ export function InterruptedScanBanner({
         </div>
         <div className="ml-3 flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="text-sm font-medium text-yellow-800">
+            <h3 className="text-sm font-medium text-info-blue-700">
               Scan Interrupted
             </h3>
             {onDismiss && (
               <button
                 type="button"
                 onClick={onDismiss}
-                className="p-1 rounded text-yellow-600 hover:bg-yellow-100 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-1"
+                className="p-1 rounded text-info-blue-700 hover:bg-info-blue-100 focus:outline-none focus:ring-2 focus:ring-info-blue-600 focus:ring-offset-1"
                 aria-label="Dismiss"
               >
                 <X className="size-4" />
               </button>
             )}
           </div>
-          <div className="mt-2 text-sm text-yellow-700">
+          <div className="mt-2 text-sm text-info-blue-700">
             {isMonitoringReconnection ? (
               <>
                 <p>
@@ -99,7 +99,7 @@ export function InterruptedScanBanner({
                   <button
                     type="button"
                     onClick={onCancelAutoResume}
-                    className="inline-flex items-center px-3 py-1.5 border border-yellow-300 shadow-sm text-sm font-medium rounded text-yellow-800 bg-white hover:bg-yellow-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
+                    className="inline-flex items-center px-3 py-1.5 border border-info-blue-400 shadow-sm text-sm font-medium rounded text-info-blue-700 bg-white hover:bg-info-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-info-blue-600"
                   >
                     Cancel Auto-Resume
                   </button>
@@ -112,7 +112,7 @@ export function InterruptedScanBanner({
                   left off.
                 </p>
                 {lastScannedPath && (
-                  <p className="mt-2 text-xs text-yellow-700">
+                  <p className="mt-2 text-xs text-info-blue-700">
                     Last scanned: {lastScannedPath}
                   </p>
                 )}
@@ -120,7 +120,7 @@ export function InterruptedScanBanner({
                   <button
                     type="button"
                     onClick={() => onManualResume(interruptedScanRunId)}
-                    className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
+                    className="inline-flex items-center px-3 py-1.5 border border-transparent hover:border-white text-sm font-medium rounded text-white bg-info-blue-600 hover:bg-info-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-info-blue-600"
                   >
                     Resume Previous Scan
                   </button>

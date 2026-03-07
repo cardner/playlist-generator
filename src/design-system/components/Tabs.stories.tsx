@@ -10,8 +10,8 @@ function TabsWrapper({ initialValue = "library" }: { initialValue?: string }) {
       value={value}
       onValueChange={setValue}
       items={[
-        { value: "library", label: "From Library", icon: <Music className="size-4" /> },
-        { value: "discovery", label: "Discover", icon: <Sparkles className="size-4" /> },
+        { value: "library", label: "From Library", icon: <Music className="size-4" />, dataIcon: "music" },
+        { value: "discovery", label: "Discover", icon: <Sparkles className="size-4" />, dataIcon: "sparkles" },
       ]}
     />
   );

@@ -62,7 +62,8 @@ import { useAudioPreviewState } from "@/hooks/useAudioPreviewState";
 import { useMetadataWriteback } from "@/hooks/useMetadataWriteback";
 import { MAX_PLAY_ATTEMPTS } from "@/lib/audio-playback-config";
 import type { LibraryRoot } from "@/lib/library-selection";
-import { Music, Save, SearchCheck, Trash2 } from "lucide-react";
+import { Music, Save, SearchCheck } from "lucide-react";
+import { AnimateIcon, Trash2 } from "@/components/animate-ui";
 import { logger } from "@/lib/logger";
 import { LibraryBrowserTrackRow } from "./LibraryBrowserTrackRow";
 import { Card, Tabs } from "@/design-system/components";
@@ -940,7 +941,7 @@ export function LibraryBrowser({
                 aria-label="Clear library data"
                 title="Clear library data"
               >
-                <Trash2 className="size-4" />
+                <AnimateIcon animateOnHover><Trash2 size={16} className="size-4" /></AnimateIcon>
               </button>
             </div>
           </div>

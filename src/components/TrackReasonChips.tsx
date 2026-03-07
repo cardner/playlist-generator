@@ -17,7 +17,7 @@
  * - **duration_fit**: Duration fit (green)
  * - **diversity**: Artist/genre diversity (orange)
  * - **surprise**: Unexpected/variety tracks (pink)
- * - **constraint**: Constraint satisfaction (yellow)
+ * - **constraint**: Constraint satisfaction (info blue)
  * - **ordering**: Flow arc ordering (indigo)
  * 
  * Props:
@@ -67,7 +67,7 @@ const REASON_COLORS = {
   duration_fit: "bg-green-500/10 text-green-500 border-green-500/20",
   diversity: "bg-orange-500/10 text-orange-500 border-orange-500/20",
   surprise: "bg-pink-500/10 text-pink-500 border-pink-500/20",
-  constraint: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
+  constraint: "bg-info-blue-400/10 text-info-blue-500 border-info-blue-400/20",
   ordering: "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
   affinity: "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
 };

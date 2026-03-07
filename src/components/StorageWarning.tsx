@@ -40,7 +40,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { AlertTriangle, Database, Trash2, X } from "lucide-react";
+import { AlertTriangle, Database, X } from "lucide-react";
+import { AnimateIcon, Trash2 } from "@/components/animate-ui";
 import {
   getStorageQuotaInfo,
   formatStorageSize,
@@ -126,7 +127,7 @@ export function StorageWarning({ className, onDismiss }: StorageWarningProps) {
         "rounded-sm border p-4",
         isCritical
           ? "bg-red-500/10 border-red-500/20"
-          : "bg-yellow-500/10 border-yellow-500/20",
+          : "bg-info-blue-400/10 border-info-blue-400/20",
         className
       )}
     >
@@ -134,14 +135,14 @@ export function StorageWarning({ className, onDismiss }: StorageWarningProps) {
         <AlertTriangle
           className={cn(
             "size-5 shrink-0 mt-0.5",
-            isCritical ? "text-red-500" : "text-yellow-500"
+            isCritical ? "text-red-500" : "text-info-blue-500"
           )}
         />
         <div className="flex-1 min-w-0">
           <h3
             className={cn(
               "font-medium mb-1",
-              isCritical ? "text-red-500" : "text-yellow-500"
+              isCritical ? "text-red-500" : "text-info-blue-500"
             )}
           >
             {isCritical ? "Storage Almost Full" : "Storage Warning"}
@@ -149,7 +150,7 @@ export function StorageWarning({ className, onDismiss }: StorageWarningProps) {
           <p
             className={cn(
               "text-sm mb-3",
-              isCritical ? "text-red-500" : "text-yellow-500"
+              isCritical ? "text-red-500" : "text-info-blue-500"
             )}
           >
             Your storage is {quotaInfo.usagePercent.toFixed(1)}% full (
@@ -188,11 +189,11 @@ export function StorageWarning({ className, onDismiss }: StorageWarningProps) {
                 "inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-sm font-medium transition-colors",
                 isCritical
                   ? "bg-red-500/20 hover:bg-red-500/30 text-red-500"
-                  : "bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-500",
+                  : "bg-info-blue-400/20 hover:bg-info-blue-400/30 text-info-blue-500",
                 isCleaning && "opacity-50 cursor-not-allowed"
               )}
             >
-              <Trash2 className="size-4" />
+              <AnimateIcon animateOnHover><Trash2 size={16} className="size-4" /></AnimateIcon>
               {isCleaning ? "Cleaning..." : "Clean Up Old Data"}
             </button>
             <button

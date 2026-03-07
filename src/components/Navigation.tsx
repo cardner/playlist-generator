@@ -36,16 +36,17 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X, Home, Library, Smartphone, ListMusic } from "lucide-react";
+import { AnimateIcon } from "./animate-ui";
 import { ThemeToggle } from "./ThemeToggle";
 import { Logo } from "./Logo";
 import { InstallPromptButton } from "./InstallPromptButton";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Home", Icon: Home },
-  { href: "/library", label: "Library", Icon: Library },
-  { href: "/device-sync", label: "Device Sync", Icon: Smartphone },
-  { href: "/playlists/new", label: "New Playlist", Icon: ListMusic },
-  { href: "/playlists/saved", label: "Saved Playlists", Icon: ListMusic },
+  { href: "/", label: "Home", Icon: Home, dataIcon: "home" },
+  { href: "/library", label: "Library", Icon: Library, dataIcon: "library" },
+  { href: "/device-sync", label: "Device Sync", Icon: Smartphone, dataIcon: "smartphone" },
+  { href: "/playlists/new", label: "New Playlist", Icon: ListMusic, dataIcon: "list-music" },
+  { href: "/playlists/saved", label: "Saved Playlists", Icon: ListMusic, dataIcon: "list-music" },
 ];
 
 /**
@@ -118,13 +119,16 @@ export function Navigation() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  data-icon={item.dataIcon}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                     isActive
                       ? "bg-app-hover text-app-primary"
                       : "text-app-secondary hover:bg-app-hover hover:text-app-primary"
                   }`}
                 >
-                  <Icon className="size-4 shrink-0" aria-hidden />
+                  <AnimateIcon animateOnHover>
+                    <Icon className="size-4 shrink-0" aria-hidden />
+                  </AnimateIcon>
                   {item.label}
                 </Link>
                 );
@@ -144,8 +148,11 @@ export function Navigation() {
               onClick={toggleMobileMenu}
               aria-label="Toggle mobile menu"
               aria-expanded={isMobileMenuOpen}
+              data-icon="menu"
             >
-              <Menu className="size-6" />
+              <AnimateIcon animateOnHover>
+                <Menu className="size-6" />
+              </AnimateIcon>
             </button>
           </div>
         </div>
@@ -172,8 +179,11 @@ export function Navigation() {
                 onClick={closeMobileMenu}
                 className="p-2 text-app-primary hover:bg-app-hover rounded-sm transition-colors"
                 aria-label="Close mobile menu"
+                data-icon="close"
               >
-                <X className="size-6" />
+                <AnimateIcon animateOnHover>
+                  <X className="size-6" />
+                </AnimateIcon>
               </button>
             </div>
             
@@ -189,13 +199,16 @@ export function Navigation() {
                       key={item.href}
                       href={item.href}
                       onClick={closeMobileMenu}
+                      data-icon={item.dataIcon}
                       className={`flex items-center gap-3 px-6 py-4 rounded-lg text-lg font-medium transition-colors ${
                         isActive
                           ? "bg-app-hover text-app-primary"
                           : "text-app-secondary hover:bg-app-hover hover:text-app-primary"
                       }`}
                     >
-                      <Icon className="size-5 shrink-0" aria-hidden />
+                      <AnimateIcon animateOnHover>
+                        <Icon className="size-5 shrink-0" aria-hidden />
+                      </AnimateIcon>
                       {item.label}
                     </Link>
                   );

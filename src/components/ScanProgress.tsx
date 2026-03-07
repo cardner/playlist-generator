@@ -29,7 +29,7 @@
 
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { AudioLines } from "@/components/animate-ui";
 
 interface ScanProgressProps {
   found: number;
@@ -54,7 +54,7 @@ export function ScanProgress({ found, scanned, currentFile, total, stage, onPaus
               Step 1 of 3
             </p>
             <div className="flex items-center justify-center gap-3 text-accent-primary mb-6">
-              <Loader2 className="size-6 animate-spin" />
+              <AudioLines size={24} loop className="size-6" />
               <span className="uppercase tracking-wider text-lg font-medium">Preparing Scan...</span>
             </div>
 
@@ -99,7 +99,7 @@ export function ScanProgress({ found, scanned, currentFile, total, stage, onPaus
             Step 1 of 3
           </p>
           <div className="flex items-center justify-center gap-3 text-accent-primary mb-6">
-            <Loader2 className="size-6 animate-spin" />
+            <AudioLines size={24} loop className="size-6" />
             <span className="uppercase tracking-wider text-lg font-medium">Scanning Library...</span>
           </div>
 

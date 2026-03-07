@@ -29,6 +29,7 @@
 "use client";
 
 import { Music, Sparkles } from "lucide-react";
+import { AnimateIcon } from "./animate-ui";
 import { Tabs } from "@/design-system/components";
 
 interface PlaylistTabsProps {
@@ -48,8 +49,8 @@ export function PlaylistTabs({ activeTab, onTabChange }: PlaylistTabsProps) {
       value={activeTab}
       onValueChange={(v) => onTabChange(v as "library" | "discovery")}
       items={[
-        { value: "library", label: "From Library", icon: <Music className="size-4" /> },
-        { value: "discovery", label: "Discover New Music", icon: <Sparkles className="size-4" /> },
+        { value: "library", label: "From Library", icon: <AnimateIcon animateOnHover><Music className="size-4" /></AnimateIcon>, dataIcon: "music" },
+        { value: "discovery", label: "Discover New Music", icon: <AnimateIcon animateOnHover><Sparkles className="size-4" /></AnimateIcon>, dataIcon: "sparkles" },
       ]}
     />
   );

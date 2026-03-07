@@ -56,6 +56,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { X } from "lucide-react";
+import { AudioLines } from "@/components/animate-ui";
 import type { LibraryRoot } from "@/lib/library-selection";
 import { ScanProgress } from "./ScanProgress";
 import { ScanResults } from "./ScanResults";
@@ -211,11 +212,11 @@ export function LibraryScanner({
     }
 
     return (
-      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4 rounded">
+      <div className="bg-info-blue-50 border-l-4 border-info-blue-400 p-4 mb-4 rounded">
         <div className="flex items-start">
           <div className="flex-shrink-0">
             <svg
-              className="h-5 w-5 text-yellow-400"
+              className="h-5 w-5 text-info-blue-700"
               viewBox="0 0 20 20"
               fill="currentColor"
             >
@@ -228,7 +229,7 @@ export function LibraryScanner({
           </div>
           <div className="ml-3 flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
-              <h3 className="text-sm font-medium text-yellow-800">
+              <h3 className="text-sm font-medium text-info-blue-700">
                 Processing Interrupted
               </h3>
               <button
@@ -238,19 +239,19 @@ export function LibraryScanner({
                   const rootId = getRootId(libraryRoot);
                   if (rootId) setDismissedProcessing(rootId, processingKey);
                 }}
-                className="p-1 rounded text-yellow-600 hover:bg-yellow-100 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-1"
+                className="p-1 rounded text-info-blue-700 hover:bg-info-blue-100 focus:outline-none focus:ring-2 focus:ring-info-blue-600 focus:ring-offset-1"
                 aria-label="Dismiss"
               >
                 <X className="size-4" />
               </button>
             </div>
-            <div className="mt-2 text-sm text-yellow-700">
+            <div className="mt-2 text-sm text-info-blue-700">
               <p>
                 Metadata processing was interrupted. You can resume from where it
                 left off.
               </p>
               {processingCheckpoint.lastProcessedPath && (
-                <p className="mt-2 text-xs text-yellow-700">
+                <p className="mt-2 text-xs text-info-blue-700">
                   Last processed: {processingCheckpoint.lastProcessedPath}
                 </p>
               )}
@@ -264,7 +265,7 @@ export function LibraryScanner({
                       processingCheckpoint.scanRunId
                     )
                   }
-                  className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
+                  className="inline-flex items-center px-3 py-1.5 border border-transparent hover:border-white text-sm font-medium rounded text-white bg-info-blue-600 hover:bg-info-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-info-blue-600"
                 >
                   Resume Processing
                 </button>
@@ -356,11 +357,11 @@ export function LibraryScanner({
     }
 
     return (
-      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4 rounded">
+      <div className="bg-info-blue-50 border-l-4 border-info-blue-400 p-4 mb-4 rounded">
         <div className="flex items-start">
           <div className="flex-shrink-0">
             <svg
-              className="h-5 w-5 text-yellow-400"
+              className="h-5 w-5 text-info-blue-700"
               viewBox="0 0 20 20"
               fill="currentColor"
             >
@@ -373,7 +374,7 @@ export function LibraryScanner({
           </div>
           <div className="ml-3 flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
-              <h3 className="text-sm font-medium text-yellow-800">
+              <h3 className="text-sm font-medium text-info-blue-700">
                 Metadata Sync Interrupted
               </h3>
               <button
@@ -383,19 +384,19 @@ export function LibraryScanner({
                 const rootId = getRootId(libraryRoot);
                 if (rootId) setDismissedWriteback(rootId, writebackKey);
               }}
-                className="p-1 rounded text-yellow-600 hover:bg-yellow-100 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-1"
+                className="p-1 rounded text-info-blue-700 hover:bg-info-blue-100 focus:outline-none focus:ring-2 focus:ring-info-blue-600 focus:ring-offset-1"
                 aria-label="Dismiss"
               >
                 <X className="size-4" />
               </button>
             </div>
-            <div className="mt-2 text-sm text-yellow-700">
+            <div className="mt-2 text-sm text-info-blue-700">
               <p>
                 Metadata sync was interrupted. You can resume from where it
                 left off.
               </p>
               {writebackCheckpoint.lastWrittenPath && (
-                <p className="mt-2 text-xs text-yellow-700">
+                <p className="mt-2 text-xs text-info-blue-700">
                   Last synced: {writebackCheckpoint.lastWrittenPath}
                 </p>
               )}
@@ -409,7 +410,7 @@ export function LibraryScanner({
                       writebackCheckpoint.writebackRunId
                     )
                   }
-                  className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
+                  className="inline-flex items-center px-3 py-1.5 border border-transparent hover:border-white text-sm font-medium rounded text-white bg-info-blue-600 hover:bg-info-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-info-blue-600"
                 >
                   Resume Metadata Sync
                 </button>
@@ -753,8 +754,8 @@ export function LibraryScanner({
           </div>
           
           {permissionStatus === "prompt" && (
-            <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-sm">
-              <p className="text-yellow-500 text-sm">
+            <div className="p-4 bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm">
+              <p className="text-info-blue-500 text-sm">
                 Permission required to scan library. Please grant access to your selected folder.
               </p>
             </div>
@@ -924,7 +925,7 @@ export function LibraryScanner({
         {isParsingMetadata && !metadataProgress && (
           <div className="bg-app-surface rounded-sm border border-app-border p-6">
             <div className="flex items-center gap-3 mb-4">
-              <div className="animate-spin rounded-full h-6 w-6 border-2 border-accent-primary border-t-transparent" />
+              <AudioLines size={24} loop className="size-6 text-accent-primary" />
               <h3 className="text-app-primary uppercase tracking-wider text-xs">Processing Files...</h3>
             </div>
             <p className="text-app-secondary text-sm">
@@ -1084,7 +1085,7 @@ export function LibraryScanner({
       <div className="">
         <div className="bg-app-surface rounded-sm border border-app-border p-6">
           <div className="flex items-center gap-3">
-            <div className="animate-spin rounded-full h-5 w-5 border-2 border-accent-primary border-t-transparent" />
+            <AudioLines size={20} loop className="size-5 text-accent-primary" />
             <p className="text-app-secondary text-sm">Loading library information...</p>
           </div>
         </div>

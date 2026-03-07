@@ -141,10 +141,10 @@ export function SpotifyCollectionStats({ libraryRoot }: SpotifyCollectionStatsPr
         {/* Unlinked Tracks */}
         <div className="bg-app-hover rounded-sm p-3 border border-app-border">
           <div className="flex items-center gap-2 mb-1">
-            <Unlink className="size-4 text-yellow-500" />
+            <Unlink className="size-4 text-info-blue-500" />
             <div className="text-app-secondary text-xs uppercase tracking-wider">Unlinked</div>
           </div>
-          <div className="text-yellow-500 text-2xl font-semibold">{stats.unlinkedTracks}</div>
+          <div className="text-info-blue-500 text-2xl font-semibold">{stats.unlinkedTracks}</div>
           <div className="text-app-tertiary text-xs mt-1">
             {100 - matchRate}% need matching
           </div>
@@ -174,12 +174,12 @@ export function SpotifyCollectionStats({ libraryRoot }: SpotifyCollectionStatsPr
 
       {/* Suggestions */}
       {stats.unlinkedTracks > 0 && (
-        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-sm p-3 mt-4">
+        <div className="bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm p-3 mt-4">
           <div className="flex items-start gap-2">
-            <TrendingUp className="size-4 text-yellow-500 shrink-0 mt-0.5" />
+            <TrendingUp className="size-4 text-info-blue-500 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-yellow-500 text-sm font-medium mb-1">Improve Matching</p>
-              <p className="text-yellow-500 text-sm">
+              <p className="text-info-blue-500 text-sm font-medium mb-1">Improve Matching</p>
+              <p className="text-info-blue-500 text-sm">
                 {stats.unlinkedTracks} track{stats.unlinkedTracks !== 1 ? "s" : ""} don&apos;t have local file matches.
                 Consider scanning your local music library to enable matching.
               </p>

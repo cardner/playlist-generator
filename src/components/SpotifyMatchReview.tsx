@@ -123,7 +123,7 @@ export function SpotifyMatchReview({
           </div>
           <div>
             <div className="text-app-secondary text-xs mb-1">Fuzzy Matches</div>
-            <div className="text-yellow-500 font-medium">{stats.fuzzy}</div>
+            <div className="text-info-blue-500 font-medium">{stats.fuzzy}</div>
           </div>
           <div>
             <div className="text-app-secondary text-xs mb-1">No Match</div>
@@ -227,7 +227,7 @@ export function SpotifyMatchReview({
                               "text-xs px-2 py-0.5 rounded-sm",
                               match.matchType === "exact"
                                 ? "bg-green-500/20 text-green-500"
-                                : "bg-yellow-500/20 text-yellow-500"
+                                : "bg-info-blue-400/20 text-info-blue-500"
                             )}
                           >
                             {match.matchType === "exact" ? "Exact" : "Fuzzy"} ({confidence}%)

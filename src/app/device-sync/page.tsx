@@ -16,7 +16,8 @@ import { detectDevicePreset } from "@/features/devices/device-detect";
 import { getDirectoryHandle } from "@/lib/library-selection-fs-api";
 import { Button, Card, Popover } from "@/design-system/components";
 import { JellyfinIcon, WalkmanIcon } from "@/components/DevicePresetIcons";
-import { AlertCircle, ChevronDown, ChevronUp, Cpu, HardDrive, Loader2, Smartphone, Trash2, Usb } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronUp, Cpu, HardDrive, Loader2, Smartphone, Usb } from "lucide-react";
+import { AnimateIcon, Trash2 } from "@/components/animate-ui";
 import { logger } from "@/lib/logger";
 
 interface PlaylistWithCollection {
@@ -713,7 +714,7 @@ export default function DeviceSyncPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            leftIcon={<Trash2 className="size-4" />}
+                            leftIcon={<AnimateIcon animateOnHover><Trash2 size={16} className="size-4" /></AnimateIcon>}
                             onClick={() => handleDeleteDevice(selectedDeviceProfile)}
                             className="shrink-0 text-app-tertiary hover:text-red-500"
                             aria-label="Remove device"

@@ -42,7 +42,7 @@ export function ThemeToggle() {
     <button
       onClick={toggleTheme}
       className={cn(
-        "relative inline-flex items-center justify-center w-10 h-10 rounded-sm transition-colors focus:outline-none focus:ring-2 focus:ring-accent-primary focus:ring-offset-2 focus:ring-offset-app-bg hover:bg-app-hover",
+        "theme-toggle relative inline-flex items-center justify-center w-10 h-10 rounded-sm transition-colors focus:outline-none focus:ring-2 focus:ring-accent-primary focus:ring-offset-2 focus:ring-offset-app-bg hover:bg-app-hover",
         "text-app-primary"
       )}
       aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
@@ -59,6 +59,7 @@ export function ThemeToggle() {
       >
         {/* Rays */}
         <path
+          className="theme-toggle__rays"
           d="M12 2V4M12 20V22M22 12H20M4 12H2M19.07 4.93L17.66 6.34M6.34 17.66L4.93 19.07M19.07 19.07L17.66 17.66M6.34 6.34L4.93 4.93"
           stroke="currentColor"
           strokeWidth="1.5"

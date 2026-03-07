@@ -44,6 +44,7 @@
     "dexie": "^4.2.1",
     "jszip": "^3.10.1",
     "lucide-react": "^0.561.0",
+    "motion": "^12.34.3",
     "music-metadata": "^11.10.3",
     "next": "^15.0.0",
     "react": "^19.0.0",

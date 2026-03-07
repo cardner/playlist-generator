@@ -10,7 +10,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Download, Copy, Loader2, CheckCircle2, AlertCircle, Music, X } from "lucide-react";
+import { Copy, Loader2, CheckCircle2, AlertCircle, Music, X } from "lucide-react";
+import { AnimateIcon, Download } from "@/components/animate-ui";
 import type { GeneratedPlaylist } from "@/features/playlists";
 import type { TrackRecord } from "@/db/schema";
 import { exportPlaylistToSpotify } from "@/features/spotify-export/playlist-exporter";
@@ -157,7 +158,7 @@ export function SpotifyPlaylistExport({ playlist, libraryRootId }: SpotifyPlayli
           </div>
           <div>
             <div className="text-app-secondary text-xs mb-1">Without URIs</div>
-            <div className={cn("font-medium", exportData.tracksWithoutUris > 0 ? "text-yellow-500" : "text-app-tertiary")}>
+            <div className={cn("font-medium", exportData.tracksWithoutUris > 0 ? "text-info-blue-500" : "text-app-tertiary")}>
               {exportData.tracksWithoutUris}
             </div>
           </div>
@@ -172,11 +173,11 @@ export function SpotifyPlaylistExport({ playlist, libraryRootId }: SpotifyPlayli
 
       {/* Warning if no URIs */}
       {!hasUris && (
-        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-sm p-4 flex items-start gap-3">
-          <AlertCircle className="size-5 text-yellow-500 shrink-0 mt-0.5" />
+        <div className="bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm p-4 flex items-start gap-3">
+          <AlertCircle className="size-5 text-info-blue-500 shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-yellow-500 text-sm font-medium mb-1">No Spotify URIs Found</p>
-            <p className="text-yellow-500 text-sm">
+            <p className="text-info-blue-500 text-sm font-medium mb-1">No Spotify URIs Found</p>
+            <p className="text-info-blue-500 text-sm">
               None of the tracks in this playlist have Spotify URIs. To export to Spotify format,
               you need to import your Spotify library data first.
             </p>
@@ -186,11 +187,11 @@ export function SpotifyPlaylistExport({ playlist, libraryRootId }: SpotifyPlayli
 
       {/* Warning if some tracks missing URIs */}
       {hasUris && exportData.tracksWithoutUris > 0 && (
-        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-sm p-4 flex items-start gap-3">
-          <AlertCircle className="size-5 text-yellow-500 shrink-0 mt-0.5" />
+        <div className="bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm p-4 flex items-start gap-3">
+          <AlertCircle className="size-5 text-info-blue-500 shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-yellow-500 text-sm font-medium mb-1">Some Tracks Will Be Skipped</p>
-            <p className="text-yellow-500 text-sm">
+            <p className="text-info-blue-500 text-sm font-medium mb-1">Some Tracks Will Be Skipped</p>
+            <p className="text-info-blue-500 text-sm">
               {exportData.tracksWithoutUris} track{exportData.tracksWithoutUris !== 1 ? "s" : ""} don&apos;t have Spotify URIs
               and will be excluded from the export.
             </p>
@@ -245,7 +246,7 @@ export function SpotifyPlaylistExport({ playlist, libraryRootId }: SpotifyPlayli
               </>
             ) : (
               <>
-                <Download className="size-4" />
+                <AnimateIcon animateOnHover><Download size={16} className="size-4" /></AnimateIcon>
                 Download {selectedFormat.toUpperCase()}
               </>
             )}

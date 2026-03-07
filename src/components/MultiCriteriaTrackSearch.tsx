@@ -6,7 +6,8 @@ import { InlineAudioPlayer, type InlineAudioPlayerRef } from "./InlineAudioPlaye
 import { useAudioPreviewState } from "@/hooks/useAudioPreviewState";
 import { searchTrackSample } from "@/features/audio-preview/platform-searcher";
 import { MAX_PLAY_ATTEMPTS } from "@/lib/audio-playback-config";
-import { Play, Pause, Loader2, Plus } from "lucide-react";
+import { Loader2, Plus } from "lucide-react";
+import { AnimateIcon, Pause, Play } from "@/components/animate-ui";
 import { cn } from "@/lib/utils";
 
 interface MultiCriteriaTrackSearchProps {
@@ -288,9 +289,13 @@ export function MultiCriteriaTrackSearch({
               {searchingTrackId === track.trackFileId ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : playingTrackId === track.trackFileId ? (
-                <Pause className="size-4" />
+                <AnimateIcon animateOnHover>
+                  <Pause size={16} className="size-4" />
+                </AnimateIcon>
               ) : (
-                <Play className="size-4" />
+                <AnimateIcon animateOnHover>
+                  <Play size={16} className="size-4" />
+                </AnimateIcon>
               )}
             </button>
 

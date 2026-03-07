@@ -3,6 +3,7 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AnimateIcon } from "@/components/animate-ui";
 
 export interface DialogProps {
   open: boolean;
@@ -36,8 +37,11 @@ function DialogRoot({ open, onOpenChange, title, children }: DialogProps) {
               <button
                 className="p-1 hover:bg-app-hover rounded-sm transition-colors text-app-secondary hover:text-app-primary"
                 aria-label="Close"
+                data-icon="close"
               >
-                <X className="size-5" />
+                <AnimateIcon animateOnHover>
+                  <X className="size-5" />
+                </AnimateIcon>
               </button>
             </RadixDialog.Close>
           </div>

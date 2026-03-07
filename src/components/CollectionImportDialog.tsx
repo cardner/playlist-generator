@@ -95,11 +95,11 @@ export function CollectionImportDialog({
 
         {/* Conflict Warning */}
         {existingCollection && (
-          <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-sm">
+          <div className="mb-6 p-4 bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm">
             <div className="flex items-start gap-2 mb-3">
-              <AlertCircle className="size-5 text-yellow-500 shrink-0 mt-0.5" />
+              <AlertCircle className="size-5 text-info-blue-500 shrink-0 mt-0.5" />
               <div className="flex-1">
-                <h3 className="text-yellow-500 font-medium mb-1">Collection Name Conflict</h3>
+                <h3 className="text-info-blue-500 font-medium mb-1">Collection Name Conflict</h3>
                 <p className="text-app-secondary text-sm">
                   A collection named &quot;{existingCollection.name}&quot; already exists.
                 </p>

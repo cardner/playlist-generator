@@ -301,6 +301,8 @@ export function DeviceSyncPanel({
   const [collectionTracksPageSize, setCollectionTracksPageSize] = useState(50);
   const [mirrorDeleteFromDevice, setMirrorDeleteFromDevice] = useState(false);
   const [overwriteExistingPlaylistOnIpod, setOverwriteExistingPlaylistOnIpod] = useState(false);
+  /** When false (default), Walkman/Generic sync only writes playlist files and references existing device paths; when true, copies missing tracks to device. */
+  const [transferMissingTracksToDevice, setTransferMissingTracksToDevice] = useState(false);
   const [syncLibraryOnlyFromCollection, setSyncLibraryOnlyFromCollection] = useState(true);
   const [collectionContentTab, setCollectionContentTab] = useState<
     "tracks" | "albums" | "artists"
@@ -1832,7 +1834,7 @@ export function DeviceSyncPanel({
               deviceEntries: devicePathDetectionEnabled ? activeDeviceEntries : undefined,
               onlyIncludeMatchedPaths: devicePathDetectionEnabled && effectiveOnlyIncludeMatchedPaths,
               deviceMusicFolder:
-                (isWalkmanPreset || isGenericPreset) ? "MUSIC" : undefined,
+                (isWalkmanPreset || isGenericPreset) && transferMissingTracksToDevice ? "MUSIC" : undefined,
               onProgress: (p) =>
                 setSyncQueueStatus({
                   currentIndex: p.current,
@@ -2094,7 +2096,7 @@ export function DeviceSyncPanel({
           deviceEntries: devicePathDetectionEnabled ? activeDeviceEntries : undefined,
           onlyIncludeMatchedPaths: false,
           deviceMusicFolder:
-            isWalkmanPreset || isGenericPreset ? "MUSIC" : undefined,
+            (isWalkmanPreset || isGenericPreset) && transferMissingTracksToDevice ? "MUSIC" : undefined,
           onProgress: (p) =>
             setSyncQueueStatus({
               currentIndex: p.current,
@@ -2228,7 +2230,7 @@ export function DeviceSyncPanel({
           deviceEntries: devicePathDetectionEnabled ? activeDeviceEntries : undefined,
           onlyIncludeMatchedPaths: false,
           deviceMusicFolder:
-            isWalkmanPreset || isGenericPreset ? "MUSIC" : undefined,
+            (isWalkmanPreset || isGenericPreset) && transferMissingTracksToDevice ? "MUSIC" : undefined,
           onProgress: (p) =>
             setSyncQueueStatus({
               currentIndex: p.current,
@@ -3278,7 +3280,7 @@ export function DeviceSyncPanel({
               iPod Detection & Setup
             </label>
             {!supportsWebUSB() && (
-              <div className="text-xs text-yellow-500">
+              <div className="text-xs text-info-blue-500">
                 WebUSB is required for iPod setup. Use a Chromium browser.
               </div>
             )}
@@ -3348,7 +3350,7 @@ export function DeviceSyncPanel({
                 <Check className="size-4 text-green-500 shrink-0" aria-label="Writable" />
               )}
               {writeAccessStatus === "read-only" && (
-                <span className="text-[11px] text-yellow-500">Read-only</span>
+                <span className="text-[11px] text-info-blue-500">Read-only</span>
               )}
               {writeAccessStatus === "error" && (
                 <X className="size-4 text-red-500 shrink-0" aria-label="Check failed" />
@@ -3357,7 +3359,7 @@ export function DeviceSyncPanel({
                 <span className="text-[11px] text-green-500">Ready</span>
               )}
               {ipodSetupStatus === "needs_setup" && (
-                <span className="text-[11px] text-yellow-500">Setup required</span>
+                <span className="text-[11px] text-info-blue-500">Setup required</span>
               )}
               {ipodSetupStatus === "error" && (
                 <span className="text-[11px] text-red-500">Setup failed</span>
@@ -3490,7 +3492,7 @@ export function DeviceSyncPanel({
       {!supportsFileSystemAccess() &&
         !useCompanionApp &&
         !(isJellyfinPreset && jellyfinExportMode === "download") && (
-        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-sm p-3 text-yellow-500 text-sm">
+        <div className="bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm p-3 text-info-blue-500 text-sm">
           USB sync requires a Chromium browser that supports the File System Access API.
         </div>
       )}
@@ -3501,7 +3503,7 @@ export function DeviceSyncPanel({
         </div>
       )}
       {syncWarning && (
-        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-sm p-3 text-yellow-500 text-sm">
+        <div className="bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm p-3 text-info-blue-500 text-sm">
           {syncWarning}
         </div>
       )}
@@ -3719,7 +3721,7 @@ export function DeviceSyncPanel({
               iPod Detection & Setup
             </label>
             {!supportsWebUSB() && (
-              <div className="text-xs text-yellow-500">
+              <div className="text-xs text-info-blue-500">
                 WebUSB is required for iPod setup. Use a Chromium browser.
               </div>
             )}
@@ -3787,7 +3789,7 @@ export function DeviceSyncPanel({
                 <Check className="size-4 text-green-500 shrink-0" aria-label="Writable" />
               )}
               {writeAccessStatus === "read-only" && (
-                <span className="text-[11px] text-yellow-500">Read-only</span>
+                <span className="text-[11px] text-info-blue-500">Read-only</span>
               )}
               {writeAccessStatus === "error" && (
                 <X className="size-4 text-red-500 shrink-0" aria-label="Check failed" />
@@ -3796,7 +3798,7 @@ export function DeviceSyncPanel({
                 <span className="text-[11px] text-green-500">Ready</span>
               )}
               {ipodSetupStatus === "needs_setup" && (
-                <span className="text-[11px] text-yellow-500">Setup required</span>
+                <span className="text-[11px] text-info-blue-500">Setup required</span>
               )}
               {ipodSetupStatus === "error" && (
                 <span className="text-[11px] text-red-500">Setup failed</span>
@@ -4146,6 +4148,8 @@ export function DeviceSyncPanel({
           onMirrorDeleteFromDeviceChange={setMirrorDeleteFromDevice}
           overwriteExistingPlaylistOnIpod={overwriteExistingPlaylistOnIpod}
           onOverwriteExistingPlaylistOnIpodChange={setOverwriteExistingPlaylistOnIpod}
+          transferMissingTracksToDevice={transferMissingTracksToDevice}
+          onTransferMissingTracksToDeviceChange={setTransferMissingTracksToDevice}
         />
       </div>
       <Modal
