@@ -104,6 +104,15 @@ describe("sync-targets", () => {
       expect(caps.hasOnDeviceStatus).toBe(false);
     });
 
+    it("returns correct capabilities for rockbox", () => {
+      const caps = getPresetCapabilities("rockbox");
+      expect(caps.hasCollectionSync).toBe(true);
+      expect(caps.hasUsbSync).toBe(true);
+      expect(caps.hasExport).toBe(false);
+      expect(caps.hasCollectionExport).toBe(false);
+      expect(caps.hasOnDeviceStatus).toBe(true);
+    });
+
     it("returns fallback for unknown preset", () => {
       const caps = getPresetCapabilities("unknown");
       expect(caps.hasCollectionSync).toBe(false);

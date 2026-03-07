@@ -16,7 +16,7 @@ import { detectDevicePreset } from "@/features/devices/device-detect";
 import { getDirectoryHandle } from "@/lib/library-selection-fs-api";
 import { Button, Card, Popover } from "@/design-system/components";
 import { JellyfinIcon, WalkmanIcon } from "@/components/DevicePresetIcons";
-import { AlertCircle, ChevronDown, ChevronUp, Cpu, HardDrive, Loader2, Smartphone, Usb } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronUp, Cpu, HardDrive, Loader2, Music, Smartphone, Usb } from "lucide-react";
 import { AnimateIcon, Trash2 } from "@/components/animate-ui";
 import { logger } from "@/lib/logger";
 
@@ -156,7 +156,7 @@ export default function DeviceSyncPage() {
 
 
   async function handleAddDevice(
-    preset: "generic" | "walkman" | "ipod" = "generic"
+    preset: "generic" | "walkman" | "ipod" | "rockbox" = "generic"
   ) {
     try {
       const result = await pickDeviceRootHandle();
@@ -167,6 +167,23 @@ export default function DeviceSyncPage() {
       const detectedPreset = await detectDevicePreset(handle);
       if (preset === "ipod" && detectedPreset !== "ipod") {
         throw new Error("Selected folder does not look like an iPod root");
+      }
+      const isRockbox =
+        preset === "rockbox" || detectedPreset === "rockbox";
+      if (isRockbox) {
+        const profile = await saveDeviceProfile({
+          label: result.name,
+          handleRef: result.handleId,
+          deviceType: "rockbox",
+          playlistFormat: "m3u",
+          playlistFolder: "Playlists",
+          pathStrategy: "absolute",
+          absolutePathPrefix: "/",
+        });
+        await loadDevices();
+        setSelectedDeviceId(profile.id);
+        setSelectionIsUserInitiated(true);
+        return;
       }
       const effectivePreset = detectedPreset === "ipod" ? "ipod" : preset;
       const useWalkmanDefaults =
@@ -236,7 +253,7 @@ export default function DeviceSyncPage() {
     }
   }
 
-  /** Detect device: pick folder, auto-detect preset (walkman/ipod/generic), save and select. */
+  /** Detect device: pick folder, auto-detect preset (walkman/ipod/rockbox/generic), save and select. */
   async function handleDetectDevice() {
     try {
       setError(null);
@@ -246,8 +263,22 @@ export default function DeviceSyncPage() {
         throw new Error("Device folder handle not found");
       }
       const detectedPreset = await detectDevicePreset(handle);
-      const useWalkmanDefaults =
-        detectedPreset === "walkman";
+      if (detectedPreset === "rockbox") {
+        const profile = await saveDeviceProfile({
+          label: result.name,
+          handleRef: result.handleId,
+          deviceType: "rockbox",
+          playlistFormat: "m3u",
+          playlistFolder: "Playlists",
+          pathStrategy: "absolute",
+          absolutePathPrefix: "/",
+        });
+        await loadDevices();
+        setSelectedDeviceId(profile.id);
+        setSelectionIsUserInitiated(true);
+        return;
+      }
+      const useWalkmanDefaults = detectedPreset === "walkman";
       const profile = await saveDeviceProfile({
         label: result.name,
         handleRef: result.handleId,
@@ -323,6 +354,7 @@ export default function DeviceSyncPage() {
     if (profile.deviceType === "zune") return Cpu;
     if (profile.deviceType === "jellyfin") return JellyfinIcon;
     if (profile.deviceType === "walkman") return WalkmanIcon;
+    if (profile.deviceType === "rockbox") return Music;
     if (profile.deviceType === "ipod") return Smartphone;
     const name = (profile.label || "").toLowerCase();
     if (name.includes("walkman") || name.includes("sony")) return WalkmanIcon;
@@ -467,6 +499,19 @@ export default function DeviceSyncPage() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => handleAddDevice("rockbox")}
+                      className={`size-11 rounded-sm border flex items-center justify-center transition-colors shrink-0 ${
+                        selectedDeviceProfile?.deviceType === "rockbox"
+                          ? "border-accent-primary bg-accent-primary/10"
+                          : "border-app-border bg-app-surface hover:border-accent-primary/50"
+                      }`}
+                      title="Add Rockbox Preset"
+                      aria-label="Add Rockbox Preset"
+                    >
+                      <Music className="size-5 text-accent-primary" />
+                    </button>
+                    <button
+                      type="button"
                       onClick={handleAddJellyfinProfile}
                       className={`size-11 rounded-sm border flex items-center justify-center transition-colors shrink-0 ${
                         selectedDeviceProfile?.deviceType === "jellyfin"
@@ -603,7 +648,7 @@ export default function DeviceSyncPage() {
                           Detect Device
                         </div>
                         <div className="text-app-tertiary text-xs">
-                          Pick a folder and auto-detect Walkman, iPod, or generic USB device.
+                          Pick a folder and auto-detect Walkman, iPod, Rockbox, or generic USB device.
                         </div>
                       </div>
                     </button>
@@ -644,6 +689,27 @@ export default function DeviceSyncPage() {
                         <div className="text-app-primary font-semibold text-sm">Add iPod Preset</div>
                         <div className="text-app-tertiary text-xs">
                           Uses iTunesDB sync with in-browser setup.
+                        </div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddDevice("rockbox")}
+                      className={`text-left rounded-sm border p-3 transition-all duration-300 ease-out flex items-center gap-3 ${
+                        selectedDeviceProfile?.deviceType === "rockbox"
+                          ? "border-accent-primary bg-accent-primary/10"
+                          : "border-app-border bg-app-surface hover:border-accent-primary/50"
+                      }`}
+                    >
+                      <div className="size-10 rounded-sm bg-accent-primary/20 flex items-center justify-center shrink-0 text-accent-primary">
+                        <Music className="size-6" />
+                      </div>
+                      <div className="min-w-0 transition-opacity duration-300">
+                        <div className="text-app-primary font-semibold text-sm">
+                          Add Rockbox Preset
+                        </div>
+                        <div className="text-app-tertiary text-xs">
+                          Playlists in <span className="font-mono">Playlists</span>, paths from device root.
                         </div>
                       </div>
                     </button>

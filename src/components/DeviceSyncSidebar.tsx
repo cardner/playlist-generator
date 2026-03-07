@@ -25,7 +25,7 @@ import {
   Bug,
 } from "lucide-react";
 
-export type DevicePreset = "walkman" | "generic" | "zune" | "ipod" | "jellyfin";
+export type DevicePreset = "walkman" | "generic" | "zune" | "ipod" | "jellyfin" | "rockbox";
 
 interface PlaylistItem {
   playlist: GeneratedPlaylist;
@@ -177,7 +177,9 @@ export function DeviceSyncSidebar({
         ? JellyfinIcon
         : devicePreset === "walkman"
           ? WalkmanIcon
-          : Usb;
+          : devicePreset === "rockbox"
+            ? Music
+            : Usb;
 
   return (
     <aside className="w-full lg:w-80 lg:max-w-sm shrink-0 sticky top-0 self-start">
@@ -185,7 +187,7 @@ export function DeviceSyncSidebar({
         {/* Device header: icon, name, connection status */}
         <div className="flex items-start gap-3">
           <div className="size-10 rounded-md bg-accent-primary flex items-center justify-center shrink-0 text-white">
-            <DeviceIcon className={devicePreset === "jellyfin" || devicePreset === "walkman" ? "size-6" : "size-5"} />
+            <DeviceIcon className={devicePreset === "jellyfin" || devicePreset === "walkman" || devicePreset === "rockbox" ? "size-6" : "size-5"} />
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-app-primary font-semibold text-lg truncate">
@@ -323,7 +325,7 @@ export function DeviceSyncSidebar({
               />
               <span>Scan the device and map files to improve playlist path accuracy.</span>
             </label>
-            {(devicePreset === "walkman" || devicePreset === "generic") && (
+            {(devicePreset === "walkman" || devicePreset === "generic" || devicePreset === "rockbox") && (
               <label className="flex items-start gap-2 text-app-primary text-xs mt-2 cursor-pointer">
                 <input
                   type="checkbox"

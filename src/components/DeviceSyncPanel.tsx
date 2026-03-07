@@ -160,7 +160,7 @@ export function DeviceSyncPanel({
   const [devicePathStrategy, setDevicePathStrategy] = useState<PathStrategy>("relative-to-playlist");
   const [deviceAbsolutePrefix, setDeviceAbsolutePrefix] = useState<string>("");
   const [devicePreset, setDevicePreset] = useState<
-    "walkman" | "generic" | "zune" | "ipod" | "jellyfin"
+    "walkman" | "generic" | "zune" | "ipod" | "jellyfin" | "rockbox"
   >("walkman");
   const [jellyfinContainerPrefix, setJellyfinContainerPrefix] = useState<string>("");
   const [jellyfinExportMode, setJellyfinExportMode] = useState<
@@ -338,6 +338,7 @@ export function DeviceSyncPanel({
   const isWalkmanPreset = devicePreset === "walkman";
   const isGenericPreset = devicePreset === "generic";
   const isZunePreset = devicePreset === "zune";
+  const isRockboxPreset = devicePreset === "rockbox";
   const presetCaps = getPresetCapabilities(devicePreset);
   const hasCollectionSync = presetCaps.hasCollectionSync;
   const hasCollectionExport = presetCaps.hasCollectionExport;
@@ -480,7 +481,7 @@ export function DeviceSyncPanel({
   }, [deviceProfileOverride]);
 
   useEffect(() => {
-    if (!["ipod", "walkman", "generic", "zune", "jellyfin"].includes(devicePreset))
+    if (!["ipod", "walkman", "generic", "zune", "jellyfin", "rockbox"].includes(devicePreset))
       return;
     let cancelled = false;
     async function loadCollections() {
@@ -516,7 +517,7 @@ export function DeviceSyncPanel({
       setDevicePreset(preset);
       if (preset === "jellyfin") {
         setIsDeviceConnected(true);
-      } else if (preset === "walkman" || preset === "generic") {
+      } else if (preset === "walkman" || preset === "generic" || preset === "rockbox") {
         setIsDeviceConnected(false);
       }
       const useCompanion = !deviceProfileOverride.handleRef && preset !== "ipod" && preset !== "jellyfin";
@@ -575,7 +576,7 @@ export function DeviceSyncPanel({
       setDeviceEntries([]);
       setDeviceScanStatus("idle");
       setDeviceScanProgress({ scanned: 0, matched: 0, hashed: 0 });
-      if (preset === "walkman" || preset === "generic") {
+      if (preset === "walkman" || preset === "generic" || preset === "rockbox") {
         setIsDeviceConnected(false);
       }
     }
@@ -613,6 +614,14 @@ export function DeviceSyncPanel({
       setDevicePathDetectionEnabled(false);
       setJellyfinExportMode("download");
       setJellyfinContainerPrefix("");
+    } else if (devicePreset === "rockbox") {
+      setDevicePlaylistFormat("m3u");
+      setDevicePlaylistFolder("Playlists");
+      setDevicePathStrategy("absolute");
+      setDeviceAbsolutePrefix("/");
+      setDeviceScanRoots("Music");
+      setUseCompanionApp(false);
+      setDevicePathDetectionEnabled(true);
     } else {
       setDevicePlaylistFormat("m3u");
       setDevicePlaylistFolder("playlists");
@@ -777,7 +786,7 @@ export function DeviceSyncPanel({
 
   useEffect(() => {
     if (!deviceHandleRef) return;
-    if (devicePreset !== "walkman" && devicePreset !== "generic") return;
+    if (devicePreset !== "walkman" && devicePreset !== "generic" && devicePreset !== "rockbox") return;
     let cancelled = false;
     const verify = async () => {
       const ok = await verifyDeviceConnection(deviceHandleRef);
@@ -812,7 +821,7 @@ export function DeviceSyncPanel({
   }, [devicePreset]);
 
   useEffect(() => {
-    if (!["ipod", "walkman", "generic", "zune", "jellyfin"].includes(devicePreset))
+    if (!["ipod", "walkman", "generic", "zune", "jellyfin", "rockbox"].includes(devicePreset))
       return;
     if (!selectedCollectionId) return;
     let cancelled = false;
@@ -1258,7 +1267,7 @@ export function DeviceSyncPanel({
         trackNo: track.trackNo,
       });
     } else if (
-      (isWalkmanPreset || isGenericPreset || isZunePreset) &&
+      (isWalkmanPreset || isGenericPreset || isZunePreset || isRockboxPreset) &&
       devicePathDetectionEnabled &&
       deviceScanStatus === "done" &&
       devicePathMap.size > 0
@@ -1611,10 +1620,16 @@ export function DeviceSyncPanel({
         await ensureAllLibraryRootAccess(rootIds);
       }
       const label = deviceLabel.trim() || "USB Device";
-      const effectivePlaylistFolder = isWalkmanPreset ? "MUSIC" : devicePlaylistFolder.trim();
-      const effectivePathStrategy = isWalkmanPreset
-        ? "relative-to-playlist"
-        : devicePathStrategy;
+      const effectivePlaylistFolder = isRockboxPreset
+        ? "Playlists"
+        : isWalkmanPreset
+          ? "MUSIC"
+          : devicePlaylistFolder.trim();
+      const effectivePathStrategy = isRockboxPreset
+        ? "absolute"
+        : isWalkmanPreset
+          ? "relative-to-playlist"
+          : devicePathStrategy;
       const effectiveAbsolutePrefix =
         effectivePathStrategy === "absolute" ? deviceAbsolutePrefix.trim() || undefined : undefined;
       const effectiveOnlyIncludeMatchedPaths = isWalkmanPreset
@@ -1692,9 +1707,9 @@ export function DeviceSyncPanel({
                 "Rescan your library to improve device path detection."
         );
       }
-      if (isWalkmanPreset && !devicePathDetectionEnabled) {
+      if ((isWalkmanPreset || isRockboxPreset) && !devicePathDetectionEnabled) {
         setSyncWarning(
-          "Walkman sync works best with device path detection. Enable device scan if paths fail."
+          "Device sync works best with device path detection. Enable device scan if paths fail."
         );
       }
       const { keyMap: targetKeyMap, trackCount: targetTrackCount, hasFullHash } =
@@ -1702,7 +1717,7 @@ export function DeviceSyncPanel({
 
       let activeDevicePathMap = devicePathMap;
       let activeDeviceEntries = deviceEntries;
-      if (isWalkmanPreset && devicePathDetectionEnabled) {
+      if ((isWalkmanPreset || isRockboxPreset) && devicePathDetectionEnabled) {
         if (targetTrackCount === 0) {
           setSyncWarning(
             "No track metadata available for playlist scan. Continuing without path detection."
@@ -1723,9 +1738,9 @@ export function DeviceSyncPanel({
         // When cache is empty we do not run a blocking scan; transfer will use copy-all path.
       }
 
-      if (isWalkmanPreset && devicePathDetectionEnabled && devicePathMap.size === 0) {
+      if ((isWalkmanPreset || isRockboxPreset) && devicePathDetectionEnabled && devicePathMap.size === 0) {
         setSyncWarning(
-          "Walkman playlists require exact on-device paths. Consider running Scan Device first."
+          "Playlists require exact on-device paths. Consider running Scan Device first."
         );
       }
 
@@ -1834,7 +1849,11 @@ export function DeviceSyncPanel({
               deviceEntries: devicePathDetectionEnabled ? activeDeviceEntries : undefined,
               onlyIncludeMatchedPaths: devicePathDetectionEnabled && effectiveOnlyIncludeMatchedPaths,
               deviceMusicFolder:
-                (isWalkmanPreset || isGenericPreset) && transferMissingTracksToDevice ? "MUSIC" : undefined,
+                (isWalkmanPreset || isGenericPreset || isRockboxPreset) && transferMissingTracksToDevice
+                  ? isRockboxPreset
+                    ? "Music"
+                    : "MUSIC"
+                  : undefined,
               onProgress: (p) =>
                 setSyncQueueStatus({
                   currentIndex: p.current,
@@ -1966,7 +1985,7 @@ export function DeviceSyncPanel({
     if (isIpodPreset) {
       return prepareIpodProfileForSync();
     }
-    if (isWalkmanPreset || isGenericPreset || isZunePreset) {
+    if (isWalkmanPreset || isGenericPreset || isZunePreset || isRockboxPreset) {
       if (!supportsFileSystemAccess() && !useCompanionApp) {
         throw new Error("USB sync requires a Chromium browser with File System Access API");
       }
@@ -1974,12 +1993,16 @@ export function DeviceSyncPanel({
         throw new Error("Select a device folder to sync");
       }
       const label = deviceLabel.trim() || "USB Device";
-      const effectivePlaylistFolder = isWalkmanPreset
-        ? "MUSIC"
-        : devicePlaylistFolder.trim();
-      const effectivePathStrategy = isWalkmanPreset
-        ? "relative-to-playlist"
-        : devicePathStrategy;
+      const effectivePlaylistFolder = isRockboxPreset
+        ? "Playlists"
+        : isWalkmanPreset
+          ? "MUSIC"
+          : devicePlaylistFolder.trim();
+      const effectivePathStrategy = isRockboxPreset
+        ? "absolute"
+        : isWalkmanPreset
+          ? "relative-to-playlist"
+          : devicePathStrategy;
       const effectiveAbsolutePrefix =
         effectivePathStrategy === "absolute"
           ? deviceAbsolutePrefix.trim() || undefined
@@ -2009,7 +2032,7 @@ export function DeviceSyncPanel({
       ipodMonitor?.suspend();
       if (!hasCollectionSync) {
         throw new Error(
-          "Selected-track sync is only available for iPod, Walkman, Generic, and Zune devices."
+          "Selected-track sync is only available for iPod, Walkman, Generic, Rockbox, and Zune devices."
         );
       }
       if (!selectedCollectionId) {
@@ -2040,7 +2063,7 @@ export function DeviceSyncPanel({
 
       let activeDevicePathMap = devicePathMap;
       let activeDeviceEntries = deviceEntries;
-      if (isWalkmanPreset && devicePathDetectionEnabled) {
+      if ((isWalkmanPreset || isRockboxPreset) && devicePathDetectionEnabled) {
         const normalizedTargets = [{ ...target }];
         const { keyMap: targetKeyMap, trackCount: targetTrackCount, hasFullHash } =
           buildTargetKeyMap(normalizedTargets);
@@ -2049,7 +2072,7 @@ export function DeviceSyncPanel({
           activeDeviceEntries = [];
         }
         // When cache is valid we use it. When cache is empty we do not run a blocking scan.
-      } else if (!useCompanionApp && devicePathDetectionEnabled && isWalkmanPreset === false) {
+      } else if (!useCompanionApp && devicePathDetectionEnabled && !isWalkmanPreset && !isRockboxPreset) {
         const normalizedTargets = [{ ...target }];
         const { keyMap: targetKeyMap, trackCount: targetTrackCount, hasFullHash } =
           buildTargetKeyMap(normalizedTargets);
@@ -2062,9 +2085,11 @@ export function DeviceSyncPanel({
 
       setSyncPhase("writing");
       if (useCompanionApp && !isIpodPreset) {
-        const effectivePathStrategy = isWalkmanPreset
-          ? "relative-to-playlist"
-          : devicePathStrategy;
+        const effectivePathStrategy = isRockboxPreset
+          ? "absolute"
+          : isWalkmanPreset
+            ? "relative-to-playlist"
+            : devicePathStrategy;
         const effectiveAbsolutePrefix =
           effectivePathStrategy === "absolute"
             ? deviceAbsolutePrefix.trim()
@@ -2096,7 +2121,11 @@ export function DeviceSyncPanel({
           deviceEntries: devicePathDetectionEnabled ? activeDeviceEntries : undefined,
           onlyIncludeMatchedPaths: false,
           deviceMusicFolder:
-            (isWalkmanPreset || isGenericPreset) && transferMissingTracksToDevice ? "MUSIC" : undefined,
+            (isWalkmanPreset || isGenericPreset || isRockboxPreset) && transferMissingTracksToDevice
+              ? isRockboxPreset
+                ? "Music"
+                : "MUSIC"
+              : undefined,
           onProgress: (p) =>
             setSyncQueueStatus({
               currentIndex: p.current,
@@ -2108,9 +2137,11 @@ export function DeviceSyncPanel({
           ? "iPod"
           : isWalkmanPreset
             ? "Walkman"
-            : isZunePreset
-              ? "Zune"
-              : "device";
+            : isRockboxPreset
+              ? "Rockbox"
+              : isZunePreset
+                ? "Zune"
+                : "device";
         if (isIpodPreset) {
           setSyncSuccess(`Synced ${selectedIds.length} track(s) to iPod.`);
         } else {
@@ -2142,7 +2173,7 @@ export function DeviceSyncPanel({
       ipodMonitor?.suspend();
       if (!hasCollectionSync) {
         throw new Error(
-          "Collection sync is only available for iPod, Walkman, Generic, and Zune devices."
+          "Collection sync is only available for iPod, Walkman, Generic, Rockbox, and Zune devices."
         );
       }
       if (!selectedCollectionId) {
@@ -2174,7 +2205,7 @@ export function DeviceSyncPanel({
 
       let activeDevicePathMap = devicePathMap;
       let activeDeviceEntries = deviceEntries;
-      if (isWalkmanPreset && devicePathDetectionEnabled) {
+      if ((isWalkmanPreset || isRockboxPreset) && devicePathDetectionEnabled) {
         const normalizedTargets = [{ ...target }];
         const { keyMap: targetKeyMap, trackCount: targetTrackCount, hasFullHash } =
           buildTargetKeyMap(normalizedTargets);
@@ -2196,9 +2227,11 @@ export function DeviceSyncPanel({
 
       setSyncPhase("writing");
       if (useCompanionApp && !isIpodPreset) {
-        const effectivePathStrategy = isWalkmanPreset
-          ? "relative-to-playlist"
-          : devicePathStrategy;
+        const effectivePathStrategy = isRockboxPreset
+          ? "absolute"
+          : isWalkmanPreset
+            ? "relative-to-playlist"
+            : devicePathStrategy;
         const effectiveAbsolutePrefix =
           effectivePathStrategy === "absolute"
             ? deviceAbsolutePrefix.trim()
@@ -2230,7 +2263,11 @@ export function DeviceSyncPanel({
           deviceEntries: devicePathDetectionEnabled ? activeDeviceEntries : undefined,
           onlyIncludeMatchedPaths: false,
           deviceMusicFolder:
-            (isWalkmanPreset || isGenericPreset) && transferMissingTracksToDevice ? "MUSIC" : undefined,
+            (isWalkmanPreset || isGenericPreset || isRockboxPreset) && transferMissingTracksToDevice
+              ? isRockboxPreset
+                ? "Music"
+                : "MUSIC"
+              : undefined,
           onProgress: (p) =>
             setSyncQueueStatus({
               currentIndex: p.current,
@@ -2242,9 +2279,11 @@ export function DeviceSyncPanel({
           ? "iPod"
           : isWalkmanPreset
             ? "Walkman"
-            : isZunePreset
-              ? "Zune"
-              : "device";
+            : isRockboxPreset
+              ? "Rockbox"
+              : isZunePreset
+                ? "Zune"
+                : "device";
         if (isIpodPreset) {
           setSyncSuccess(`Mirrored ${collectionName} to iPod.`);
         } else {
@@ -3065,10 +3104,16 @@ export function DeviceSyncPanel({
     try {
       const label =
         (overrideLabel ?? deviceLabel.trim()) || (isJellyfinPreset ? "Jellyfin" : "USB Device");
-      const effectivePlaylistFolder = isWalkmanPreset ? "MUSIC" : devicePlaylistFolder.trim();
-      const effectivePathStrategy = isWalkmanPreset
-        ? "relative-to-playlist"
-        : devicePathStrategy;
+      const effectivePlaylistFolder = isRockboxPreset
+        ? "Playlists"
+        : isWalkmanPreset
+          ? "MUSIC"
+          : devicePlaylistFolder.trim();
+      const effectivePathStrategy = isRockboxPreset
+        ? "absolute"
+        : isWalkmanPreset
+          ? "relative-to-playlist"
+          : devicePathStrategy;
       const effectiveAbsolutePrefix =
         effectivePathStrategy === "absolute" ? deviceAbsolutePrefix.trim() || undefined : undefined;
       const modelInfo = ipodUsbInfo?.productId
@@ -3564,6 +3609,7 @@ export function DeviceSyncPanel({
                 >
                   <option value="walkman">Sony Walkman</option>
                   <option value="generic">Generic USB</option>
+                  <option value="rockbox">Rockbox</option>
                   <option value="jellyfin">Jellyfin (Docker)</option>
                   <option value="zune">Microsoft Zune (Experimental)</option>
                   <option value="ipod">Apple iPod (iTunesDB)</option>
@@ -3666,7 +3712,7 @@ export function DeviceSyncPanel({
           </>
         )}
 
-        {!isIpodPreset && !isJellyfinPreset && !isWalkmanPreset && (
+        {!isIpodPreset && !isJellyfinPreset && !isWalkmanPreset && !isRockboxPreset && (
           <div>
             <label className="block text-app-primary text-xs font-medium mb-2 uppercase tracking-wider">
               Device Folder
@@ -3927,7 +3973,9 @@ export function DeviceSyncPanel({
                   ? "iPod Collection Sync"
                   : isWalkmanPreset
                     ? "Walkman Collection Sync"
-                    : "Collection Sync"
+                    : isRockboxPreset
+                      ? "Rockbox Collection Sync"
+                      : "Collection Sync"
             }
             description="Select tracks, albums, and artists to sync to your device."
             collectionId={selectedCollectionId}
@@ -3965,9 +4013,11 @@ export function DeviceSyncPanel({
                   ? "Export selected"
                   : isWalkmanPreset
                     ? "Sync selected to Walkman"
-                    : isZunePreset
-                      ? "Sync selected to Zune"
-                      : "Sync selected"
+                    : isRockboxPreset
+                      ? "Sync selected to Rockbox"
+                      : isZunePreset
+                        ? "Sync selected to Zune"
+                        : "Sync selected"
             }
             mirrorLabel={
               isIpodPreset
@@ -3981,7 +4031,7 @@ export function DeviceSyncPanel({
               !hasCollectionExport &&
               (isIpodPreset ||
                 (hasCollectionSync &&
-                  (isWalkmanPreset || isGenericPreset || isZunePreset) &&
+                  (isWalkmanPreset || isGenericPreset || isZunePreset || isRockboxPreset) &&
                   devicePathDetectionEnabled))
             }
             onDeviceLabel={isIpodPreset ? "On iPod" : "On device"}
@@ -3994,7 +4044,7 @@ export function DeviceSyncPanel({
           />
         )}
 
-        {!isIpodPreset && !isJellyfinPreset && !isWalkmanPreset && (
+        {!isIpodPreset && !isJellyfinPreset && !isWalkmanPreset && !isRockboxPreset && (
           <>
             <div>
               <label className="block text-app-primary text-xs font-medium mb-2 uppercase tracking-wider">
