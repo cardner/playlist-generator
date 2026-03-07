@@ -15,6 +15,48 @@
   --info-blue-400: #4fb3ea;
   --info-blue-500: #3a9fd6;
   --info-blue-600: #2b8bc4;
+  --info-blue-700: #1e6b9e;
+  --info-blue-800: #15527a;
+  /* Magenta palette (base #e91e63) – accent primary, errors, destructive */
+  --magenta-50: #fce4ec;
+  --magenta-100: #f8bbd0;
+  --magenta-200: #f48fb1;
+  --magenta-300: #f06292;
+  --magenta-400: #ec407a;
+  --magenta-500: #e91e63;
+  --magenta-600: #c2185b;
+  --magenta-700: #a01450;
+  --magenta-800: #7b1042;
+  /* Purple palette (base #ab47bc) – accent tertiary */
+  --purple-50: #f3e5f5;
+  --purple-100: #e1bee7;
+  --purple-200: #ce93d8;
+  --purple-300: #ba68c8;
+  --purple-400: #ab47bc;
+  --purple-500: #9c27b0;
+  --purple-600: #8e24aa;
+  --purple-700: #7b1fa2;
+  --purple-800: #6a1b9a;
+  /* Yellow palette (base #facc15) – warning, caution */
+  --yellow-50: #fefce8;
+  --yellow-100: #fef9c3;
+  --yellow-200: #fef08a;
+  --yellow-300: #fde047;
+  --yellow-400: #facc15;
+  --yellow-500: #e5a800;
+  --yellow-600: #ca9a00;
+  --yellow-700: #a67c00;
+  --yellow-800: #856200;
+  /* Green palette (base #34d399) – success, positive */
+  --green-50: #ecfdf5;
+  --green-100: #d1fae5;
+  --green-200: #a7f3d0;
+  --green-300: #6ee7b7;
+  --green-400: #34d399;
+  --green-500: #10b981;
+  --green-600: #059669;
+  --green-700: #047857;
+  --green-800: #065f46;
 }
 
 .dark {
@@ -32,11 +74,11 @@
   --app-surface-hover: #27272a;
   --app-border: #3f3f46;
   --app-hover: #27272a;
-  --accent-primary: #e91e63;
-  --accent-secondary: #c2185b;
-  --accent-hover: #f06292;
-  --accent-tertiary: #AB47BC;
-  --accent-tertiary-hover: #BA68C8;
+  --accent-primary: var(--magenta-500);
+  --accent-secondary: var(--magenta-600);
+  --accent-hover: var(--magenta-300);
+  --accent-tertiary: var(--purple-400);
+  --accent-tertiary-hover: var(--purple-300);
   /* Table theme */
   --table-wrap-bg: var(--app-surface);
   --table-wrap-border: var(--app-border);
@@ -59,11 +101,11 @@
   --app-surface-hover: #e4e4e7;
   --app-border: #d4d4d8;
   --app-hover: #e4e4e7;
-  --accent-primary: #e91e63;
-  --accent-secondary: #c2185b;
-  --accent-hover: #f06292;
-  --accent-tertiary: #AB47BC;
-  --accent-tertiary-hover: #BA68C8;
+  --accent-primary: var(--magenta-500);
+  --accent-secondary: var(--magenta-600);
+  --accent-hover: var(--magenta-300);
+  --accent-tertiary: var(--purple-400);
+  --accent-tertiary-hover: var(--purple-300);
   /* Table theme */
   --table-wrap-bg: var(--app-surface);
   --table-wrap-border: var(--app-border);
@@ -87,11 +129,11 @@
   --app-surface-hover: #27272a;
   --app-border: #3f3f46;
   --app-hover: #27272a;
-  --accent-primary: #e91e63;
-  --accent-secondary: #c2185b;
-  --accent-hover: #f06292;
-  --accent-tertiary: #AB47BC;
-  --accent-tertiary-hover: #BA68C8;
+  --accent-primary: var(--magenta-500);
+  --accent-secondary: var(--magenta-600);
+  --accent-hover: var(--magenta-300);
+  --accent-tertiary: var(--purple-400);
+  --accent-tertiary-hover: var(--purple-300);
   /* Table theme */
   --table-wrap-bg: var(--app-surface);
   --table-wrap-border: var(--app-border);
