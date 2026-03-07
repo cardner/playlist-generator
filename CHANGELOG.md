@@ -63,6 +63,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.18.0] - 2026-03-07
+
+### Added
+
+- **device-sync**: add Rockbox preset for Walker and Eros Q devices
+
+### Fixed
+
+- **storybook**: allow 1% image snapshot diff for CI
+
+### Other Changes
+
+- Merge pull request #76 from cardner/rockbox-preset
+
 ## [1.17.0] - 2026-03-07
 
 ### Added
