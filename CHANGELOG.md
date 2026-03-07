@@ -62,6 +62,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.17.0] - 2026-03-07
+
+### Added
+
+- **icons**: add Animate UI Play, Pause, Settings and use across app
+- **theme**: add full magenta, purple, yellow, green palettes
+- **icons**: stashing initial pull in of new icon library
+- **device-sync**: add checkbox to optionally transfer missing tracks for Walkman/Generic
+
+### Fixed
+
+- **test**: add updated screenshot tests
+
+### Other Changes
+
+- Merge pull request #75 from cardner/animate-icons
+
 ## [1.16.0] - 2026-03-02
 
 ### Added
