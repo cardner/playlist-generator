@@ -42,6 +42,15 @@ older iPods that appear as regular drives.
 - Playlist folder: `playlists`
 - Path strategy: Relative to playlist
 
+### Rockbox (Walker / Eros Q / etc.)
+
+- Use **Add Rockbox Preset** on the Device Sync page, or **Detect Device** when the device has a `.rockbox` folder (e.g. SD card from a HIFI WALKER H2 or AIGO Eros Q).
+- Format: M3U
+- Playlist folder: `Playlists` (Rockbox standard; playlists appear in the Playlist Catalog).
+- Path strategy: Absolute, with prefix `/` so paths in the M3U are from device root (e.g. `/Music/Artist/Album/track.mp3`).
+- Default music folder for copied tracks: `Music`. Enable “Transfer missing tracks to device” to copy files into `Music/` and reference them from playlists.
+- iPod with Rockbox: use the existing **iPod** preset for iTunesDB sync; Rockbox can read the same `iPod_Control` music.
+
 ### Microsoft Zune (Experimental)
 
 - Format: M3U

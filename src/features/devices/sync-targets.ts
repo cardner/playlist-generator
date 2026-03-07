@@ -6,7 +6,7 @@
 
 import type { GeneratedPlaylist } from "@/features/playlists";
 
-export type DevicePreset = "ipod" | "walkman" | "generic" | "zune" | "jellyfin";
+export type DevicePreset = "ipod" | "walkman" | "generic" | "zune" | "jellyfin" | "rockbox";
 
 export interface PresetCapabilities {
   hasCollectionSync: boolean;
@@ -51,6 +51,13 @@ const PRESET_CAPABILITIES: Record<DevicePreset, PresetCapabilities> = {
     hasUsbSync: false,
     hasExport: true,
     hasOnDeviceStatus: false,
+  },
+  rockbox: {
+    hasCollectionSync: true,
+    hasCollectionExport: false,
+    hasUsbSync: true,
+    hasExport: false,
+    hasOnDeviceStatus: true,
   },
 };
 

@@ -548,7 +548,7 @@ export interface DeviceProfileRecord {
   /** Display name for the device */
   label: string;
   /** Device type for preset behavior */
-  deviceType?: "generic" | "walkman" | "zune" | "ipod" | "jellyfin";
+  deviceType?: "generic" | "walkman" | "zune" | "ipod" | "jellyfin" | "rockbox";
   /** Reference to directoryHandles store (device root handle) */
   handleRef?: string;
   /** Playlist format to generate for device */
