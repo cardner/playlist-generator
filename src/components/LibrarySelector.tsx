@@ -59,7 +59,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FolderOpen, Music, CheckCircle2, AlertCircle, RefreshCw, Database, ChevronDown, ChevronUp, Edit, X, Check, Settings, Download, AlertTriangle } from "lucide-react";
+import { FolderOpen, Music, CheckCircle2, AlertCircle, RefreshCw, Database, ChevronDown, ChevronUp, Edit, X, Check, AlertTriangle } from "lucide-react";
+import { AnimateIcon, Download, Settings } from "@/components/animate-ui";
 import { Logo } from "./Logo";
 import { needsReimport, type LibraryRoot, type PermissionStatus } from "@/lib/library-selection";
 import { getScanRuns, getTracks } from "@/db/storage";
@@ -308,7 +309,7 @@ export function LibrarySelector({
                         title={warningMessage}
                         className="absolute -left-2 -top-1"
                       >
-                        <AlertTriangle className="size-3.5 text-yellow-400" aria-hidden />
+                        <AlertTriangle className="size-3.5 text-info-blue-400" aria-hidden />
                       </span>
                     )}
                   </div>
@@ -407,7 +408,7 @@ export function LibrarySelector({
                           aria-label="Export collection"
                           title="Export collection"
                         >
-                          <Download className="size-3.5" />
+                          <AnimateIcon animateOnHover><Download size={14} className="size-3.5" /></AnimateIcon>
                         </button>
                       )}
                       <button
@@ -416,7 +417,9 @@ export function LibrarySelector({
                         aria-label="Manage collections"
                         title="Manage collections"
                       >
-                        <Settings className="size-3.5" />
+                        <AnimateIcon animateOnHover>
+                          <Settings size={14} className="size-3.5" />
+                        </AnimateIcon>
                       </button>
                     </div>
                   )}
@@ -469,7 +472,9 @@ export function LibrarySelector({
                               }}
                               className="w-full text-left px-3 py-2 text-sm text-app-secondary hover:bg-app-hover transition-colors flex items-center gap-2"
                             >
-                              <Settings className="size-4" />
+                              <AnimateIcon animateOnHover>
+                                <Settings size={16} className="size-4" />
+                              </AnimateIcon>
                               <span>Manage Collections</span>
                             </button>
                           </div>
@@ -602,14 +607,14 @@ export function LibrarySelector({
               )}
 
               {hasRelativePathsCheck === false && currentRootId && hasCompletedScan && (
-                <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-sm text-left">
+                <div className="p-3 bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm text-left">
                   <div className="flex items-start gap-2 mb-2">
-                    <AlertCircle className="size-4 text-yellow-500 shrink-0 mt-0.5" />
+                    <AlertCircle className="size-4 text-info-blue-500 shrink-0 mt-0.5" />
                     <div className="flex-1">
-                      <p className="text-yellow-500 text-xs font-medium mb-1">
+                      <p className="text-info-blue-500 text-xs font-medium mb-1">
                         Missing Relative Paths
                       </p>
-                      <p className="text-yellow-500 text-xs">
+                      <p className="text-info-blue-500 text-xs">
                         Your library doesn&apos;t have relative paths stored. Playlist exports may not work correctly.
                       </p>
                     </div>
@@ -632,7 +637,7 @@ export function LibrarySelector({
                       ) : (
                         <button
                           onClick={() => setShowRelink(true)}
-                          className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-500 rounded-sm transition-colors text-xs"
+                          className="flex items-center gap-2 px-3 py-1.5 bg-info-blue-400/20 hover:bg-info-blue-400/30 text-info-blue-500 rounded-sm transition-colors text-xs"
                         >
                           <RefreshCw className="size-3.5" />
                           Relink Library Root

@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { IconParentHoverContext } from "@/components/animate-ui";
 import { cn } from "@/lib/utils";
 
 const variantStyles = {
@@ -34,26 +36,39 @@ export function Button({
   children,
   className,
   disabled,
+  onMouseEnter,
+  onMouseLeave,
   ...props
 }: ButtonProps) {
   const hasIcon = Boolean(leftIcon || rightIcon);
+  const [parentHovered, setParentHovered] = useState(false);
 
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      data-icon={hasIcon ? "button-icon" : undefined}
-      className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-sm transition-colors focus:outline-none focus:ring-2 focus:ring-accent-primary focus:ring-offset-2 focus:ring-offset-app-bg",
-        variantStyles[variant],
-        sizeStyles[size],
-        className
-      )}
-      {...props}
-    >
-      {leftIcon && <span className="shrink-0">{leftIcon}</span>}
-      {children}
-      {rightIcon && <span className="shrink-0">{rightIcon}</span>}
-    </button>
+    <IconParentHoverContext.Provider value={parentHovered}>
+      <button
+        type="button"
+        disabled={disabled}
+        data-icon={hasIcon ? "button-icon" : undefined}
+        className={cn(
+          "inline-flex items-center justify-center gap-2 rounded-sm transition-colors focus:outline-none focus:ring-2 focus:ring-accent-primary focus:ring-offset-2 focus:ring-offset-app-bg",
+          variantStyles[variant],
+          sizeStyles[size],
+          className
+        )}
+        onMouseEnter={(e) => {
+          setParentHovered(true);
+          onMouseEnter?.(e);
+        }}
+        onMouseLeave={(e) => {
+          setParentHovered(false);
+          onMouseLeave?.(e);
+        }}
+        {...props}
+      >
+        {leftIcon && <span className="shrink-0">{leftIcon}</span>}
+        {children}
+        {rightIcon && <span className="shrink-0">{rightIcon}</span>}
+      </button>
+    </IconParentHoverContext.Provider>
   );
 }

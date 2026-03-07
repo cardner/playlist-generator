@@ -1,6 +1,7 @@
 "use client";
 
 import { Github } from "lucide-react";
+import { AnimateIcon } from "./animate-ui";
 
 
 const GITHUB_REPO_URL = "https://github.com/cardner/playlist-generator";
@@ -25,7 +26,9 @@ export function Footer() {
             aria-label="Source on GitHub"
             data-icon="github"
           >
-            <Github size={14} aria-hidden />
+            <AnimateIcon animateOnHover>
+              <Github size={14} aria-hidden />
+            </AnimateIcon>
             Source on GitHub
           </a>
           <span className="hidden sm:inline" aria-hidden>

@@ -34,7 +34,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { Play, Pause, X, Loader2 } from "lucide-react";
+import { X, Loader2 } from "lucide-react";
+import { AnimateIcon, Pause, Play } from "@/components/animate-ui";
 import { cn } from "@/lib/utils";
 import type { SampleResult } from "@/features/audio-preview/types";
 import { useAudioPreview } from "@/hooks/useAudioPreview";
@@ -235,9 +236,13 @@ export function TrackSamplePlayer({
           {isLoading ? (
             <Loader2 className="size-5 animate-spin" />
           ) : isPlaying ? (
-            <Pause className="size-5" />
+            <AnimateIcon animateOnHover>
+              <Pause size={20} className="size-5" />
+            </AnimateIcon>
           ) : (
-            <Play className="size-5" />
+            <AnimateIcon animateOnHover>
+              <Play size={20} className="size-5" />
+            </AnimateIcon>
           )}
         </button>
         <div className="flex-1">

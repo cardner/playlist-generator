@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { getAllSavedPlaylistsWithCollections, deleteSavedPlaylist, savePlaylist } from "@/db/playlist-storage";
 import type { GeneratedPlaylist } from "@/features/playlists";
 import { PlaylistDisplay } from "@/components/PlaylistDisplay";
-import { Music, Trash2, Loader2, Database, Shuffle, Download, Upload } from "lucide-react";
+import { Music, Loader2, Database, Shuffle } from "lucide-react";
+import { AnimateIcon, Download, Trash2, Upload } from "@/components/animate-ui";
 import { Button, Alert, Card } from "@/design-system/components";
 import { getCollection, getCurrentCollectionId, getAllCollections } from "@/db/storage";
 import { logger } from "@/lib/logger";
@@ -308,7 +309,7 @@ export default function SavedPlaylistsPage() {
             <Button
               variant="secondary"
               size="sm"
-              leftIcon={isExporting ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+              leftIcon={isExporting ? <Loader2 className="size-4 animate-spin" /> : <AnimateIcon animateOnHover><Upload size={16} className="size-4" /></AnimateIcon>}
               onClick={handleExportPlaylists}
               disabled={isExporting || playlists.length === 0}
               title="Export all playlists to JSON"
@@ -318,7 +319,7 @@ export default function SavedPlaylistsPage() {
             <Button
               variant="secondary"
               size="sm"
-              leftIcon={isImporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+              leftIcon={isImporting ? <Loader2 className="size-4 animate-spin" /> : <AnimateIcon animateOnHover><Download size={16} className="size-4" /></AnimateIcon>}
               onClick={handleImportClick}
               disabled={isImporting}
               title="Import playlists from JSON"
@@ -356,7 +357,7 @@ export default function SavedPlaylistsPage() {
             </Button>
             <Button
               variant="secondary"
-              leftIcon={isImporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+              leftIcon={isImporting ? <Loader2 className="size-4 animate-spin" /> : <AnimateIcon animateOnHover><Download size={16} className="size-4" /></AnimateIcon>}
               onClick={handleImportClick}
               disabled={isImporting || collections.length === 0}
             >
@@ -397,7 +398,7 @@ export default function SavedPlaylistsPage() {
                       className="opacity-0 group-hover:opacity-100 p-2 text-app-secondary hover:text-app-primary hover:bg-app-hover rounded-sm transition-all disabled:opacity-50"
                       title="Export playlist"
                     >
-                      <Upload className="size-4" />
+                      <AnimateIcon animateOnHover><Upload size={16} className="size-4" /></AnimateIcon>
                     </button>
                     <button
                       onClick={(e) => {
@@ -417,7 +418,7 @@ export default function SavedPlaylistsPage() {
                       className="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:bg-red-500/10 rounded-sm transition-all"
                       title="Delete playlist"
                     >
-                      <Trash2 className="size-4" />
+                      <AnimateIcon animateOnHover><Trash2 size={16} className="size-4" /></AnimateIcon>
                     </button>
                   </div>
                 </div>

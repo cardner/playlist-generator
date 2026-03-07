@@ -43,17 +43,15 @@ import { useState, useEffect } from "react";
 import {
   Music,
   Edit,
-  Trash2,
   CheckCircle2,
   Calendar,
   HardDrive,
   X,
   AlertCircle,
   Check,
-  Download,
-  Upload,
   Loader2,
 } from "lucide-react";
+import { AnimateIcon, Download, Trash2, Upload } from "@/components/animate-ui";
 import type { LibraryRootRecord } from "@/db/schema";
 import {
   getAllCollections,
@@ -375,7 +373,7 @@ export function CollectionManager({ onCollectionChange, refreshTrigger }: Collec
               </>
             ) : (
               <>
-                <Upload className="size-4" />
+                <AnimateIcon animateOnHover><Upload size={16} className="size-4" /></AnimateIcon>
                 Import Collection
               </>
             )}
@@ -411,7 +409,7 @@ export function CollectionManager({ onCollectionChange, refreshTrigger }: Collec
             </>
           ) : (
             <>
-              <Upload className="size-4" />
+              <AnimateIcon animateOnHover><Upload size={16} className="size-4" /></AnimateIcon>
               Import Collection
             </>
           )}
@@ -556,7 +554,7 @@ export function CollectionManager({ onCollectionChange, refreshTrigger }: Collec
                     {exportingId === collection.id ? (
                       <Loader2 className="size-3.5 animate-spin" />
                     ) : (
-                      <Download className="size-3.5" />
+                      <AnimateIcon animateOnHover><Download size={14} className="size-3.5" /></AnimateIcon>
                     )}
                   </button>
                   <button
@@ -576,7 +574,7 @@ export function CollectionManager({ onCollectionChange, refreshTrigger }: Collec
                     {deletingId === collection.id ? (
                       <AlertCircle className="size-3.5 animate-pulse" />
                     ) : (
-                      <Trash2 className="size-3.5" />
+                      <AnimateIcon animateOnHover><Trash2 size={14} className="size-3.5" /></AnimateIcon>
                     )}
                   </button>
                 </div>

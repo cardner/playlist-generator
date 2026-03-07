@@ -36,6 +36,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X, Home, Library, Smartphone, ListMusic } from "lucide-react";
+import { AnimateIcon } from "./animate-ui";
 import { ThemeToggle } from "./ThemeToggle";
 import { Logo } from "./Logo";
 import { InstallPromptButton } from "./InstallPromptButton";
@@ -125,7 +126,9 @@ export function Navigation() {
                       : "text-app-secondary hover:bg-app-hover hover:text-app-primary"
                   }`}
                 >
-                  <Icon className="size-4 shrink-0" aria-hidden />
+                  <AnimateIcon animateOnHover>
+                    <Icon className="size-4 shrink-0" aria-hidden />
+                  </AnimateIcon>
                   {item.label}
                 </Link>
                 );
@@ -147,7 +150,9 @@ export function Navigation() {
               aria-expanded={isMobileMenuOpen}
               data-icon="menu"
             >
-              <Menu className="size-6" />
+              <AnimateIcon animateOnHover>
+                <Menu className="size-6" />
+              </AnimateIcon>
             </button>
           </div>
         </div>
@@ -176,7 +181,9 @@ export function Navigation() {
                 aria-label="Close mobile menu"
                 data-icon="close"
               >
-                <X className="size-6" />
+                <AnimateIcon animateOnHover>
+                  <X className="size-6" />
+                </AnimateIcon>
               </button>
             </div>
             
@@ -199,7 +206,9 @@ export function Navigation() {
                           : "text-app-secondary hover:bg-app-hover hover:text-app-primary"
                       }`}
                     >
-                      <Icon className="size-5 shrink-0" aria-hidden />
+                      <AnimateIcon animateOnHover>
+                        <Icon className="size-5 shrink-0" aria-hidden />
+                      </AnimateIcon>
                       {item.label}
                     </Link>
                   );

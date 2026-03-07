@@ -6,6 +6,24 @@ if (typeof globalThis.fetch === 'undefined') {
   globalThis.fetch = jest.fn().mockResolvedValue({ ok: true })
 }
 
+// Polyfill IntersectionObserver for tests (framer-motion useInView, e.g. AnimateIcon)
+if (typeof globalThis.IntersectionObserver === 'undefined') {
+  globalThis.IntersectionObserver = class MockIntersectionObserver {
+    constructor(callback) {
+      this.callback = callback
+    }
+    observe() {
+      this.callback([{ isIntersecting: true }], this)
+    }
+    disconnect() {}
+    unobserve() {}
+    takeRecords() { return [] }
+    root = null
+    rootMargin = ''
+    thresholds = []
+  }
+}
+
 // Polyfill TextEncoder/TextDecoder for tests
 if (typeof globalThis.TextEncoder === 'undefined') {
   const util = require('util');

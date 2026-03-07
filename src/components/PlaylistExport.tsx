@@ -75,18 +75,17 @@ import { SpotifyPlaylistExport } from "./SpotifyPlaylistExport";
 import { hasSpotifyTracks } from "@/features/spotify-export/uri-resolver";
 import { logger } from "@/lib/logger";
 import {
-  Download,
   FileText,
   Music,
   FileJson,
   AlertCircle,
   Loader2,
   RefreshCw,
-  Settings,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AnimateIcon, Download, Settings } from "@/components/animate-ui";
 import { DeviceSyncPanel } from "./DeviceSyncPanel";
 
 interface PlaylistExportProps {
@@ -372,16 +371,16 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
     <div className="space-y-4">
       {/* Collection Mismatch Warning */}
       {collectionMismatch && (
-        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-sm p-4">
+        <div className="bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm p-4">
           <div className="flex items-start gap-3">
-            <AlertCircle className="size-5 text-yellow-500 shrink-0 mt-0.5" />
+            <AlertCircle className="size-5 text-info-blue-500 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <h4 className="text-yellow-500 font-medium mb-1">Collection Mismatch</h4>
-              <p className="text-yellow-500 text-sm mb-2">
+              <h4 className="text-info-blue-500 font-medium mb-1">Collection Mismatch</h4>
+              <p className="text-info-blue-500 text-sm mb-2">
                 This playlist was created from the collection &quot;{playlistCollection?.name || "Unknown"}&quot;, 
                 but you are currently viewing the collection &quot;{currentCollection?.name || "Unknown"}&quot;.
               </p>
-              <p className="text-yellow-500 text-sm">
+              <p className="text-info-blue-500 text-sm">
                 Exporting this playlist may not work correctly because the file paths may not match your current collection. 
                 Consider switching to the collection this playlist was created from before exporting.
               </p>
@@ -400,7 +399,9 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
             className="flex items-center gap-2 px-3 py-1.5 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm transition-colors text-sm border border-app-border"
             title="Export settings"
           >
-            <Settings className="size-4" />
+            <AnimateIcon animateOnHover>
+              <Settings size={16} className="size-4" />
+            </AnimateIcon>
             {showExportConfig ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
           </button>
         </div>
@@ -516,17 +517,17 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
                     <div className="mt-3 p-3 bg-app-surface border border-app-border rounded-sm">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-app-primary text-xs font-medium">Path Validation</span>
-                        <span className={`text-xs ${pathValidationResult.invalidPaths === 0 && pathValidationResult.missingPaths === 0 ? 'text-green-500' : 'text-yellow-500'}`}>
+                        <span className={`text-xs ${pathValidationResult.invalidPaths === 0 && pathValidationResult.missingPaths === 0 ? 'text-green-500' : 'text-info-blue-500'}`}>
                           {pathValidationResult.validPaths}/{pathValidationResult.totalTracks} valid
                         </span>
                       </div>
                       {pathValidationResult.invalidPaths > 0 && (
-                        <p className="text-yellow-500 text-xs">
+                        <p className="text-info-blue-500 text-xs">
                           {pathValidationResult.invalidPaths} path(s) may have issues
                         </p>
                       )}
                       {pathValidationResult.missingPaths > 0 && (
-                        <p className="text-yellow-500 text-xs">
+                        <p className="text-info-blue-500 text-xs">
                           {pathValidationResult.missingPaths} path(s) missing relative paths
                         </p>
                       )}
@@ -548,7 +549,7 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
                             <div key={idx} className="text-xs text-app-secondary mt-1">
                               <span className="font-mono">{issue.path}</span>
                               {issue.issues.length > 0 && (
-                                <ul className="list-disc list-inside ml-2 text-yellow-500">
+                                <ul className="list-disc list-inside ml-2 text-info-blue-500">
                                   {issue.issues.map((i: string, iidx: number) => (
                                     <li key={iidx}>{i}</li>
                                   ))}
@@ -618,14 +619,14 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
       )}
 
       {showRelinkPrompt && libraryRootId && (
-        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-sm p-4 space-y-3">
+        <div className="bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm p-4 space-y-3">
           <div className="flex items-start gap-3">
-            <AlertCircle className="size-5 text-yellow-500 shrink-0 mt-0.5" />
+            <AlertCircle className="size-5 text-info-blue-500 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-yellow-500 text-sm font-medium mb-1">
+              <p className="text-info-blue-500 text-sm font-medium mb-1">
                 Missing Relative Paths
               </p>
-              <p className="text-yellow-500 text-sm mb-3">
+              <p className="text-info-blue-500 text-sm mb-3">
                 Your library doesn&apos;t have relative paths stored. Playlist
                 exports (M3U, PLS, XSPF) may not work correctly. You can relink
                 your library root to update paths.
@@ -644,13 +645,13 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
       )}
 
       {hasPathWarning && !showRelinkPrompt && (
-        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-sm p-4 flex items-start gap-3">
-          <AlertCircle className="size-5 text-yellow-500 shrink-0 mt-0.5" />
+        <div className="bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm p-4 flex items-start gap-3">
+          <AlertCircle className="size-5 text-info-blue-500 shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-yellow-500 text-sm font-medium mb-1">
+            <p className="text-info-blue-500 text-sm font-medium mb-1">
               Path Warning
             </p>
-            <p className="text-yellow-500 text-sm">
+            <p className="text-info-blue-500 text-sm">
               Some tracks don&apos;t have relative paths. You may need to
               manually relink files in your music player after importing this
               playlist.
@@ -658,7 +659,7 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
             {libraryRootId && (
               <button
                 onClick={() => setShowRelinkPrompt(true)}
-                className="mt-2 flex items-center gap-2 px-3 py-1.5 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-500 rounded-sm transition-colors text-sm"
+                className="mt-2 flex items-center gap-2 px-3 py-1.5 bg-info-blue-400/20 hover:bg-info-blue-400/30 text-info-blue-500 rounded-sm transition-colors text-sm"
               >
                 <RefreshCw className="size-4" />
                 Relink Library Root
@@ -700,7 +701,7 @@ export function PlaylistExport({ playlist, libraryRootId, playlistCollectionId }
                 {description}
               </div>
             </div>
-            <Download className="size-4 text-app-tertiary shrink-0" />
+            <AnimateIcon animateOnHover><Download size={16} className="size-4 text-app-tertiary shrink-0" /></AnimateIcon>
           </button>
         ))}
       </div>

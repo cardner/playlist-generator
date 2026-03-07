@@ -7,7 +7,8 @@
 "use client";
 
 import { memo, Fragment } from "react";
-import { Edit2, Play, Pause, Loader2, Clock, AlertTriangle, Check } from "lucide-react";
+import { Edit2, Loader2, Clock, AlertTriangle, Check } from "lucide-react";
+import { AnimateIcon, Pause, Play } from "@/components/animate-ui";
 import type { TrackRecord, TrackWritebackRecord } from "@/db/schema";
 import { TrackMetadataEditor } from "./TrackMetadataEditor";
 
@@ -70,9 +71,13 @@ function LibraryBrowserTrackRowInner({
             {searchingTrackId === track.trackFileId ? (
               <Loader2 className="size-4 animate-spin" />
             ) : playingTrackId === track.trackFileId ? (
-              <Pause className="size-4" />
+              <AnimateIcon animateOnHover>
+                <Pause size={16} className="size-4" />
+              </AnimateIcon>
             ) : (
-              <Play className="size-4" />
+              <AnimateIcon animateOnHover>
+                <Play size={16} className="size-4" />
+              </AnimateIcon>
             )}
           </button>
         </td>
@@ -101,7 +106,7 @@ function LibraryBrowserTrackRowInner({
                     track.tech.bpmConfidence >= 0.7
                       ? "bg-green-500/20 text-green-400"
                       : track.tech.bpmConfidence >= 0.5
-                      ? "bg-yellow-500/20 text-yellow-400"
+                      ? "bg-info-blue-400/20 text-info-blue-400"
                       : "bg-red-500/20 text-red-400"
                   }`}
                   title={`Confidence: ${Math.round(track.tech.bpmConfidence * 100)}% | Thresholds: ✓ ≥ 70%, ? 50–69%, ? < 50% | Source: ${track.tech.bpmSource || "unknown"} | Method: ${track.tech.bpmMethod || "unknown"}`}
@@ -124,7 +129,7 @@ function LibraryBrowserTrackRowInner({
             {writebackState === "pending" && (
               <span title="Metadata sync pending">
                 <Clock
-                  className="size-4 text-yellow-500"
+                  className="size-4 text-info-blue-500"
                   aria-label="Metadata sync pending"
                 />
               </span>

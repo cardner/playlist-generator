@@ -49,13 +49,13 @@
 import { useState } from "react";
 import {
   GripVertical,
-  Trash2,
   Edit2,
   Save,
   X,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
+import { AnimateIcon, Trash2 } from "@/components/animate-ui";
 import { cn } from "@/lib/utils";
 import type { EditableSection, SectionName, TempoTarget, EnergyLevel } from "@/hooks/useFlowArcSections";
 
@@ -282,7 +282,7 @@ export function SectionEditor({
           onClick={onDelete}
           className="p-1.5 text-app-tertiary hover:text-red-500 transition-colors"
         >
-          <Trash2 className="size-4" />
+          <AnimateIcon animateOnHover><Trash2 size={16} className="size-4" /></AnimateIcon>
         </button>
       </div>
     </div>

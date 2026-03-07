@@ -15,7 +15,8 @@ import { InlineAudioPlayer, type InlineAudioPlayerRef } from "@/components/Inlin
 import { useAudioPreviewState } from "@/hooks/useAudioPreviewState";
 import { searchTrackSample } from "@/features/audio-preview/platform-searcher";
 import { MAX_PLAY_ATTEMPTS } from "@/lib/audio-playback-config";
-import { Music, Play, Pause, Loader2 } from "lucide-react";
+import { Music, Loader2 } from "lucide-react";
+import { AnimateIcon, Pause, Play } from "@/components/animate-ui";
 
 export type CollectionTrackWithStatus = {
   trackFileId: string;
@@ -610,9 +611,13 @@ export function CollectionSyncBrowser({
                                   {searchingTrackId === track.trackFileId ? (
                                     <Loader2 className="size-4 animate-spin" />
                                   ) : playingTrackId === track.trackFileId ? (
-                                    <Pause className="size-4" />
+                                    <AnimateIcon animateOnHover>
+                                      <Pause size={16} className="size-4" />
+                                    </AnimateIcon>
                                   ) : (
-                                    <Play className="size-4" />
+                                    <AnimateIcon animateOnHover>
+                                      <Play size={16} className="size-4" />
+                                    </AnimateIcon>
                                   )}
                                 </button>
                               </td>
@@ -627,7 +632,7 @@ export function CollectionSyncBrowser({
                                   </span>
                                 )}
                                 {showOnDeviceColumn && track.onDevice === false && (
-                                  <span className="ml-1 text-[10px] text-yellow-500 shrink-0">
+                                  <span className="ml-1 text-[10px] text-info-blue-500 shrink-0">
                                     New
                                   </span>
                                 )}

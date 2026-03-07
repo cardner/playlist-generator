@@ -64,24 +64,26 @@ export function AudioLines({
       {...rest}
     >
       {paths.map(({ d, key }, i) => (
-        <motion.path
+        <motion.g
           key={key}
-          d={d}
-          initial={shouldAnimate ? { pathLength: 0, opacity: 0.5 } : undefined}
+          style={{ transformOrigin: "center bottom" }}
+          initial={shouldAnimate ? { scaleY: 0.4 } : undefined}
           animate={
             shouldAnimate
               ? {
-                  pathLength: [0, 1, 0],
-                  opacity: [0.5, 1, 0.5],
+                  scaleY: [0.4, 1, 0.4],
                   transition: {
-                    duration: 1.2,
+                    duration: 0.6,
                     repeat: loop ? Infinity : 0,
-                    delay: delay + i * 0.1,
+                    delay: delay + i * 0.08,
+                    ease: "easeInOut",
                   },
                 }
               : undefined
           }
-        />
+        >
+          <path d={d} />
+        </motion.g>
       ))}
     </svg>
   );

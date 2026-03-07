@@ -10,7 +10,8 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { Upload, FileJson, Loader2, CheckCircle2, AlertCircle, X, Music, Play, Users } from "lucide-react";
+import { FileJson, Loader2, CheckCircle2, AlertCircle, X, Music, Users } from "lucide-react";
+import { AnimateIcon, Play, Upload } from "@/components/animate-ui";
 import JSZip from "jszip";
 import { parseSpotifyExport, type SpotifyExportData } from "@/features/spotify-import/parser";
 import { createSpotifyCollection } from "@/features/spotify-import/collection-creator";
@@ -214,7 +215,7 @@ export function SpotifyImport({ onImportComplete, onClose }: SpotifyImportProps)
           >
             {files.length === 0 ? (
               <>
-                <Upload className="size-12 text-app-tertiary mx-auto mb-4" />
+                <AnimateIcon animateOnHover><Upload size={48} className="size-12 text-app-tertiary mx-auto mb-4" /></AnimateIcon>
                 <p className="text-app-primary mb-2 font-medium">
                   Drop Spotify export files here
                 </p>
@@ -294,7 +295,9 @@ export function SpotifyImport({ onImportComplete, onClose }: SpotifyImportProps)
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Play className="size-5 text-accent-primary" />
+                <AnimateIcon animateOnHover>
+                  <Play size={20} className="size-5 text-accent-primary" />
+                </AnimateIcon>
                 <div>
                   <div className="text-app-primary font-medium">{exportData.playlists.length}</div>
                   <div className="text-app-secondary">Playlists</div>

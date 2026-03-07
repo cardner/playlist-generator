@@ -131,7 +131,7 @@ export function RelinkLibraryRoot({
                     <strong>{result.total}</strong> tracks
                   </p>
                   {result.unmatched > 0 && (
-                    <p className="text-yellow-500">
+                    <p className="text-info-blue-500">
                       {result.unmatched} tracks could not be matched. They may
                       have been moved or deleted.
                     </p>

@@ -406,20 +406,20 @@ export function DeviceSyncSidebar({
                     )}
                     {devicePathDetection.keyCoverageLog.keyMapSize === 0 &&
                       devicePathDetection.keyCoverageLog.scanned > 0 && (
-                        <p className="mt-1 text-[11px] text-yellow-500">
+                        <p className="mt-1 text-[11px] text-info-blue-500">
                           Device scan completed, but no library match keys were available.
                         </p>
                       )}
                   </div>
                 )}
                 {(devicePathDetection.missingMetadataCount ?? 0) > 0 && (
-                  <div className="mt-2 text-xs text-yellow-500">
+                  <div className="mt-2 text-xs text-info-blue-500">
                     {devicePathDetection.missingMetadataCount} track(s) missing metadata.{" "}
                     {devicePathDetection.onRescanLibrary && (
                       <button
                         type="button"
                         onClick={devicePathDetection.onRescanLibrary}
-                        className="underline hover:text-yellow-400"
+                        className="underline hover:text-info-blue-400"
                       >
                         Rescan library
                       </button>
@@ -447,7 +447,7 @@ export function DeviceSyncSidebar({
                               <button
                                 type="button"
                                 onClick={devicePathDetection.onRescanLibrary}
-                                className="text-yellow-500 underline hover:text-yellow-400"
+                                className="text-info-blue-500 underline hover:text-info-blue-400"
                               >
                                 Rescan library
                               </button>

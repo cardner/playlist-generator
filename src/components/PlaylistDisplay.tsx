@@ -73,8 +73,6 @@ import type { LLMConfig } from "@/types/playlist";
 import { TrackExpansionPanel } from "./TrackExpansionPanel";
 import { findSimilarTracks } from "@/lib/similar-tracks-finder";
 import {
-  Play,
-  Pause,
   Music,
   RefreshCw,
   Sparkles,
@@ -82,14 +80,12 @@ import {
   TrendingUp,
   Shuffle,
   Plus,
-  Download,
   Lock,
   Unlock,
   Edit2,
   Save,
   Check,
   X,
-  Trash2,
   UserPlus,
   Disc,
   FileMusic,
@@ -101,6 +97,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AlertCircle } from "lucide-react";
+import { AnimateIcon, Pause, Play, Trash2 } from "@/components/animate-ui";
 import { ChipInput } from "./ChipInput";
 import {
   getStrategy,
@@ -638,13 +635,17 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
               {searchingTrackId === trackFileId ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : playingTrackId === trackFileId ? (
-                <Pause className="size-4" />
+                <AnimateIcon animateOnHover>
+                  <Pause size={16} className="size-4" />
+                </AnimateIcon>
               ) : (
                 <>
                   <span className="text-sm group-hover:hidden">
                     {String(index + 1).padStart(2, "0")}
                   </span>
-                  <Play className="size-4 hidden group-hover:block" />
+                  <AnimateIcon animateOnHover>
+                    <Play size={16} className="size-4 hidden group-hover:block" />
+                  </AnimateIcon>
                 </>
               )}
             </button>
@@ -696,7 +697,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                     className="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:bg-red-500/10 rounded-sm transition-all disabled:opacity-50"
                     title="Remove discovery track"
                   >
-                    <Trash2 className="size-4" />
+                    <AnimateIcon animateOnHover><Trash2 size={16} className="size-4" /></AnimateIcon>
                   </button>
                 </div>
               </div>
@@ -801,13 +802,17 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
               {searchingTrackId === trackFileId ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : playingTrackId === trackFileId ? (
-                <Pause className="size-4" />
+                <AnimateIcon animateOnHover>
+                  <Pause size={16} className="size-4" />
+                </AnimateIcon>
               ) : (
                 <>
                   <span className="text-sm group-hover:hidden">
                     {String(index + 1).padStart(2, "0")}
                   </span>
-                  <Play className="size-4 hidden group-hover:block" />
+                  <AnimateIcon animateOnHover>
+                    <Play size={16} className="size-4 hidden group-hover:block" />
+                  </AnimateIcon>
                 </>
               )}
             </button>
@@ -844,7 +849,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                     className="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:bg-red-500/10 rounded-sm transition-all disabled:opacity-50"
                     title="Remove track"
                   >
-                    <Trash2 className="size-4" />
+                    <AnimateIcon animateOnHover><Trash2 size={16} className="size-4" /></AnimateIcon>
                   </button>
                 </div>
               </div>
@@ -1845,7 +1850,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                       <span className={cn(
                         "text-sm font-semibold",
                         displayPlaylist.validation.score >= 0.8 ? "text-green-500" :
-                        displayPlaylist.validation.score >= 0.6 ? "text-yellow-500" :
+                        displayPlaylist.validation.score >= 0.6 ? "text-info-blue-500" :
                         "text-red-500"
                       )}>
                         {(displayPlaylist.validation.score * 100).toFixed(0)}%
@@ -1854,7 +1859,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
                     {displayPlaylist.validation.issues.length > 0 && (
                       <div className="mt-2 space-y-1">
                         {displayPlaylist.validation.issues.map((issue, idx) => (
-                          <div key={idx} className="flex items-start gap-2 text-sm text-yellow-500">
+                          <div key={idx} className="flex items-start gap-2 text-sm text-info-blue-500">
                             <AlertCircle className="size-4 mt-0.5 flex-shrink-0" />
                             <span>{issue}</span>
                           </div>
@@ -1944,7 +1949,7 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
               </button>
             )}
             {hasUnsavedChanges && (
-              <span className="text-xs text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 px-2 py-1 rounded-sm">
+              <span className="text-xs text-info-blue-500 bg-info-blue-400/10 border border-info-blue-400/20 px-2 py-1 rounded-sm">
                 Unsaved changes
               </span>
             )}
@@ -2134,14 +2139,14 @@ export function PlaylistDisplay({ playlist: initialPlaylist, playlistCollectionI
           </div>
         )}
         {variantError && (
-          <div className="mt-4 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-sm">
+          <div className="mt-4 p-4 bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm">
             <div className="flex items-start gap-3">
-              <AlertCircle className="size-5 text-yellow-500 shrink-0 mt-0.5" />
+              <AlertCircle className="size-5 text-info-blue-500 shrink-0 mt-0.5" />
               <div>
-                <p className="text-yellow-500 text-sm font-medium mb-1">{variantError.title}</p>
-                <p className="text-yellow-500 text-sm">{variantError.message}</p>
+                <p className="text-info-blue-500 text-sm font-medium mb-1">{variantError.title}</p>
+                <p className="text-info-blue-500 text-sm">{variantError.message}</p>
                 {variantError.suggestions.length > 0 && (
-                  <div className="mt-2 text-yellow-500 text-xs space-y-1">
+                  <div className="mt-2 text-info-blue-500 text-xs space-y-1">
                     {variantError.suggestions.map((suggestion) => (
                       <div key={suggestion}>• {suggestion}</div>
                     ))}

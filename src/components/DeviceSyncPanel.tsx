@@ -3280,7 +3280,7 @@ export function DeviceSyncPanel({
               iPod Detection & Setup
             </label>
             {!supportsWebUSB() && (
-              <div className="text-xs text-yellow-500">
+              <div className="text-xs text-info-blue-500">
                 WebUSB is required for iPod setup. Use a Chromium browser.
               </div>
             )}
@@ -3350,7 +3350,7 @@ export function DeviceSyncPanel({
                 <Check className="size-4 text-green-500 shrink-0" aria-label="Writable" />
               )}
               {writeAccessStatus === "read-only" && (
-                <span className="text-[11px] text-yellow-500">Read-only</span>
+                <span className="text-[11px] text-info-blue-500">Read-only</span>
               )}
               {writeAccessStatus === "error" && (
                 <X className="size-4 text-red-500 shrink-0" aria-label="Check failed" />
@@ -3359,7 +3359,7 @@ export function DeviceSyncPanel({
                 <span className="text-[11px] text-green-500">Ready</span>
               )}
               {ipodSetupStatus === "needs_setup" && (
-                <span className="text-[11px] text-yellow-500">Setup required</span>
+                <span className="text-[11px] text-info-blue-500">Setup required</span>
               )}
               {ipodSetupStatus === "error" && (
                 <span className="text-[11px] text-red-500">Setup failed</span>
@@ -3492,7 +3492,7 @@ export function DeviceSyncPanel({
       {!supportsFileSystemAccess() &&
         !useCompanionApp &&
         !(isJellyfinPreset && jellyfinExportMode === "download") && (
-        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-sm p-3 text-yellow-500 text-sm">
+        <div className="bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm p-3 text-info-blue-500 text-sm">
           USB sync requires a Chromium browser that supports the File System Access API.
         </div>
       )}
@@ -3503,7 +3503,7 @@ export function DeviceSyncPanel({
         </div>
       )}
       {syncWarning && (
-        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-sm p-3 text-yellow-500 text-sm">
+        <div className="bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm p-3 text-info-blue-500 text-sm">
           {syncWarning}
         </div>
       )}
@@ -3721,7 +3721,7 @@ export function DeviceSyncPanel({
               iPod Detection & Setup
             </label>
             {!supportsWebUSB() && (
-              <div className="text-xs text-yellow-500">
+              <div className="text-xs text-info-blue-500">
                 WebUSB is required for iPod setup. Use a Chromium browser.
               </div>
             )}
@@ -3789,7 +3789,7 @@ export function DeviceSyncPanel({
                 <Check className="size-4 text-green-500 shrink-0" aria-label="Writable" />
               )}
               {writeAccessStatus === "read-only" && (
-                <span className="text-[11px] text-yellow-500">Read-only</span>
+                <span className="text-[11px] text-info-blue-500">Read-only</span>
               )}
               {writeAccessStatus === "error" && (
                 <X className="size-4 text-red-500 shrink-0" aria-label="Check failed" />
@@ -3798,7 +3798,7 @@ export function DeviceSyncPanel({
                 <span className="text-[11px] text-green-500">Ready</span>
               )}
               {ipodSetupStatus === "needs_setup" && (
-                <span className="text-[11px] text-yellow-500">Setup required</span>
+                <span className="text-[11px] text-info-blue-500">Setup required</span>
               )}
               {ipodSetupStatus === "error" && (
                 <span className="text-[11px] text-red-500">Setup failed</span>
