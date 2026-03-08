@@ -1,4 +1,5 @@
 import { logger } from "@/lib/logger";
+import { sanitizePathSegment } from "@/features/devices/path-segment";
 import { getIpodWasmModule, wasmCallWithStrings } from "./wasm";
 
 const DEFAULT_MOUNTPOINT = "/iPod";
@@ -200,11 +201,12 @@ export async function writeFileToIpodRelativePath(
   if (parts.length === 0) {
     throw new Error("Invalid destination path");
   }
-  const fileName = parts[parts.length - 1];
+  const fileName = sanitizePathSegment(parts[parts.length - 1], "track");
   const dirParts = parts.slice(0, -1);
   let currentDir = ipodHandle;
   for (const dir of dirParts) {
-    currentDir = await currentDir.getDirectoryHandle(dir, { create: true });
+    const safeDir = sanitizePathSegment(dir, "_");
+    currentDir = await currentDir.getDirectoryHandle(safeDir, { create: true });
   }
   const fileHandle = await currentDir.getFileHandle(fileName, { create: true });
   const writable = await fileHandle.createWritable();
