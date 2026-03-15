@@ -11,6 +11,8 @@ export interface DismissedState {
   scanRunId: string | null;
   processingKey: string | null;
   writebackKey: string | null;
+  /** Whether the "Tracks Pending Processing" / "Metadata Processing" banner was dismissed for this root. */
+  unprocessedBannerDismissed: boolean;
 }
 
 function readAll(): Record<string, DismissedState> {
@@ -41,12 +43,13 @@ export function getDismissed(rootId: string): DismissedState {
   const data = readAll();
   const entry = data[rootId];
   if (!entry || typeof entry !== "object") {
-    return { scanRunId: null, processingKey: null, writebackKey: null };
+    return { scanRunId: null, processingKey: null, writebackKey: null, unprocessedBannerDismissed: false };
   }
   return {
     scanRunId: typeof entry.scanRunId === "string" ? entry.scanRunId : null,
     processingKey: typeof entry.processingKey === "string" ? entry.processingKey : null,
     writebackKey: typeof entry.writebackKey === "string" ? entry.writebackKey : null,
+    unprocessedBannerDismissed: entry.unprocessedBannerDismissed === true,
   };
 }
 
@@ -59,6 +62,7 @@ export function setDismissedScan(rootId: string, runId: string): void {
     scanRunId: null,
     processingKey: null,
     writebackKey: null,
+    unprocessedBannerDismissed: false,
   };
   data[rootId] = { ...entry, scanRunId: runId };
   writeAll(data);
@@ -73,6 +77,7 @@ export function setDismissedProcessing(rootId: string, key: string): void {
     scanRunId: null,
     processingKey: null,
     writebackKey: null,
+    unprocessedBannerDismissed: false,
   };
   data[rootId] = { ...entry, processingKey: key };
   writeAll(data);
@@ -87,7 +92,23 @@ export function setDismissedWriteback(rootId: string, key: string): void {
     scanRunId: null,
     processingKey: null,
     writebackKey: null,
+    unprocessedBannerDismissed: false,
   };
   data[rootId] = { ...entry, writebackKey: key };
+  writeAll(data);
+}
+
+/**
+ * Persist that the "Tracks Pending Processing" / "Metadata Processing" banner was dismissed for this root.
+ */
+export function setDismissedUnprocessedBanner(rootId: string): void {
+  const data = readAll();
+  const entry = data[rootId] ?? {
+    scanRunId: null,
+    processingKey: null,
+    writebackKey: null,
+    unprocessedBannerDismissed: false,
+  };
+  data[rootId] = { ...entry, unprocessedBannerDismissed: true };
   writeAll(data);
 }

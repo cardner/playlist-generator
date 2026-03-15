@@ -4,6 +4,7 @@ import {
   setDismissedScan,
   setDismissedProcessing,
   setDismissedWriteback,
+  setDismissedUnprocessedBanner,
 } from "@/lib/dismissed-interruption-storage";
 
 const STORAGE_KEY = "app-dismissed-interruption-banners";
@@ -19,6 +20,7 @@ describe("dismissed-interruption-storage", () => {
         scanRunId: null,
         processingKey: null,
         writebackKey: null,
+        unprocessedBannerDismissed: false,
       });
     });
 
@@ -28,6 +30,7 @@ describe("dismissed-interruption-storage", () => {
         scanRunId: null,
         processingKey: null,
         writebackKey: null,
+        unprocessedBannerDismissed: false,
       });
     });
 
@@ -39,6 +42,7 @@ describe("dismissed-interruption-storage", () => {
         scanRunId: "run-1",
         processingKey: "lib1-scan1",
         writebackKey: "lib1-wb1",
+        unprocessedBannerDismissed: false,
       });
     });
 
@@ -48,6 +52,7 @@ describe("dismissed-interruption-storage", () => {
         scanRunId: null,
         processingKey: null,
         writebackKey: null,
+        unprocessedBannerDismissed: false,
       });
     });
 
@@ -57,6 +62,7 @@ describe("dismissed-interruption-storage", () => {
         scanRunId: null,
         processingKey: null,
         writebackKey: null,
+        unprocessedBannerDismissed: false,
       });
     });
 
@@ -75,6 +81,7 @@ describe("dismissed-interruption-storage", () => {
         scanRunId: null,
         processingKey: null,
         writebackKey: null,
+        unprocessedBannerDismissed: false,
       });
     });
   });
@@ -93,6 +100,7 @@ describe("dismissed-interruption-storage", () => {
         scanRunId: "run-1",
         processingKey: "lib1-scan1",
         writebackKey: "lib1-wb1",
+        unprocessedBannerDismissed: false,
       });
     });
   });
@@ -111,6 +119,7 @@ describe("dismissed-interruption-storage", () => {
         scanRunId: "run-1",
         processingKey: "lib1-scan1",
         writebackKey: "lib1-wb1",
+        unprocessedBannerDismissed: false,
       });
     });
   });
@@ -129,6 +138,26 @@ describe("dismissed-interruption-storage", () => {
         scanRunId: "run-1",
         processingKey: "lib1-scan1",
         writebackKey: "lib1-wb1",
+        unprocessedBannerDismissed: false,
+      });
+    });
+  });
+
+  describe("setDismissedUnprocessedBanner", () => {
+    it("persists and is returned by getDismissed", () => {
+      setDismissedUnprocessedBanner("root-1");
+      expect(getDismissed("root-1").unprocessedBannerDismissed).toBe(true);
+    });
+
+    it("does not overwrite other keys for same root", () => {
+      setDismissedScan("root-1", "run-1");
+      setDismissedProcessing("root-1", "lib1-scan1");
+      setDismissedUnprocessedBanner("root-1");
+      expect(getDismissed("root-1")).toEqual({
+        scanRunId: "run-1",
+        processingKey: "lib1-scan1",
+        writebackKey: null,
+        unprocessedBannerDismissed: true,
       });
     });
   });
@@ -144,11 +173,13 @@ describe("dismissed-interruption-storage", () => {
         scanRunId: "run-1",
         processingKey: "lib1-scan1",
         writebackKey: null,
+        unprocessedBannerDismissed: false,
       });
       expect(getDismissed("root-2")).toEqual({
         scanRunId: "run-2",
         processingKey: null,
         writebackKey: "lib2-wb2",
+        unprocessedBannerDismissed: false,
       });
     });
   });
