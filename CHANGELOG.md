@@ -64,6 +64,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.19.0] - 2026-03-15
+
+### Added
+
+- **library**: make tracks pending processing banner dismissable
+
+### Fixed
+
+- **device-sync**: prevent "Name is not allowed" when syncing
+
+### Other Changes
+
+- Merge pull request #77 from cardner/sanitize-directory-names
+
 ## [1.18.0] - 2026-03-07
 
 ### Added
