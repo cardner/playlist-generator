@@ -16,6 +16,37 @@ jest.mock("@/features/devices/ipod", () => ({
   syncPlaylistsToIpod: (...args: unknown[]) => mockSyncPlaylistsToIpod(...args),
 }));
 
+function createMockDeviceHandle() {
+  const getDirectoryHandle = jest.fn(async function getDir(this: ReturnType<typeof createMockDeviceHandle>) {
+    return this;
+  });
+  const getFileHandle = jest.fn(async () => ({
+    createWritable: jest.fn(() => ({ write: jest.fn(), close: jest.fn() })),
+  }));
+  const handle = {
+    name: "Device",
+    queryPermission: jest.fn(async () => "granted" as const),
+    requestPermission: jest.fn(async () => "granted" as const),
+    getDirectoryHandle,
+    getFileHandle,
+  };
+  getDirectoryHandle.mockImplementation(async () => handle);
+  return handle;
+}
+
+const mockGetDirectoryHandle = jest.fn<() => Promise<ReturnType<typeof createMockDeviceHandle>>>();
+jest.mock("@/lib/library-selection-fs-api", () => ({
+  getDirectoryHandle: (id: string) => mockGetDirectoryHandle(id),
+  storeDirectoryHandle: jest.fn(async () => null),
+}));
+
+jest.mock("@/features/devices/device-storage", () => ({
+  saveDeviceProfile: jest.fn(async () => undefined),
+  saveDeviceSyncManifest: jest.fn(async () => undefined),
+  getDeviceTrackMappings: jest.fn(async () => []),
+  saveDeviceTrackMapping: jest.fn(async () => undefined),
+}));
+
 describe("getTrackPath with playlist subfolder", () => {
   it("adds correct depth for nested playlist folder", () => {
     const lookup: TrackLookup = {
@@ -249,6 +280,109 @@ describe("hashDeviceFileContent", () => {
     const first = await hashDeviceFileContent(file, 1024);
     const second = await hashDeviceFileContent(file, 1024);
     expect(first).toBe(second);
+  });
+});
+
+describe("sanitizePathSegment", () => {
+  let sanitizePathSegment: (segment: string, fallback?: string) => string;
+
+  beforeAll(async () => {
+    const mod = await import("@/features/devices/device-sync");
+    sanitizePathSegment = mod.sanitizePathSegment;
+  });
+
+  it("returns segment unchanged when valid", () => {
+    expect(sanitizePathSegment("MUSIC")).toBe("MUSIC");
+    expect(sanitizePathSegment("Playlists")).toBe("Playlists");
+  });
+
+  it("replaces invalid path characters with underscore", () => {
+    expect(sanitizePathSegment("Playlists: Main")).toBe("Playlists_ Main");
+    expect(sanitizePathSegment("Album/Title")).toBe("Album_Title");
+    expect(sanitizePathSegment('Artist"Name')).toBe("Artist_Name");
+  });
+
+  it("returns fallback for empty or whitespace-only after trim", () => {
+    expect(sanitizePathSegment("")).toBe("_");
+    expect(sanitizePathSegment("   ")).toBe("_");
+    expect(sanitizePathSegment(":::")).toBe("___"); // invalid chars replaced, not empty
+    expect(sanitizePathSegment("", "fallback")).toBe("fallback");
+  });
+
+  it("returns fallback for Windows reserved names (case-insensitive)", () => {
+    expect(sanitizePathSegment("CON")).toBe("_");
+    expect(sanitizePathSegment("con")).toBe("_");
+    expect(sanitizePathSegment("PRN")).toBe("_");
+    expect(sanitizePathSegment("AUX")).toBe("_");
+    expect(sanitizePathSegment("NUL")).toBe("_");
+    expect(sanitizePathSegment("COM1")).toBe("_");
+    expect(sanitizePathSegment("LPT9")).toBe("_");
+    expect(sanitizePathSegment("CON", "x")).toBe("x");
+  });
+
+  it("allows valid segment that is not reserved", () => {
+    expect(sanitizePathSegment("CONTENT")).toBe("CONTENT");
+    expect(sanitizePathSegment("COM10")).toBe("COM10");
+  });
+});
+
+describe("getOrCreateDirectory sanitizes path segments", () => {
+  it("calls getDirectoryHandle with sanitized segment when playlist folder has invalid characters", async () => {
+    const handle = createMockDeviceHandle();
+    mockGetDirectoryHandle.mockResolvedValue(handle);
+    const { syncPlaylistToDevice } = await import("@/features/devices/device-sync");
+    const profile = {
+      id: "usb-1",
+      deviceType: "usb" as const,
+      handleRef: "handle-1",
+      label: "USB",
+      playlistFormat: "m3u" as const,
+      playlistFolder: "Playlists: Main",
+      pathStrategy: "relative-to-playlist" as const,
+      lastSyncAt: 0,
+    } as import("@/db/schema").DeviceProfileRecord;
+    await syncPlaylistToDevice({
+      playlist: {
+        id: "pl-1",
+        title: "Test",
+        trackFileIds: [],
+        trackSelections: new Map(),
+        strategy: {},
+        summary: {} as never,
+      },
+      trackLookups: [],
+      deviceProfile: profile,
+    });
+    expect(handle.getDirectoryHandle).toHaveBeenCalledWith("Playlists_ Main", { create: true });
+  });
+
+  it("calls getDirectoryHandle with fallback for Windows reserved name in playlist folder", async () => {
+    const handle = createMockDeviceHandle();
+    mockGetDirectoryHandle.mockResolvedValue(handle);
+    const { syncPlaylistToDevice } = await import("@/features/devices/device-sync");
+    const profile = {
+      id: "usb-2",
+      deviceType: "usb" as const,
+      handleRef: "handle-2",
+      label: "USB",
+      playlistFormat: "m3u" as const,
+      playlistFolder: "CON",
+      pathStrategy: "relative-to-playlist" as const,
+      lastSyncAt: 0,
+    } as import("@/db/schema").DeviceProfileRecord;
+    await syncPlaylistToDevice({
+      playlist: {
+        id: "pl-2",
+        title: "Test",
+        trackFileIds: [],
+        trackSelections: new Map(),
+        strategy: {},
+        summary: {} as never,
+      },
+      trackLookups: [],
+      deviceProfile: profile,
+    });
+    expect(handle.getDirectoryHandle).toHaveBeenCalledWith("_", { create: true });
   });
 });
 

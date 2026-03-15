@@ -230,12 +230,25 @@ async function getFileFromLibrary(
   const relativePath = lookup.fileIndex.relativePath.replace(/^\/+/, "");
   const parts = relativePath.split("/").filter(Boolean);
   if (parts.length === 0) return null;
-  let current = rootHandle;
-  for (let i = 0; i < parts.length - 1; i += 1) {
-    current = await current.getDirectoryHandle(parts[i], { create: false });
+  try {
+    let current = rootHandle;
+    for (let i = 0; i < parts.length - 1; i += 1) {
+      current = await current.getDirectoryHandle(parts[i], { create: false });
+    }
+    const fileHandle = await current.getFileHandle(parts[parts.length - 1], { create: false });
+    return await fileHandle.getFile();
+  } catch (err) {
+    const isNameNotAllowed =
+      err instanceof TypeError &&
+      typeof (err as Error).message === "string" &&
+      (err as Error).message.includes("Name is not allowed");
+    if (isNameNotAllowed) {
+      throw new Error(
+        `Library path contains a name not allowed on this device: ${relativePath}`
+      );
+    }
+    throw err;
   }
-  const fileHandle = await current.getFileHandle(parts[parts.length - 1], { create: false });
-  return await fileHandle.getFile();
 }
 
 async function ensurePlaylistIndex(

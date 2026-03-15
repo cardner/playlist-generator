@@ -74,6 +74,7 @@ import {
   setDismissedScan,
   setDismissedProcessing,
   setDismissedWriteback,
+  setDismissedUnprocessedBanner,
 } from "@/lib/dismissed-interruption-storage";
 import { useBackgroundLibraryTasks } from "./BackgroundLibraryTasksProvider";
 
@@ -118,6 +119,7 @@ export function LibraryScanner({
   } | null>(null);
   const [lastScanType, setLastScanType] = useState<"full" | "quick">("full");
   const [dismissedInterruptedScanRunId, setDismissedInterruptedScanRunId] = useState<string | null>(null);
+  const [unprocessedBannerDismissed, setUnprocessedBannerDismissed] = useState(false);
   const [dismissedProcessingCheckpointKey, setDismissedProcessingCheckpointKey] = useState<string | null>(null);
   const [dismissedWritebackCheckpointKey, setDismissedWritebackCheckpointKey] = useState<string | null>(null);
 
@@ -286,6 +288,9 @@ export function LibraryScanner({
     ) {
       return null;
     }
+    if (unprocessedBannerDismissed) {
+      return null;
+    }
     const hasUnprocessed =
       unprocessedCount !== null && unprocessedCount > 0;
 
@@ -297,10 +302,23 @@ export function LibraryScanner({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2" />
             </svg>
           </div>
-          <div className="flex-1">
-            <h3 className="text-info-blue-400 font-medium mb-1">
-              {hasUnprocessed ? "Tracks Pending Processing" : "Metadata Processing"}
-            </h3>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="text-info-blue-400 font-medium mb-1">
+                {hasUnprocessed ? "Tracks Pending Processing" : "Metadata Processing"}
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setDismissedUnprocessedBanner(libraryRootId);
+                  setUnprocessedBannerDismissed(true);
+                }}
+                className="p-1 rounded text-info-blue-400 hover:bg-info-blue-400/20 focus:outline-none focus:ring-2 focus:ring-info-blue-500 focus:ring-offset-1 shrink-0"
+                aria-label="Dismiss"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
             {hasUnprocessed ? (
               <p className="text-app-secondary text-sm mb-3">
                 {unprocessedCount} scanned tracks have not been processed yet.
@@ -636,10 +654,12 @@ export function LibraryScanner({
       setDismissedInterruptedScanRunId(d.scanRunId);
       setDismissedProcessingCheckpointKey(d.processingKey);
       setDismissedWritebackCheckpointKey(d.writebackKey);
+      setUnprocessedBannerDismissed(d.unprocessedBannerDismissed);
     } else {
       setDismissedInterruptedScanRunId(null);
       setDismissedProcessingCheckpointKey(null);
       setDismissedWritebackCheckpointKey(null);
+      setUnprocessedBannerDismissed(false);
     }
   }, [libraryRoot]);
 
