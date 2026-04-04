@@ -65,6 +65,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.20.0] - 2026-04-04
+
+### Added
+
+- **safari**: fallback library flow, playlist fixes, device sync
+
+### Fixed
+
+- **ci**: add new install deps
+
+### Other Changes
+
+- Merge pull request #78 from cardner/safari
+- **storybook**: install browsers with project playwright
+
 ## [1.19.0] - 2026-03-15
 
 ### Added
