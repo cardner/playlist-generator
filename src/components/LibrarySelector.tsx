@@ -78,12 +78,20 @@ import { logger } from "@/lib/logger";
 import { exportCollection } from "@/db/storage-collection-import";
 
 interface LibrarySelectorProps {
-  onLibrarySelected?: (root: LibraryRoot) => void;
+  onLibrarySelected?: (
+    root: LibraryRoot,
+    initialFileList?: FileList,
+    options?: { sessionReselect?: boolean }
+  ) => void;
   onPermissionStatus?: (status: PermissionStatus) => void;
   onCollectionChange?: (collectionId: string | null) => void;
   onStartScan?: () => void; // Callback to trigger scanning
   onMetadataEnhancementComplete?: () => void;
   refreshTrigger?: number;
+  /** When true, fallback root has a FileList this session (e.g. Safari); hide "cannot persist after reload" warning so user can scan. */
+  fallbackHasFileList?: boolean;
+  /** When true, library already has scan/index data — hide session FileList warning after scan releases the FileList. */
+  fallbackLibraryReady?: boolean;
 }
 
 export function LibrarySelector({
@@ -93,6 +101,8 @@ export function LibrarySelector({
   onStartScan,
   onMetadataEnhancementComplete,
   refreshTrigger,
+  fallbackHasFileList,
+  fallbackLibraryReady,
 }: LibrarySelectorProps) {
   const [showRelink, setShowRelink] = useState(false);
   const [showCollectionManagerModal, setShowCollectionManagerModal] = useState(false);
@@ -236,9 +246,16 @@ export function LibrarySelector({
   const fileSystemSupported = supportsFileSystemAccess();
   const isHandleMode = currentRoot?.mode === "handle";
   const isFallbackMode = currentRoot?.mode === "fallback";
+  const showFallbackPersistWarning =
+    isFallbackMode &&
+    currentRoot &&
+    needsReimport(currentRoot) &&
+    !fallbackHasFileList &&
+    !fallbackLibraryReady;
+
   const warningMessage =
     error ??
-    (isFallbackMode && currentRoot && needsReimport(currentRoot)
+    (showFallbackPersistWarning
       ? "Files selected via fallback mode cannot persist after page reload. You'll need to re-select the folder."
       : hasRelativePathsCheck === false && currentRootId && hasCompletedScan
       ? "Missing relative paths. Playlist exports may not work correctly."
@@ -490,7 +507,8 @@ export function LibrarySelector({
                       <button
                         onClick={() => {
                           if (currentRoot) {
-                            onLibrarySelected?.(currentRoot);
+                            // Do not call onLibrarySelected(root) here — that omitted FileList and cleared
+                            // Safari session state (initialFileList) on the library page.
                             onStartScan?.();
                           }
                         }}
@@ -597,7 +615,7 @@ export function LibrarySelector({
           {/* Warnings and Actions */}
           {currentRoot && (
             <div className="space-y-3 mb-6">
-              {isFallbackMode && needsReimport(currentRoot) && (
+              {showFallbackPersistWarning && (
                 <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-sm flex items-start gap-2 text-left">
                   <AlertCircle className="size-4 text-red-500 shrink-0 mt-0.5" />
                   <p className="text-red-500 text-xs">
@@ -721,6 +739,11 @@ export function LibrarySelector({
       >
         <CollectionManager
           refreshTrigger={refreshTrigger}
+          onFallbackFolderReselected={async (root, files) => {
+            onLibrarySelected?.(root, files, { sessionReselect: true });
+            await loadSavedLibrary();
+            await checkPermission();
+          }}
           onCollectionChange={async (collectionId) => {
             if (collectionId) {
               await loadCurrentCollection();

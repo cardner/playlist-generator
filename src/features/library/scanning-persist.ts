@@ -7,6 +7,7 @@
 import type { LibraryRoot } from "@/lib/library-selection";
 import {
   buildFileIndex,
+  buildFileIndexFromFileList,
   buildFileIndexUpdateOnly,
   diffFileIndex,
   type FileIndex,
@@ -345,6 +346,86 @@ export async function quickScanLibraryWithPersistence(
 
   // Record a scan run so hasExistingScans stays true
   const scanRun = await createScanRun(libraryRoot.id, 0, 0, 0, 0);
+  await updateScanRun(scanRun.id, 0);
+
+  const duration = Date.now() - startTime;
+  const result: ScanResult = {
+    total: nextIndex.size,
+    added: diff.added.length,
+    changed: diff.changed.length,
+    removed: diff.removed.length,
+    duration,
+    entries: nextEntries,
+    diff,
+  };
+
+  return { result, libraryRoot, scanRunId: scanRun.id };
+}
+
+/**
+ * Scan library from FileList with full persistence (fallback / Safari).
+ * Creates or updates the library root record, builds file index from the FileList,
+ * saves entries per library root, and creates a scan run.
+ *
+ * @param files FileList from folder pick (webkitdirectory)
+ * @param rootName Display name for the library root
+ * @param onProgress Optional progress callback
+ * @param options Optional signal, onScanRunCreated, existingLibraryRootId
+ * @returns Promise resolving to result, library root record, and scan run id
+ */
+export async function scanLibraryFromFileListWithPersistence(
+  files: FileList,
+  rootName: string,
+  onProgress?: ScanProgressCallback,
+  options?: {
+    signal?: AbortSignal;
+    onScanRunCreated?: (scanRunId: string) => void;
+    existingLibraryRootId?: string;
+  }
+): Promise<{ result: ScanResult; libraryRoot: LibraryRootRecord; scanRunId: string }> {
+  const startTime = Date.now();
+  const root: LibraryRoot = {
+    mode: "fallback",
+    name: rootName,
+    lastImportedAt: startTime,
+  };
+
+  const libraryRoot = await saveLibraryRoot(root, undefined, {
+    setAsCurrent: false,
+    existingCollectionId: options?.existingLibraryRootId,
+  });
+
+  const scanRun = await createScanRun(libraryRoot.id, 0, 0, 0, 0);
+  options?.onScanRunCreated?.(scanRun.id);
+
+  const prevEntries = await getFileIndexEntries(libraryRoot.id);
+  const prevIndex: FileIndex = new Map();
+  for (const entry of prevEntries) {
+    prevIndex.set(entry.trackFileId, entry);
+  }
+
+  const nextIndex = await buildFileIndexFromFileList(
+    files,
+    rootName,
+    onProgress,
+    options?.signal
+  );
+
+  const diff = diffFileIndex(prevIndex, nextIndex);
+  const nextEntries = Array.from(nextIndex.values());
+
+  await saveFileIndexEntries(nextEntries, libraryRoot.id, (progress) => {
+    onProgress?.({
+      found: progress.total,
+      scanned: progress.processed,
+    });
+  });
+
+  if (diff.removed.length > 0) {
+    const removedIds = diff.removed.map((e) => e.trackFileId);
+    await removeFileIndexEntries(removedIds, libraryRoot.id);
+  }
+
   await updateScanRun(scanRun.id, 0);
 
   const duration = Date.now() - startTime;

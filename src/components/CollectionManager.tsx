@@ -53,6 +53,7 @@ import {
 } from "lucide-react";
 import { AnimateIcon, Download, Trash2, Upload } from "@/components/animate-ui";
 import type { LibraryRootRecord } from "@/db/schema";
+import type { LibraryRoot } from "@/lib/library-selection";
 import {
   getAllCollections,
   getCurrentCollectionId,
@@ -76,9 +77,15 @@ import { logger } from "@/lib/logger";
 interface CollectionManagerProps {
   onCollectionChange?: (collectionId: string | null) => void;
   refreshTrigger?: number; // Increment to trigger refresh
+  /** After fallback (Safari) folder re-pick from Edit Collection — syncs library page with FileList */
+  onFallbackFolderReselected?: (root: LibraryRoot, files: FileList) => void;
 }
 
-export function CollectionManager({ onCollectionChange, refreshTrigger }: CollectionManagerProps) {
+export function CollectionManager({
+  onCollectionChange,
+  refreshTrigger,
+  onFallbackFolderReselected,
+}: CollectionManagerProps) {
   const [collections, setCollections] = useState<LibraryRootRecord[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -433,6 +440,7 @@ export function CollectionManager({ onCollectionChange, refreshTrigger }: Collec
                   collection={collection}
                   onSave={handleEditComplete}
                   onCancel={() => setEditingId(null)}
+                  onFallbackFolderReselected={onFallbackFolderReselected}
                 />
               </div>
             );

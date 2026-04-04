@@ -18,6 +18,7 @@ interface BackgroundLibraryTasksContextValue {
   setPermissionStatus: (status: PermissionStatus | null) => void;
   setLibraryRootId: (id: string | null) => void;
   setExistingCollectionId: (id: string | null) => void;
+  setInitialFileList: (files: FileList | null) => void;
   setOnScanComplete: (callback?: VoidCallback) => void;
   setOnProcessingProgress: (callback?: VoidCallback) => void;
   scanning: ReturnType<typeof useLibraryScanning>;
@@ -38,6 +39,7 @@ export function BackgroundLibraryTasksProvider({
   const [permissionStatus, setPermissionStatus] = useState<PermissionStatus | null>(null);
   const [libraryRootId, setLibraryRootId] = useState<string | null>(null);
   const [existingCollectionId, setExistingCollectionId] = useState<string | null>(null);
+  const [initialFileList, setInitialFileList] = useState<FileList | null>(null);
   const onScanCompleteRef = useRef<VoidCallback | undefined>(undefined);
   const onProcessingProgressRef = useRef<VoidCallback | undefined>(undefined);
   const lastBackfillRootRef = useRef<string | null>(null);
@@ -53,6 +55,7 @@ export function BackgroundLibraryTasksProvider({
   const scanning = useLibraryScanning({
     libraryRoot,
     permissionStatus,
+    initialFileList,
     existingCollectionId,
   });
 
@@ -87,6 +90,7 @@ export function BackgroundLibraryTasksProvider({
       setPermissionStatus,
       setLibraryRootId,
       setExistingCollectionId,
+      setInitialFileList,
       setOnScanComplete,
       setOnProcessingProgress,
       scanning,

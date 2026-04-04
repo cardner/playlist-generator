@@ -79,6 +79,7 @@ import { usePlaylistForm } from "@/hooks/usePlaylistForm";
 import { getMoodCategories } from "@/features/library/mood-mapping";
 import { getActivityCategories } from "@/features/library/activity-mapping";
 import { getSimilarGenres } from "@/features/library/genre-similarity";
+import { hasErrors } from "@/lib/playlist-validation";
 
 interface PlaylistBuilderProps {
   onGenerate?: (request: PlaylistRequest) => void;
@@ -108,6 +109,8 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
   const [topTracksCache, setTopTracksCache] = useState<string[] | null>(null);
   const [showCollectionSelector, setShowCollectionSelector] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  /** Shown when navigation/storage fails or validation blocks submit (Safari private mode, etc.) */
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Use the form hook for state and validation management
   const {
@@ -115,7 +118,6 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
     errors,
     setFormData,
     validate,
-    isValid,
     clearDraft,
     validateDiscoveryMode,
   } = usePlaylistForm({ discoveryMode });
@@ -160,6 +162,7 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
       loadGenresAndCoOccurrence();
     } else {
       setGenreCoOccurrence(null);
+      setIsLoadingGenres(false);
     }
   }, [selectedCollectionId]);
 
@@ -305,42 +308,54 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitError(null);
     setIsSubmitting(true);
 
-    // Validate discovery mode requirements
     if (!validateDiscoveryMode()) {
       setIsSubmitting(false);
+      setSubmitError(
+        "Discovery mode needs at least one genre, artist, album, or track from your collection."
+      );
       return;
     }
 
-    // Validate form
-    const validationErrors = validate();
-    if (!isValid()) {
+    if (collections.length > 0 && !selectedCollectionId) {
       setIsSubmitting(false);
+      setSubmitError("Please select a collection.");
       return;
     }
 
-    // Clear draft
+    const validationErrors = validate();
+    if (hasErrors(validationErrors)) {
+      setIsSubmitting(false);
+      setSubmitError("Please fix the highlighted fields above.");
+      return;
+    }
+
     clearDraft();
 
-    // Call onGenerate callback if provided
     if (onGenerate) {
       onGenerate(formData as PlaylistRequest);
       setIsSubmitting(false);
     } else {
-      // Store collection ID with the request
       const requestWithCollection = {
         ...formData,
         collectionId: selectedCollectionId,
       };
 
-      // Navigate to generating state
-      // Store request in sessionStorage for the result page
-      sessionStorage.setItem(
-        "playlist-request",
-        JSON.stringify(requestWithCollection)
-      );
-      router.push("/playlists/generating");
+      try {
+        sessionStorage.setItem(
+          "playlist-request",
+          JSON.stringify(requestWithCollection)
+        );
+        router.push("/playlists/generating");
+      } catch (storageErr) {
+        logger.error("playlist-request sessionStorage failed:", storageErr);
+        setIsSubmitting(false);
+        setSubmitError(
+          "Could not save your playlist settings. Turn off Private Browsing or allow site storage, then try again."
+        );
+      }
     }
   };
 
@@ -1059,7 +1074,13 @@ export function PlaylistBuilder({ onGenerate, discoveryMode = false }: PlaylistB
       )}
 
       {/* Submit Button */}
-      <div className="pt-4">
+      <div className="pt-4 space-y-3">
+        {submitError && (
+          <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-sm flex items-start gap-2 text-left">
+            <AlertCircle className="size-4 text-red-500 shrink-0 mt-0.5" />
+            <p className="text-red-500 text-sm">{submitError}</p>
+          </div>
+        )}
         <button
           type="submit"
           disabled={isSubmitting}

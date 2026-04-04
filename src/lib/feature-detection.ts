@@ -36,6 +36,24 @@ export function supportsFileSystemAccess(): boolean {
 }
 
 /**
+ * Safari (and WebKit) expose `showDirectoryPicker`, but directory permission
+ * (`queryPermission` / `requestPermission`) often stays "prompt" and no permission
+ * dialog appears—so library scanning blocks. Use the file-input (webkitdirectory)
+ * path for picking a library folder instead; same-session scanning works without
+ * that broken permission flow.
+ */
+export function prefersLibraryFolderFallback(): boolean {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+  const ua = navigator.userAgent;
+  const isSafari =
+    /safari/i.test(ua) &&
+    !/chrome|chromium|crios|fxios|edg|opr|opera|opr\//i.test(ua);
+  return isSafari;
+}
+
+/**
  * Checks if the browser supports IndexedDB
  * 
  * @returns true if IndexedDB is supported

@@ -104,7 +104,8 @@ export async function relinkLibraryRoot(
     }
 
     // Prompt user to pick new root (forceReset clears any stale picker state from other components)
-    const newRoot = await pickLibraryRoot(true);
+    const pickResult = await pickLibraryRoot(true);
+    const newRoot = "files" in pickResult ? pickResult.root : pickResult;
 
     // Ensure handle is stored (pickLibraryRoot should have done this, but verify)
     if (newRoot.mode === "handle" && !newRoot.handleId) {

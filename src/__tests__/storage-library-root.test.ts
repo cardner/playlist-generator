@@ -97,4 +97,30 @@ describe("saveLibraryRoot", () => {
     expect(record.id).toBe(existingId);
     expect(record.handleRef).toBe(newHandleRef);
   });
+
+  it("clears handleRef when saving fallback mode (e.g. Safari folder pick)", async () => {
+    const { saveLibraryRoot } = await import("@/db/storage-library-root");
+    const existingId = "collection-1";
+    const root = {
+      mode: "fallback" as const,
+      name: "Music",
+      lastImportedAt: Date.now(),
+    };
+
+    mockGet.mockResolvedValue({
+      id: existingId,
+      createdAt: 1000,
+      handleRef: "old-fs-api-handle",
+    });
+
+    await saveLibraryRoot(root, undefined, {
+      setAsCurrent: false,
+      existingCollectionId: existingId,
+    });
+
+    expect(mockPut).toHaveBeenCalledTimes(1);
+    const record = mockPut.mock.calls[0][0];
+    expect(record.mode).toBe("fallback");
+    expect(record.handleRef).toBeUndefined();
+  });
 });

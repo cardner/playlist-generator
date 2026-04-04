@@ -40,11 +40,16 @@ export async function saveLibraryRoot(
   const existing = await db.libraryRoots.get(id);
   const createdAt = existing?.createdAt || now;
 
+  const resolvedHandleRef =
+    root.mode === "fallback"
+      ? undefined
+      : (handleRef ?? root.handleId ?? existing?.handleRef);
+
   const record: LibraryRootRecord = {
     id,
     mode: root.mode,
     name: root.name,
-    handleRef: handleRef ?? root.handleId ?? existing?.handleRef,
+    handleRef: resolvedHandleRef,
     createdAt,
     updatedAt: now,
   };

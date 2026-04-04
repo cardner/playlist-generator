@@ -25,7 +25,10 @@ import type { LibraryRoot, LibraryFile } from "@/lib/library-selection";
 import { checkLibraryPermission } from "@/lib/library-selection";
 import type { ScanResult, MetadataResult, MetadataProgressCallback } from "@/features/library";
 import { parseMetadataForFiles } from "@/features/library";
-import { getLibraryFilesForEntries } from "@/features/library/metadata-integration";
+import {
+  getLibraryFilesForEntries,
+  getLibraryFilesForFallbackEntries,
+} from "@/features/library/metadata-integration";
 import { saveTrackMetadata, updateScanRun, removeTrackMetadata } from "@/db/storage";
 import { detectTempoForLibrary } from "@/features/library/metadata-enhancement";
 import { isQuotaExceededError, getStorageQuotaInfo } from "@/db/storage-errors";
@@ -87,7 +90,9 @@ export interface UseMetadataParsingReturn {
     result: ScanResult,
     root: LibraryRoot,
     libraryRootId: string,
-    scanRunIdOverride?: string
+    scanRunIdOverride?: string,
+    /** Safari fallback: session FileList from folder picker (required when root.mode === "fallback") */
+    fallbackFileList?: FileList | null
   ) => Promise<void>;
   /** Resume metadata processing from stored checkpoints */
   handleResumeProcessing: (
@@ -165,10 +170,20 @@ export function useMetadataParsing(
       result: ScanResult,
       root: LibraryRoot,
       libraryRootId: string,
-      scanRunIdOverride?: string
+      scanRunIdOverride?: string,
+      fallbackFileList?: FileList | null
     ) => {
-      if (root.mode !== "handle") {
-        return; // Only handle mode supports metadata parsing
+      if (root.mode === "spotify") {
+        return;
+      }
+      if (root.mode === "fallback" && !fallbackFileList) {
+        setError(
+          "Re-select your music folder in this browser session to read audio files for metadata (Safari folder access is not kept after reload)."
+        );
+        return;
+      }
+      if (root.mode !== "handle" && root.mode !== "fallback") {
+        return;
       }
 
       const abortController = new AbortController();
@@ -185,19 +200,31 @@ export function useMetadataParsing(
       activeRunIdRef.current = activeScanRunId;
       const stageTimer = new PerformanceTimer("metadataParsing.stages");
       try {
-        const permission = await checkLibraryPermission(root);
-        if (permission !== "granted") {
-          setError(
-            "Permission required to read library files for metadata parsing. " +
-              "Please re-grant access to your library folder and try again."
-          );
-          return;
+        if (root.mode === "handle") {
+          const permission = await checkLibraryPermission(root);
+          if (permission !== "granted") {
+            setError(
+              "Permission required to read library files for metadata parsing. " +
+                "Please re-grant access to your library folder and try again."
+            );
+            return;
+          }
         }
 
         setIsParsingMetadata(true);
-        sortedEntries = sortEntriesForProcessing(
-          result.diff ? [...result.diff.added, ...result.diff.changed] : result.entries
-        );
+
+        let toProcess = result.diff
+          ? [...result.diff.added, ...result.diff.changed]
+          : result.entries;
+
+        if (toProcess.length === 0 && result.entries.length > 0) {
+          const { getTracks } = await import("@/db/storage");
+          const tracks = await getTracks(libraryRootId);
+          const processedIds = new Set(tracks.map((t) => t.trackFileId));
+          toProcess = result.entries.filter((e) => !processedIds.has(e.trackFileId));
+        }
+
+        sortedEntries = sortEntriesForProcessing(toProcess);
         const processingCheckpoint = activeScanRunId
           ? await loadProcessingCheckpoint(activeScanRunId)
           : null;
@@ -250,8 +277,15 @@ export function useMetadataParsing(
 
         stageTimer.step("checkpoint-loaded");
 
-        // Get LibraryFile objects for these entries
-        const libraryFiles = await getLibraryFilesForEntries(root, entriesToParse, libraryRootId);
+        // Get LibraryFile objects for these entries (directory handle vs session FileList)
+        const libraryFiles =
+          root.mode === "fallback"
+            ? await getLibraryFilesForFallbackEntries(
+                fallbackFileList!,
+                root.name,
+                entriesToParse
+              )
+            : await getLibraryFilesForEntries(root, entriesToParse, libraryRootId);
 
         if (libraryFiles.length === 0) {
           logger.warn(

@@ -48,7 +48,7 @@ export {
   needsReimport,
 } from "./library-selection-utils";
 
-import { supportsFileSystemAccess } from "./feature-detection";
+import { prefersLibraryFolderFallback, supportsFileSystemAccess } from "./feature-detection";
 import { pickLibraryRootWithFSAPI } from "./library-selection-fs-api";
 import { pickLibraryRootWithFallback } from "./library-selection-fallback";
 import { getLibraryFilesWithFSAPI } from "./library-selection-fs-api";
@@ -60,38 +60,42 @@ export interface PickLibraryRootOptions {
   existingCollectionId?: string;
 }
 
+/** Result of pickLibraryRoot when using fallback (Safari etc.): root plus FileList for scanning in same session */
+export type { PickLibraryRootFallbackResult } from "./library-selection-fallback";
+
 /**
  * Pick a library root using File System Access API or fallback
  * 
  * Automatically selects the appropriate method based on browser support.
+ * When fallback is used, returns { root, files } so the caller can run a scan in the same session.
  * 
  * @param forceReset If true, resets any existing picker state before opening (FS API only)
  * @param options Options for the pick operation. When existingCollectionId is provided (re-select flow), updates the existing collection's handle instead of creating a new collection.
- * @returns Promise resolving to the selected library root
+ * @returns Promise resolving to the selected library root (FS API) or { root, files } (fallback)
  * @throws Error if user cancels or selection fails
- * @throws Error if existingCollectionId is provided but browser uses fallback (Re-select to fix permissions requires File System Access API)
  * 
  * @example
  * ```typescript
  * try {
- *   const root = await pickLibraryRoot();
- *   console.log(`Selected: ${root.name}`);
+ *   const result = await pickLibraryRoot();
+ *   const root = 'files' in result ? result.root : result;
+ *   const files = 'files' in result ? result.files : undefined;
+ *   onLibrarySelected(root, files);
  * } catch (error) {
- *   if (error.message === "Folder selection cancelled") {
- *     // User cancelled
- *   }
+ *   if (error.message === "Folder selection cancelled") { }
  * }
  * ```
  */
 export async function pickLibraryRoot(
   forceReset: boolean = false,
   options?: PickLibraryRootOptions
-): Promise<LibraryRoot> {
-  if (supportsFileSystemAccess()) {
+): Promise<LibraryRoot | import("./library-selection-fallback").PickLibraryRootFallbackResult> {
+  const useFileSystemAccess =
+    supportsFileSystemAccess() && !prefersLibraryFolderFallback();
+  if (useFileSystemAccess) {
     return pickLibraryRootWithFSAPI(forceReset, options);
-  } else {
-    return pickLibraryRootWithFallback(options);
   }
+  return pickLibraryRootWithFallback(options);
 }
 
 /**

@@ -81,6 +81,8 @@ import { useBackgroundLibraryTasks } from "./BackgroundLibraryTasksProvider";
 interface LibraryScannerProps {
   libraryRoot: LibraryRoot | null;
   permissionStatus: "granted" | "denied" | "prompt" | null;
+  /** For fallback (Safari): FileList from folder pick; when set, scan is allowed in same session */
+  initialFileList?: FileList | null;
   onNewSelection?: () => void; // Callback when a new folder is selected
   onScanComplete?: () => void; // Callback when scan completes (for refreshing browser)
   hasExistingScans?: boolean | null; // Whether there are existing scans (null = checking)
@@ -93,6 +95,7 @@ interface LibraryScannerProps {
 export function LibraryScanner({
   libraryRoot,
   permissionStatus,
+  initialFileList,
   onNewSelection,
   onScanComplete,
   hasExistingScans,
@@ -138,6 +141,11 @@ export function LibraryScanner({
   useEffect(() => {
     backgroundTasks.setExistingCollectionId(existingCollectionId ?? null);
   }, [backgroundTasks, existingCollectionId]);
+
+  // Sync fallback FileList so scanning can run in Safari (same session).
+  useEffect(() => {
+    backgroundTasks.setInitialFileList(initialFileList ?? null);
+  }, [backgroundTasks, initialFileList]);
 
   useEffect(() => {
     backgroundTasks.setOnScanComplete(onScanComplete);
@@ -494,7 +502,7 @@ export function LibraryScanner({
     // 3. Library root ID is available
     // 4. Not already parsing metadata
     // 5. Metadata hasn't been parsed yet (no results)
-    // 6. Library root is in "handle" mode (required for metadata parsing)
+    // 6. Handle mode, or Safari fallback with a session FileList (required to read files for metadata)
     if (
       scanResult &&
       libraryRoot &&
@@ -503,12 +511,17 @@ export function LibraryScanner({
       !isParsingMetadata &&
       metadataResults === null &&
       autoProcessEnabled &&
-      libraryRoot.mode === "handle" &&
-      permissionStatus === "granted"
+      permissionStatus === "granted" &&
+      (libraryRoot.mode === "handle" ||
+        (libraryRoot.mode === "fallback" && !!initialFileList))
     ) {
-      // Trigger metadata parsing
-      handleParseMetadata(scanResult, libraryRoot, libraryRootId).catch((err) => {
-        // Error is already handled by the hook, just log here for debugging
+      handleParseMetadata(
+        scanResult,
+        libraryRoot,
+        libraryRootId,
+        undefined,
+        initialFileList ?? null
+      ).catch((err) => {
         logger.error("Failed to trigger metadata parsing:", err);
       });
     }
@@ -521,6 +534,7 @@ export function LibraryScanner({
     metadataResults,
     autoProcessEnabled,
     permissionStatus,
+    initialFileList,
     handleParseMetadata,
   ]);
 
@@ -695,12 +709,15 @@ export function LibraryScanner({
   useEffect(() => {
     const rootId = getRootId(libraryRoot);
 
-    // Trigger scan if the parent explicitly requested it
+    // Trigger scan if the parent explicitly requested it (handle mode with permission, or fallback with FileList)
+    const canScan =
+      libraryRoot &&
+      (libraryRoot.mode === "handle"
+        ? permissionStatus === "granted"
+        : !!initialFileList);
     const shouldTriggerScan =
       !!triggerScan &&
-      libraryRoot &&
-      permissionStatus === "granted" &&
-      libraryRoot.mode === "handle" &&
+      canScan &&
       !isScanning &&
       !scanResult &&
       hasCheckedResumable &&
@@ -717,6 +734,7 @@ export function LibraryScanner({
   }, [
     permissionStatus,
     libraryRoot,
+    initialFileList,
     isScanning,
     scanResult,
     detectedResumableScanRunId,
@@ -742,8 +760,13 @@ export function LibraryScanner({
     );
   }
 
-  // Show folder info even if permission not granted yet
-  if (permissionStatus !== "granted") {
+  // Handle: allow main UI when granted, or when we already have scan data (returning to /library may leave permission as "prompt").
+  // Fallback: allow when FileList is in memory or we have prior scan data (FileList is lost on navigation).
+  const allowedToScan =
+    libraryRoot.mode === "handle"
+      ? permissionStatus === "granted" || hasExistingScans === true
+      : !!initialFileList || hasExistingScans === true;
+  if (!allowedToScan) {
     const effectiveScanRunId = interruptedScanRunId || detectedResumableScanRunId;
     const showScanBanner = effectiveScanRunId && effectiveScanRunId !== dismissedInterruptedScanRunId;
     return (
@@ -773,10 +796,17 @@ export function LibraryScanner({
             <p className="text-app-primary text-lg font-medium">{libraryRoot.name}</p>
           </div>
           
-          {permissionStatus === "prompt" && (
+          {permissionStatus === "prompt" && libraryRoot.mode === "handle" && (
             <div className="p-4 bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm">
               <p className="text-info-blue-500 text-sm">
-                Permission required to scan library. Please grant access to your selected folder.
+                Permission required to scan library. Click <strong className="text-app-primary">Request permission</strong> above, or use <strong className="text-app-primary">Re-select folder</strong>.
+              </p>
+            </div>
+          )}
+          {permissionStatus === "prompt" && libraryRoot.mode === "fallback" && (
+            <div className="p-4 bg-info-blue-400/10 border border-info-blue-400/20 rounded-sm">
+              <p className="text-info-blue-500 text-sm">
+                Select your folder again with <strong className="text-app-primary">Add New Collection</strong> or <strong className="text-app-primary">Re-select folder</strong>. In Safari, folder access applies for this session only until you reload the page.
               </p>
             </div>
           )}
@@ -793,7 +823,11 @@ export function LibraryScanner({
     );
   }
 
-  if (libraryRoot.mode === "fallback") {
+  if (
+    libraryRoot.mode === "fallback" &&
+    !initialFileList &&
+    hasExistingScans !== true
+  ) {
     return (
       <div className="">
         <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-sm">

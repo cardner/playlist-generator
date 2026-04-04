@@ -37,8 +37,12 @@ import { hasRelativePaths } from "@/features/library/relink";
 import { logger } from "@/lib/logger";
 
 export interface UseLibraryRootOptions {
-  /** Callback when library root is selected */
-  onLibrarySelected?: (root: LibraryRoot) => void;
+  /** Callback when library root is selected. For fallback (Safari), receives the FileList for scanning in the same session. */
+  onLibrarySelected?: (
+    root: LibraryRoot,
+    initialFileList?: FileList,
+    options?: { sessionReselect?: boolean }
+  ) => void;
   /** Whether to load saved library on mount */
   loadOnMount?: boolean;
 }
@@ -137,13 +141,15 @@ export function useLibraryRoot(
       setError(null);
 
       try {
-        const root = await pickLibraryRoot(forceReset, existingCollectionId ? { existingCollectionId } : undefined);
+        const result = await pickLibraryRoot(forceReset, existingCollectionId ? { existingCollectionId } : undefined);
+        const root = "files" in result ? result.root : result;
+        const initialFileList = "files" in result ? result.files : undefined;
 
         // Update local state first
         setCurrentRoot(root);
 
-        // Notify parent immediately so UI updates
-        onLibrarySelected?.(root);
+        // Notify parent immediately so UI updates (pass FileList for fallback so page can run scan)
+        onLibrarySelected?.(root, initialFileList);
 
         // Get root ID from database after saving (with small delay to ensure save completes)
         await new Promise((resolve) => setTimeout(resolve, 50));
