@@ -15,7 +15,7 @@ import { getDirectoryHandle } from "./library-selection-fs-api";
  * Check permission for a library root (without requesting)
  * 
  * For handle mode: checks permission status using File System Access API.
- * For fallback mode: returns "prompt" if files need re-import, "granted" otherwise.
+ * For fallback mode: always "granted" (no directory permission API; re-pick is UI-driven).
  * 
  * This function does NOT request permission - it only checks the current status.
  * Use `requestLibraryPermission` if you need to actually request permission.
@@ -52,12 +52,8 @@ export async function checkLibraryPermission(
       return "denied";
     }
   } else {
-    // Fallback mode: permission is implicit (user selected files)
-    // But we need to check if files are still available
-    if (root.lastImportedAt) {
-      // Files might not persist, so we consider it "prompt" (needs re-import)
-      return "prompt";
-    }
+    // Fallback mode: no directory permission API. Do not return "prompt" — that is
+    // for FS API and blocks the library after navigation when FileList is gone.
     return "granted";
   }
 }
@@ -66,7 +62,7 @@ export async function checkLibraryPermission(
  * Request permission for a library root
  * 
  * For handle mode: checks and requests permission using File System Access API.
- * For fallback mode: returns "prompt" if files need re-import, "granted" otherwise.
+ * For fallback mode: always "granted" (no directory permission API; re-pick is UI-driven).
  * 
  * IMPORTANT: This function calls `requestPermission()` which requires user activation.
  * Only call this in response to a user action (e.g., button click).
@@ -146,12 +142,6 @@ export async function requestLibraryPermission(
       return "denied";
     }
   } else {
-    // Fallback mode: permission is implicit (user selected files)
-    // But we need to check if files are still available
-    if (root.lastImportedAt) {
-      // Files might not persist, so we consider it "prompt" (needs re-import)
-      return "prompt";
-    }
     return "granted";
   }
 }

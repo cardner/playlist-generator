@@ -6,6 +6,7 @@
 
 import type { LibraryRoot } from "@/lib/library-selection";
 import { getLibraryFiles } from "@/lib/library-selection";
+import { getLibraryFilesFromFileList } from "@/lib/library-selection-fallback";
 import type { FileIndexEntry, FileIndexDiff } from "./scanning";
 import type { LibraryFile } from "@/lib/library-selection";
 import { logger } from "@/lib/logger";
@@ -212,5 +213,38 @@ export async function getLibraryFilesForEntries(
   }
 
   return libraryFiles;
+}
+
+/**
+ * Resolve LibraryFile objects for fallback mode using the session FileList from the folder picker.
+ * Required for metadata parsing in Safari / webkitdirectory flows (no directory handle).
+ */
+export async function getLibraryFilesForFallbackEntries(
+  fileList: FileList,
+  rootName: string,
+  entries: Array<Pick<FileIndexEntry, "trackFileId">>
+): Promise<LibraryFile[]> {
+  const byId = new Map<string, LibraryFile>();
+  for await (const lf of getLibraryFilesFromFileList(fileList, rootName)) {
+    byId.set(lf.trackFileId, lf);
+  }
+  const out: LibraryFile[] = [];
+  for (const entry of entries) {
+    const lf = byId.get(entry.trackFileId);
+    if (lf) {
+      out.push(lf);
+    }
+  }
+  if (out.length === 0 && entries.length > 0) {
+    logger.error(
+      "Fallback metadata: no files matched session FileList. Re-select the folder and try again.",
+      { sampleId: entries[0]?.trackFileId }
+    );
+  } else if (out.length < entries.length) {
+    logger.warn(
+      `Fallback metadata: matched ${out.length}/${entries.length} files to session FileList`
+    );
+  }
+  return out;
 }
 

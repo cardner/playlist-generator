@@ -331,22 +331,6 @@ function resolvePlaylistEntryToDeviceRelative(options: {
   return normalizeRelativeSegments(normalized).replace(/^\/+/, "");
 }
 
-async function getFileHandleFromRelativePath(
-  root: FileSystemDirectoryHandle,
-  relativePath: string
-): Promise<FileSystemFileHandle> {
-  const normalized = normalizeRelativeSegments(relativePath).replace(/^\/+/, "");
-  const parts = normalized.split("/").filter(Boolean);
-  if (parts.length === 0) {
-    throw new Error("Invalid path");
-  }
-  let current = root;
-  for (let index = 0; index < parts.length - 1; index += 1) {
-    current = await current.getDirectoryHandle(parts[index], { create: false });
-  }
-  return current.getFileHandle(parts[parts.length - 1], { create: false });
-}
-
 async function readDeviceTextFile(
   root: FileSystemDirectoryHandle,
   relativePath: string
@@ -408,7 +392,8 @@ export async function validatePlaylistOnDevice(options: {
     extra: volumePrefixes,
   });
 
-  const content = await readDeviceTextFile(handle, playlistPath);
+  const pathToRead = buildSanitizedRelativePath(playlistPath) || playlistPath;
+  const content = await readDeviceTextFile(handle, pathToRead);
   const entries = parseM3UPaths(content);
   const normalizedMap = devicePathMap
     ? new Set(
@@ -529,6 +514,40 @@ async function getOrCreateDirectory(
   return current;
 }
 
+/** Build the sanitized relative path that matches what getOrCreateDirectory creates. Used so stored playlistPath can be read back. */
+function buildSanitizedRelativePath(relativePath: string): string {
+  const normalized = relativePath.replace(/^[\\/]+|[\\/]+$/g, "");
+  if (!normalized) return "";
+  const parts = normalized.split(/[\\/]+/).filter(Boolean);
+  return parts.map((p) => sanitizePathSegment(p, "_")).join("/");
+}
+
+async function getFileHandleFromRelativePath(
+  root: FileSystemDirectoryHandle,
+  relativePath: string
+): Promise<FileSystemFileHandle> {
+  const normalized = normalizeRelativeSegments(relativePath).replace(/^\/+/, "");
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.length === 0) {
+    throw new Error("Invalid path");
+  }
+  try {
+    let current = root;
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      current = await current.getDirectoryHandle(parts[index], { create: false });
+    }
+    return current.getFileHandle(parts[parts.length - 1], { create: false });
+  } catch (err) {
+    const msg = typeof (err as Error).message === "string" ? (err as Error).message : "";
+    if (msg.includes("Name is not allowed")) {
+      throw new Error(
+        `Device path contains a name not allowed by the browser: ${relativePath}`
+      );
+    }
+    throw err;
+  }
+}
+
 async function getFileFromLibrary(
   libraryRootId: string,
   lookup: TrackLookup
@@ -549,11 +568,8 @@ async function getFileFromLibrary(
     const fileHandle = await current.getFileHandle(parts[parts.length - 1], { create: false });
     return await fileHandle.getFile();
   } catch (err) {
-    const isNameNotAllowed =
-      err instanceof TypeError &&
-      typeof (err as Error).message === "string" &&
-      (err as Error).message.includes("Name is not allowed");
-    if (isNameNotAllowed) {
+    const msg = typeof (err as Error).message === "string" ? (err as Error).message : "";
+    if (msg.includes("Name is not allowed")) {
       throw new Error(
         `Library path contains a name not allowed on this device: ${relativePath}`
       );
@@ -761,7 +777,9 @@ export async function syncPlaylistToDevice(options: {
   await writeTextFile(targetDirectory, filename, contentResult.content);
 
   const playlistPath = deviceProfile.playlistFolder
-    ? `${deviceProfile.playlistFolder.replace(/[\\/]+$/g, "")}/${filename}`
+    ? buildSanitizedRelativePath(
+        `${deviceProfile.playlistFolder.replace(/[\\/]+$/g, "")}/${filename}`
+      )
     : filename;
 
   const configHash = hashString(

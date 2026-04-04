@@ -10,7 +10,7 @@
 
 "use client";
 
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback, useId } from "react";
 import { X, Search, Loader2 } from "lucide-react";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import type { TrackRecord } from "@/db/schema";
@@ -153,8 +153,9 @@ export function LibrarySearchCombo({
   const [isSearching, setIsSearching] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const generatedId = useRef(`library-search-combo-${Math.random().toString(36).slice(2, 9)}`);
-  const id = providedId ?? generatedId.current;
+  // useId() is stable across SSR and hydration; random ids caused Safari hydration mismatches.
+  const uid = useId().replace(/:/g, "");
+  const id = providedId ?? `library-search-combo-${uid}`;
   const isAsyncMode = !!onSearchByType && Object.keys(onSearchByType).length > 0;
   const debouncedInput = useDebounce(inputValue, 280);
 

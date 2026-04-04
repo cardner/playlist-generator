@@ -43,7 +43,8 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Save, FolderOpen, AlertCircle, Calendar, HardDrive } from "lucide-react";
 import type { LibraryRootRecord } from "@/db/schema";
-import { updateCollection, getAllCollections } from "@/db/storage";
+import { updateCollection, getAllCollections, getCollection } from "@/db/storage";
+import type { LibraryRoot } from "@/lib/library-selection";
 import { pickLibraryRoot } from "@/lib/library-selection";
 import { supportsFileSystemAccess } from "@/lib/feature-detection";
 
@@ -51,12 +52,15 @@ interface CollectionConfigEditorProps {
   collection: LibraryRootRecord;
   onSave?: (updatedCollection: LibraryRootRecord) => void;
   onCancel?: () => void;
+  /** Safari / webkitdirectory: after re-picking the folder, notifies parent so library page gets FileList for scanning */
+  onFallbackFolderReselected?: (root: LibraryRoot, files: FileList) => void;
 }
 
 export function CollectionConfigEditor({
   collection,
   onSave,
   onCancel,
+  onFallbackFolderReselected,
 }: CollectionConfigEditorProps) {
   const [name, setName] = useState(collection.name);
   const [isRelinking, setIsRelinking] = useState(false);
@@ -100,9 +104,10 @@ export function CollectionConfigEditor({
     setError(null);
 
     try {
-      // Use pickLibraryRoot with forceReset and existingCollectionId - updates collection's handle without creating new collection
-      const root = await pickLibraryRoot(true, { existingCollectionId: collection.id });
-      
+      // Use pickLibraryRoot with forceReset and existingCollectionId - updates collection's handle without creating new collection (FS API only; fallback throws)
+      const result = await pickLibraryRoot(true, { existingCollectionId: collection.id });
+      const root = "files" in result ? result.root : result;
+
       if (root.mode !== "handle" || !root.handleId) {
         setError("Failed to get directory handle");
         return;
@@ -120,6 +125,47 @@ export function CollectionConfigEditor({
       if ((err as Error).name !== "AbortError" && (err as Error).message !== "Folder selection cancelled") {
         const errorMessage = err instanceof Error ? err.message : "Failed to relink directory";
         // Check for "picker already active" error
+        if (errorMessage.includes("already active")) {
+          setError("Please wait for the current folder selection to complete");
+        } else {
+          setError(errorMessage);
+        }
+      }
+    } finally {
+      relinkInProgressRef.current = false;
+      setIsRelinking(false);
+    }
+  };
+
+  const handleReselectFolderFallback = async () => {
+    if (relinkInProgressRef.current) {
+      return;
+    }
+    relinkInProgressRef.current = true;
+    setIsRelinking(true);
+    setError(null);
+
+    try {
+      const result = await pickLibraryRoot(true, {
+        existingCollectionId: collection.id,
+      });
+      const root = "files" in result ? result.root : result;
+      const files = "files" in result ? result.files : undefined;
+
+      if (root.mode !== "fallback" || !files) {
+        setError("Failed to read folder contents");
+        return;
+      }
+
+      onFallbackFolderReselected?.(root, files);
+
+      const updated = await getCollection(collection.id);
+      if (updated) {
+        onSave?.(updated);
+      }
+    } catch (err) {
+      if ((err as Error).name !== "AbortError" && (err as Error).message !== "Folder selection cancelled") {
+        const errorMessage = err instanceof Error ? err.message : "Failed to re-select folder";
         if (errorMessage.includes("already active")) {
           setError("Please wait for the current folder selection to complete");
         } else {
@@ -246,6 +292,30 @@ export function CollectionConfigEditor({
             <FolderOpen className="size-5 text-accent-primary shrink-0" />
             <span className="font-medium">
               {isRelinking ? "Selecting Folder..." : "Relink Directory"}
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* Re-select folder (Safari / fallback — no persistent directory handle) */}
+      {collection.mode === "fallback" && (
+        <div>
+          <label className="block text-app-primary font-medium mb-2 uppercase tracking-wider text-sm">
+            Folder access
+          </label>
+          <p className="text-app-secondary text-sm mb-3">
+            This browser does not keep a persistent folder permission. After you leave this page or reload, choose your
+            music folder again here before scanning or updating the library.
+          </p>
+          <button
+            type="button"
+            onClick={handleReselectFolderFallback}
+            disabled={isRelinking || isSaving}
+            className="flex items-center gap-3 px-4 py-3 bg-app-hover hover:bg-app-surface-hover text-app-primary rounded-sm border border-app-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <FolderOpen className="size-5 text-accent-primary shrink-0" />
+            <span className="font-medium">
+              {isRelinking ? "Selecting Folder..." : "Re-select folder"}
             </span>
           </button>
         </div>

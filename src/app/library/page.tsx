@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { LibrarySelector } from "@/components/LibrarySelector";
 import { LibraryScanner } from "@/components/LibraryScanner";
 import { LibraryBrowser } from "@/components/LibraryBrowser";
@@ -26,6 +26,10 @@ export default function LibraryPage() {
   const [collectionRefresh, setCollectionRefresh] = useState(0);
   const [triggerScan, setTriggerScan] = useState(false);
   const [libraryFilters, setLibraryFilters] = useState<FilterTag[]>([]);
+  /** FileList from fallback folder pick (Safari); cleared after scan or when switching collection */
+  const [initialFileListForFallback, setInitialFileListForFallback] = useState<FileList | null>(null);
+  /** Used so onCollectionChange does not clear FileList when the same collection id is reported again (e.g. rename). */
+  const lastCollectionChangeIdRef = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
     backgroundTasks.setLibraryRootId(currentLibraryRootId);
@@ -181,21 +185,18 @@ export default function LibraryPage() {
   // Update hasExistingScans when scan completes (scan is now complete)
   const handleScanComplete = async () => {
     // Small delay to ensure all database writes are complete
-    await new Promise(resolve => setTimeout(resolve, 200));
-    
-    // Verify data exists in database
-    const { getCurrentLibraryRoot, getFileIndexEntries, getTracks } = await import("@/db/storage");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const { getCurrentLibraryRoot } = await import("@/db/storage");
     const root = await getCurrentLibraryRoot();
-    
+
     if (root) {
-      // Update root ID to ensure components have latest data
       setCurrentLibraryRootId(root.id);
-      
-      // Mark that we now have existing scans
+      // Set before clearing FileList so fallback "re-select" banner stays hidden after scan
       setHasExistingScans(true);
     }
-    
-    // Refresh browser and summary when scan completes
+
+    setInitialFileListForFallback(null); // Release FileList reference
     setBrowserRefresh((prev) => prev + 1);
   };
 
@@ -209,8 +210,22 @@ export default function LibraryPage() {
         <LibrarySelector
           key={collectionRefresh}
           refreshTrigger={collectionRefresh}
-          onLibrarySelected={(root) => {
+          fallbackHasFileList={!!initialFileListForFallback}
+          fallbackLibraryReady={hasExistingScans === true}
+          onLibrarySelected={(root, initialFileList, options) => {
             setLibraryRoot(root);
+            // Only set FileList when the folder picker supplied it, or we switch to handle mode (clears Safari FileList).
+            // "Start Scanning" used to call onLibrarySelected(root) with one arg — that must not clear a session FileList.
+            if (initialFileList !== undefined) {
+              setInitialFileListForFallback(initialFileList ?? null);
+            } else if (root.mode === "handle") {
+              setInitialFileListForFallback(null);
+            }
+            // Edit Collection → Re-select folder (Safari): only refresh session FileList, keep scanned state
+            if (options?.sessionReselect) {
+              setBrowserRefresh((prev) => prev + 1);
+              return;
+            }
             setIsNewSelection(true);
             // Explicitly set to false (not null) so LibraryScanner shows scan button immediately
             setHasExistingScans(false);
@@ -231,6 +246,14 @@ export default function LibraryPage() {
             setTimeout(() => setTriggerScan(false), 100);
           }}
           onCollectionChange={async (collectionId) => {
+            const nextId = collectionId ?? null;
+            if (
+              lastCollectionChangeIdRef.current !== undefined &&
+              lastCollectionChangeIdRef.current !== nextId
+            ) {
+              setInitialFileListForFallback(null);
+            }
+            lastCollectionChangeIdRef.current = nextId;
             if (collectionId) {
               // Reload library root for the selected collection
               const root = await getCurrentLibraryRoot();
@@ -264,6 +287,7 @@ export default function LibraryPage() {
         <LibraryScanner
           libraryRoot={libraryRoot}
           permissionStatus={permissionStatus}
+          initialFileList={initialFileListForFallback}
           onNewSelection={handleNewSelection}
           hasExistingScans={hasExistingScans}
           onScanComplete={handleScanComplete}

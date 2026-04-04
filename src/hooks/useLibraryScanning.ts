@@ -28,7 +28,7 @@ import type { ScanResult, ScanProgressCallback } from "@/features/library";
 import { countLibraryFiles, getCachedFileCount } from "@/features/library/scanning";
 import { isSupportedExtension } from "@/features/library/scanning";
 import { getFileExtension } from "@/lib/library-selection-utils";
-import { scanLibraryWithPersistence, quickScanLibraryWithPersistence } from "@/features/library/scanning-persist";
+import { scanLibraryWithPersistence, scanLibraryFromFileListWithPersistence, quickScanLibraryWithPersistence } from "@/features/library/scanning-persist";
 import { NetworkDriveDisconnectedError, isNetworkDriveDisconnectedError } from "@/features/library/network-drive-errors";
 import { ReconnectionMonitor } from "@/features/library/reconnection-monitor";
 import { getDirectoryHandle } from "@/lib/library-selection-fs-api";
@@ -40,6 +40,8 @@ export interface UseLibraryScanningOptions {
   libraryRoot: LibraryRoot | null;
   /** Permission status for accessing the library */
   permissionStatus: "granted" | "denied" | "prompt" | null;
+  /** For fallback (Safari): FileList from folder pick; required to run scan in same session */
+  initialFileList?: FileList | null;
   /** Callback when scan completes */
   onScanComplete?: () => void;
   /** When rescanning, the existing collection id to update (avoids creating a duplicate) */
@@ -100,6 +102,7 @@ export function useLibraryScanning(
   options: UseLibraryScanningOptions
 ): UseLibraryScanningReturn {
   const { libraryRoot, permissionStatus, onScanComplete, existingCollectionId } = options;
+  const initialFileList = options.initialFileList;
 
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
@@ -155,7 +158,12 @@ export function useLibraryScanning(
    * Start scanning the library
    */
   const handleScan = useCallback(async () => {
-    if (!libraryRoot || permissionStatus !== "granted") {
+    const canScan =
+      !!libraryRoot &&
+      (libraryRoot.mode === "fallback"
+        ? !!options.initialFileList
+        : permissionStatus === "granted");
+    if (!canScan) {
       return;
     }
 
@@ -166,7 +174,7 @@ export function useLibraryScanning(
     const abortController = new AbortController();
     scanAbortControllerRef.current = abortController;
 
-    // --- Count-first phase (handle mode only) ---
+    // --- Count-first phase (handle mode only); fallback uses initialFileList.length ---
     if (libraryRoot.mode === "handle") {
       // Try cached count from a previous scan first (near-instant)
       if (existingCollectionId) {
@@ -199,6 +207,8 @@ export function useLibraryScanning(
           logger.warn("Count pass failed, falling back to incremental total", countErr);
         }
       }
+    } else if (libraryRoot.mode === "fallback" && initialFileList) {
+      totalFromCountRef.current = initialFileList.length;
     }
 
     // --- Scanning phase ---
@@ -226,6 +236,28 @@ export function useLibraryScanning(
           libraryRoot,
           onProgress,
           undefined,
+          {
+            signal: abortController.signal,
+            onScanRunCreated: (id) => setScanRunId(id),
+            ...(existingCollectionId != null && existingCollectionId !== ""
+              ? { existingLibraryRootId: existingCollectionId }
+              : {}),
+          }
+        );
+        result = scanResult.result;
+        rootId = scanResult.libraryRoot.id;
+        setLibraryRootId(rootId);
+
+        const { getScanRuns } = await import("@/db/storage");
+        const runs = await getScanRuns(rootId);
+        if (runs.length > 0) {
+          setScanRunId(runs[runs.length - 1].id);
+        }
+      } else if (libraryRoot.mode === "fallback" && initialFileList) {
+        const scanResult = await scanLibraryFromFileListWithPersistence(
+          initialFileList,
+          libraryRoot.name,
+          onProgress,
           {
             signal: abortController.signal,
             onScanRunCreated: (id) => setScanRunId(id),
@@ -332,7 +364,7 @@ export function useLibraryScanning(
       setScanProgress(null);
       scanAbortControllerRef.current = null;
     }
-  }, [libraryRoot, permissionStatus, scanRunId, existingCollectionId]);
+  }, [libraryRoot, permissionStatus, initialFileList, scanRunId, existingCollectionId, options.initialFileList]);
 
   /**
    * Resume an interrupted scan from a checkpoint
