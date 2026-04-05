@@ -133,7 +133,7 @@ export function HomePage() {
 
         {/* Jump back in — card wider than page content, max 80vw, centered */}
         {!loading && hasReturningContent && (
-          <div className="mt-10 w-[99.5vw] max-w-none ml-[calc(50%-49.75vw)]">
+          <div className="mt-10 w-[99vw] max-w-none ml-[calc(50%-49.75vw)]">
             <div className="mx-auto w-[80vw] max-w-[80vw] rounded-lg border border-app-border bg-app-surface py-6">
               <div className="mx-auto max-w-6xl px-4">
               <h2 className="text-xl font-medium text-app-primary mb-2 flex items-center gap-2">
