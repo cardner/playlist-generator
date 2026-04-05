@@ -879,7 +879,8 @@ export function LibraryBrowser({
       {/* Track List — no card, sits on page background */}
       <div>
         {/* Sticky header: search, filters, pagination, actions — stays at top when scrolling */}
-        <div className="sticky top-0 z-10 bg-app-bg border-app-border">
+        {/* z-20 so LibrarySearchCombo dropdown stacks above .app-table thead (z-10 in globals.css) */}
+        <div className="sticky top-0 z-20 bg-app-bg border-app-border">
           <div className="flex flex-wrap items-center justify-between gap-2 py-2">
             <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
               <LibrarySearchCombo
