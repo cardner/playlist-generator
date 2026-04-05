@@ -67,6 +67,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.20.2] - 2026-04-05
+
+### Fixed
+
+- fix width of library container
+
+### Other Changes
+
+- Merge pull request #80 from cardner/max-width
+
 ## [1.20.1] - 2026-04-05
 
 ### Fixed
